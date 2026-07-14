@@ -1,0 +1,990 @@
+-- 0123_po_vendor_phone_and_spec_multiline_template.sql
+-- 発注書(purchase_order)テンプレを disk と同期し DB(document_templates)へ新版登録:
+--   - #287: 上段「発注先（受注者）」に TEL 行(VENDOR_CONTACT_PHONE)を追加。
+--   - #285: 明細「仕様」を <li style="white-space:pre-line;"> にし複数行を改行表示。
+--   本番 worker/search-api は TEMPLATE_SOURCE=db で DB 版を読むため、disk 編集だけでは
+--   反映されない。current version を新版へ貼替(履歴保持・冪等)。field_schema は現行版を継承。
+--   disk: services/worker/templates/purchase_order.html と同一内容。
+
+DO $mig_po$
+DECLARE
+  tid INTEGER;
+  cur_html TEXT;
+  cur_schema JSONB;
+  vid INTEGER;
+BEGIN
+  SELECT dt.id, v.html_source, v.field_schema
+    INTO tid, cur_html, cur_schema
+    FROM document_templates dt
+    LEFT JOIN document_template_versions v ON v.id = dt.current_version_id
+   WHERE dt.template_key = 'purchase_order';
+
+  IF tid IS NULL THEN
+    RAISE NOTICE '0123: purchase_order template not found, skipping';
+    RETURN;
+  END IF;
+
+  IF cur_html IS NOT DISTINCT FROM $po_html$<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>発注書</title>
+<style>
+  body { font-family:'Noto Sans CJK JP','Meiryo',sans-serif; font-size:10pt; line-height:1.5; color:#111; margin:0; padding:16px; }
+  h1.doc-title { font-size:22pt; margin:0 0 4px; letter-spacing:2px; }
+  .doc-head { text-align:center; margin-bottom:8px; }
+  .doc-sub { font-size:9pt; color:#555; }
+  hr.rule { border:none; border-top:2px solid #111; margin:0 0 14px; }
+  table { border-collapse:collapse; }
+  .party { width:100%; margin-bottom:14px; }
+  .party td { vertical-align:top; }
+  .party .vlabel { font-size:8pt; font-weight:700; color:#555; margin-bottom:3px; }
+  .vendor-name { font-size:13pt; font-weight:800; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; }
+  .muted { font-size:9pt; color:#555; }
+  .section-mark { font-size:10pt; font-weight:800; margin:12px 0 6px; border-left:4px solid #111; padding-left:8px; }
+  table.summary { width:100%; margin-bottom:12px; font-size:10pt; }
+  table.summary th { width:30%; background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; text-align:left; }
+  table.summary td { border:1px solid #cfcfcf; padding:7px 8px; }
+  .total-amount { font-size:13pt; font-weight:800; }
+  .amount-note { font-size:8.5pt; color:#555; }
+  table.items { width:100%; font-size:9pt; margin-top:4px; table-layout:fixed; }
+  table.items th { background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; }
+  table.items td { border:1px solid #cfcfcf; padding:7px 8px; vertical-align:top; }
+  table.items th.l, table.items td.l { text-align:left; }
+  .center { text-align:center; }
+  .right { text-align:right; }
+  .item-main td { border-bottom:none; padding:8px 8px 4px; }
+  .item-detail td { border-top:1px dashed #cfcfcf; padding:3px 8px 8px; font-size:8.5pt; color:#555; }
+  .item-detail ul { margin:4px 0 0; padding-left:16px; color:#333; line-height:1.55; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:800; background:#eef; color:#334; border-radius:3px; padding:1px 5px; margin-right:4px; }
+  .royalty-tag { background:#fef3c7; color:#92400e; }
+  .royalty-aside { color:#92400e; font-size:8pt; }
+  .callout { border:1px solid #cfcfcf; border-left:4px solid #111; padding:8px 10px; font-size:9pt; margin-top:12px; }
+  .terms-box { border:1px solid #cfcfcf; padding:10px; margin-top:12px; }
+  .terms-title { display:block; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; font-weight:800; }
+  .sign-box { height:22mm; border:1px solid #cfcfcf; margin-top:4px; }
+  .incl-note { font-size:7.5pt; color:#92400e; }
+</style>
+</head>
+<body>
+
+<!-- ===== ヘッダ ===== -->
+<div class="doc-head">
+  <h1 class="doc-title">発注書</h1>
+  <div class="doc-sub">
+    発注日: {{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{formatDate (or ORDER_DATE (concat ORDER_DATE_YEAR "-" ORDER_DATE_MONTH "-" ORDER_DATE_DAY))}}{{/if}}{{/if}}
+    　／　書類番号: {{ORDER_NO}}{{#if isReissue}}{{#unless (eq showReissueBanner false)}}　（元: {{BASE_DOC_NO}}）{{/unless}}{{/if}}
+  </div>
+</div>
+<hr class="rule">
+
+<!-- ===== 宛先 ＋ 発注者 ===== -->
+<table class="party">
+  <tr>
+    <td style="width:50%; padding-right:12px;">
+      <div class="vlabel">発注先（受注者）</div>
+      <div class="vendor-name">{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}}　{{VENDOR_SUFFIX}}{{else}}　御中{{/if}}</div>
+      {{#if VENDOR_ADDRESS}}<div class="muted">{{VENDOR_ADDRESS}}</div>{{/if}}
+      {{#if VENDOR_CONTACT_PHONE}}<div class="muted" style="margin-top:2px;">TEL: {{VENDOR_CONTACT_PHONE}}</div>{{/if}}
+      {{#if VENDOR_EMAIL}}<div class="muted" style="margin-top:2px;">E-mail: {{VENDOR_EMAIL}}</div>{{/if}}
+      {{#if VENDOR_CONTACT_NAME}}
+      <div style="margin-top:4px; font-size:9pt;">{{#if VENDOR_CONTACT_DEPARTMENT}}{{VENDOR_CONTACT_DEPARTMENT}}　{{/if}}{{VENDOR_CONTACT_NAME}} 様</div>
+      {{/if}}
+      <div style="margin-top:10px; font-size:9pt;">下記内容にて発注いたします。ご確認をお願いいたします。</div>
+      {{#if PROJECT_TITLE}}<div style="margin-top:8px; font-size:10pt;">件名: <strong>{{PROJECT_TITLE}}</strong></div>{{/if}}
+    </td>
+    <td style="width:50%; padding-left:12px; border-left:1px solid #cfcfcf;">
+      <div class="vlabel">発注者</div>
+      <div style="font-weight:900; font-size:12pt; margin-bottom:4px;">{{PARTY_A_NAME}}</div>
+      <div style="white-space:pre-wrap;">{{PARTY_A_ADDRESS}}</div>
+      {{#if PARTY_A_REP}}<div style="margin-top:2px;">{{PARTY_A_REP}}</div>{{/if}}
+      {{#if STAFF_NAME}}
+      <div style="margin-top:8px; padding-top:6px; border-top:1px solid #cfcfcf; font-size:9pt;">
+        {{#if STAFF_DEPARTMENT}}<strong>部署:</strong> {{STAFF_DEPARTMENT}}<br>{{/if}}
+        <strong>担当:</strong> {{STAFF_NAME}}<br>
+        {{#if STAFF_PHONE}}TEL: {{STAFF_PHONE}}<br>{{/if}}
+        {{#if STAFF_EMAIL}}E-mail: {{STAFF_EMAIL}}{{/if}}
+      </div>
+      {{/if}}
+    </td>
+  </tr>
+</table>
+
+<!-- ===== 発注概要 ===== -->
+<div class="section-mark">■ 発注概要</div>
+<table class="summary">
+  <tr>
+    <th>確定額 小計（税抜）</th>
+    <td>
+      {{#if (gt grandTotalExTax 0)}}
+      <strong class="total-amount">¥ {{formatCurrency grandTotalExTax}}</strong><br>
+      <span class="amount-note">※ 消費税等の精算は、支払通知または請求処理にて行います。</span>
+      {{#if has_performance_incentive}}
+      <div class="amount-note" style="margin-top:4px; color:#92400e;">※ 本件業務の報酬は、上記確定額のほかインセンティブ報酬が加算された額とします。なお、インセンティブ報酬の計算方法は下記記載のとおりとします。</div>
+      {{/if}}
+      {{else}}
+      {{#if has_performance_incentive}}
+      <strong style="color:#92400e;">報酬はインセンティブ報酬による</strong>
+      <span class="amount-note">／ インセンティブ報酬の計算方法は下記記載のとおり</span>
+      {{else}}
+      <strong style="color:#92400e;">報酬は利用許諾料に含む</strong>
+      <span class="amount-note">／ 算定方法は明細記載の計算方法の通り</span>
+      {{/if}}
+      {{/if}}
+    </td>
+  </tr>
+  <tr>
+    <th>利用許諾料</th>
+    <td>
+      {{#if has_seller_owned_license}}
+      <strong style="color:#92400e;">別途算定</strong>
+      <span style="font-size:8pt; color:#666;">／ 利用許諾計算書による（明細の ROYALTY 各行・計算式方法のとおり）</span>
+      {{else}}
+      <span style="color:#888;">—</span>
+      {{/if}}
+    </td>
+  </tr>
+  <tr>
+    <th>発注日</th>
+    <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
+  </tr>
+  <tr>
+    <th>納期<br><span style="font-size:8pt;color:#888;font-weight:400;">(または役務提供期間)</span></th>
+    <td>明細のとおり</td>
+  </tr>
+  <tr>
+    <th>支払日</th>
+    <td>明細のとおり</td>
+  </tr>
+</table>
+
+<!-- ===== 業務明細（2行レイアウト） ===== -->
+<div class="section-mark">■ 業務明細</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:5%;">No</th>
+      <th class="l" style="width:47%;">品目名・成果物</th>
+      <th class="center" style="width:10%;">数量</th>
+      <th class="right" style="width:18%;">単価</th>
+      <th class="right" style="width:20%;">金額（税抜）</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#if items}}
+    {{#each items}}
+    <!-- 1行目：核心情報 -->
+    <tr class="item-main">
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">
+        {{#if category}}<span class="tag">{{category}}</span>{{/if}}
+        <strong style="font-size:10pt;">{{item_name}}</strong>
+      </td>
+      <td class="right">{{or quantity qty}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}<strong>{{formatYen (or amount_ex_tax amount)}}</strong><div class="incl-note">{{or reward_label "執筆料"}}（{{#if (eq deliverable_ownership "受注者")}}利用許諾料{{else}}インセンティブ報酬{{/if}}は別途）</div>{{else}}<div class="incl-note">報酬は<br>{{#if (eq deliverable_ownership "受注者")}}利用許諾料{{else}}インセンティブ報酬{{/if}}に含む</div>{{/if}}{{else}}<strong>{{formatYen (or amount_ex_tax amount)}}</strong>{{/if}}</td>
+    </tr>
+    <!-- 2行目：詳細情報 -->
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        {{#if payment_terms}}契約種別：{{payment_terms}}　／　{{/if}}成果物の帰属先：{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}
+        　／　支払方法：{{or calc_method payment_method_display payment_method "FIXED"}}
+        　／　{{#if (eq calc_method "SUBSCRIPTION")}}役務提供期間{{else}}納期{{/if}}：{{#if (eq calc_method "SUBSCRIPTION")}}{{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDateCompact term_end}}{{else}}継続中{{/if}}{{else}}{{formatDate delivery_date}}{{/if}}
+        　／　支払日：{{#if (eq calc_method "SUBSCRIPTION")}}{{or (billingDayLabel billing_day cycle billing_timing) "支払日未設定"}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}{{#if (eq deliverable_ownership "受注者")}}利用許諾料計算書の通り{{else}}インセンティブ報酬の算定による{{/if}}{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}{{/if}}
+        {{!-- Phase: 利用許諾料/インセンティブ報酬の計算式は下段の「利用許諾条件」表に集約。
+             ここでの重複表示 (個数×基準価格×料率 ・料率N% ／ 利用許諾料は別途…) は撤去。 --}}
+        {{#if (or spec detailText)}}
+        <ul>
+          {{#if spec}}<li style="white-space:pre-line;">{{spec}}</li>{{/if}}
+          {{#if detailText}}<li>{{detailText}}</li>{{/if}}
+        </ul>
+        {{/if}}
+        {{#if payment_schedule}}
+        <div style="margin-top:4px; font-weight:700;">支払スケジュール</div>
+        <table style="width:100%; border-collapse:collapse; font-size:8.5pt;">
+          <tr><th class="l" style="width:8%;">回</th><th class="l">支払予定日</th><th class="right" style="width:30%;">金額</th></tr>
+          {{#each payment_schedule}}
+          <tr>
+            <td class="center">{{index1 @index}}</td>
+            <td>{{date}}</td>
+            <td class="right">{{#if amount}}{{formatYen amount}}{{/if}}</td>
+          </tr>
+          {{/each}}
+        </table>
+        {{/if}}
+      </td>
+    </tr>
+    {{/each}}
+    {{else}}
+    <!-- 単一明細フォールバック (items[] が空のとき) -->
+    <tr class="item-main">
+      <td class="center">1</td>
+      <td class="l"><strong style="font-size:10pt;">{{ITEM_NAME}}</strong></td>
+      <td class="right">1</td>
+      <td class="right">-</td>
+      <td class="right"><strong>¥ {{formatCurrency grandTotalExTax}}</strong></td>
+    </tr>
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        {{#if PAYMENT_TERMS}}契約種別：{{PAYMENT_TERMS}}　／　{{/if}}支払方法：{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}
+        　／　納期：{{formatDate DELIVERY_DATE}}
+        　／　支払日：{{summaryPaymentTerms}}
+      </td>
+    </tr>
+    {{/if}}
+    <!-- 合計 -->
+    <tr>
+      <td colspan="4" class="right"><strong>確定額 小計（税抜）</strong></td>
+      <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalExTax) 0)}}<strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong>{{else}}<span style="color:#888;">—</span>{{/if}}</td>
+    </tr>
+  </tbody>
+</table>
+
+{{#if has_license_conditions}}
+<p style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の{{#if has_performance_incentive}}{{#if has_seller_owned_license}}利用許諾料・インセンティブ報酬{{else}}インセンティブ報酬{{/if}}{{else}}利用許諾料{{/if}}（ROYALTY）明細に適用される算定条件です。発注の確定額（小計）には含まれず、別途、当該条件に基づき算定・支払われます。</p>
+{{/if}}
+
+<!-- ===== 利用許諾条件 / インセンティブ報酬条件（確定額外） ===== -->
+{{#if has_license_conditions}}
+<div class="section-mark">■ {{#if has_performance_incentive}}{{#if has_seller_owned_license}}利用許諾料・インセンティブ報酬条件{{else}}インセンティブ報酬条件{{/if}}{{else}}利用許諾条件{{/if}}（確定額外）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:4%;">#</th>
+      <th class="l" style="width:26%;">条件名称 / 区分</th>
+      <th class="l" style="width:34%;">計算式</th>
+      <th class="l" style="width:18%;">料率 / 基準</th>
+      <th class="right" style="width:18%;">MG / AG</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#if financial_conditions.length}}
+    {{#each financial_conditions}}
+    <tr>
+      <td class="center">{{or condition_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}利用許諾条件{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
+    </tr>
+    {{#if applies_scope}}
+    <tr><td style="border-top:0;"></td><td colspan="4" class="l" style="border-top:0; font-size:7.5pt; color:#444;"><strong>適用範囲:</strong> {{applies_scope}}</td></tr>
+    {{/if}}
+    {{/each}}
+    {{else}}
+    {{#each items}}
+    {{#if (eq calc_method "ROYALTY")}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
+    </tr>
+    {{/if}}
+    {{/each}}
+    {{/if}}
+  </tbody>
+</table>
+<div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の{{#if has_performance_incentive}}{{#if has_seller_owned_license}}利用許諾料・インセンティブ報酬{{else}}インセンティブ報酬{{/if}}{{else}}利用許諾料{{/if}}（ROYALTY）明細に適用される算定条件です。発注の確定額（小計）には含まれず、別途、当該条件に基づき算定・支払われます。</div>
+{{/if}}
+
+<!-- ===== その他手数料 ===== -->
+{{#if other_fees}}
+{{#if (gt (length other_fees) 0)}}
+<div class="section-mark">■ その他手数料（税抜・合計に加算）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:6mm;">No</th>
+      <th class="l">項目名</th>
+      <th class="right" style="width:30mm;">金額（税抜）</th>
+      <th class="l">摘要</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each other_fees}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l"><strong>{{fee_name}}</strong></td>
+      <td class="right">{{formatYen amount}}</td>
+      <td class="l">{{remarks}}</td>
+    </tr>
+    {{/each}}
+    <tr>
+      <td colspan="2" class="right"><strong>手数料 小計（税抜）</strong></td>
+      <td class="right"><strong>¥ {{formatCurrency otherFeesTotal}}</strong></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th style="width:40%;">発注合計（税抜・業務委託 + 手数料）</th>
+    <td>
+      <strong class="total-amount">¥ {{formatCurrency grandTotalExTax}}</strong><br>
+      <span class="amount-note">※ 業務委託 ¥{{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}} ＋ 手数料 ¥{{formatCurrency otherFeesTotal}}</span>
+    </td>
+  </tr>
+</table>
+{{/if}}
+{{/if}}
+
+<!-- ===== 経費 ===== -->
+{{#if expenses}}
+{{#if (gt (length expenses) 0)}}
+<div class="section-mark">■ 経費（交通費等／税込み額）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:6mm;">No</th>
+      <th class="l">費目</th>
+      <th class="center" style="width:24mm;">発生日</th>
+      <th class="right" style="width:26mm;">金額（税込）</th>
+      <th class="l">摘要</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each expenses}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l"><strong>{{expense_name}}</strong>{{#if spec}}<div style="font-size:8pt;color:#666;">{{spec}}</div>{{/if}}</td>
+      <td class="center">{{formatDate spent_date}}</td>
+      <td class="right">{{formatYen amount_inc_tax}}</td>
+      <td class="l">{{remarks}}</td>
+    </tr>
+    {{/each}}
+    <tr>
+      <td colspan="3" class="right"><strong>経費合計（税込）</strong></td>
+      <td class="right"><strong>¥ {{formatCurrency expensesTotalIncTax}}</strong></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+<p style="margin-top:4px; font-size:8.5pt; color:#555;">※ 経費は税込み額にて精算します。本発注書に記載の各項目の領収書原本またはそのコピーを添付してください。</p>
+{{/if}}
+{{/if}}
+
+<!-- ===== 特約事項 ===== -->
+{{#if SPECIAL_TERMS}}
+<div class="terms-box">
+  <strong class="terms-title">特約事項</strong>
+  <div style="white-space:pre-wrap;">{{SPECIAL_TERMS}}</div>
+</div>
+{{/if}}
+
+<!-- ===== 備考 ===== -->
+{{#if REMARKS}}
+<div class="terms-box">
+  <strong class="terms-title">備考</strong>
+  {{#if REMARKS_FIXED}}<div style="white-space:pre-wrap;">{{REMARKS_FIXED}}</div>{{/if}}
+  {{#if REMARKS_FREE}}<div style="white-space:pre-wrap; margin-top:{{#if REMARKS_FIXED}}8px{{else}}0{{/if}};">{{REMARKS_FREE}}</div>{{/if}}
+</div>
+{{/if}}
+
+<!-- ===== 準拠契約 / 適用約款 ===== -->
+{{#if HAS_BASE_CONTRACT}}
+<div class="callout">
+  <strong>準拠契約:</strong> 本発注書は、甲乙間で締結済みの基本契約（{{MASTER_CONTRACT_REF}}）に基づき発行されるものであり、本発注書に定めのない事項については当該基本契約の定めによるものとします。
+</div>
+{{else}}
+<div class="callout">
+  <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用・2026年改正法対応版）」が適用されます。受注者は本発注書を承諾することにより、当該約款にも同意したものとみなします。
+</div>
+{{/if}}
+
+<!-- ===== 支払先情報 ===== -->
+{{#if BANK_NAME}}
+<div class="terms-box">
+  <strong class="terms-title">支払先情報</strong>
+  <table class="summary" style="margin-bottom:6px;">
+    <tr><th>金融機関</th><td>{{BANK_NAME}} {{BRANCH_NAME}}</td></tr>
+    <tr><th>口座</th><td>{{ACCOUNT_TYPE}} {{ACCOUNT_NUMBER}}</td></tr>
+    <tr><th>口座名義</th><td>{{ACCOUNT_HOLDER_KANA}}</td></tr>
+    {{#if INVOICE_REGISTRATION_NUMBER}}
+    <tr><th>適格請求書発行事業者</th><td>登録番号: T{{INVOICE_REGISTRATION_NUMBER}}</td></tr>
+    {{/if}}
+  </table>
+  {{#if TRANSFER_FEE_PAYER}}<span style="font-size:8.5pt; color:#555;">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</span>{{/if}}
+</div>
+{{else}}
+{{#if BANK_INFO}}
+<div class="terms-box">
+  <strong class="terms-title">支払先情報</strong>
+  <div style="white-space:pre-wrap;">{{BANK_INFO}}</div>
+  {{#if TRANSFER_FEE_PAYER}}<div style="font-size:8.5pt; color:#555; margin-top:4px;">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</div>{{/if}}
+</div>
+{{/if}}
+{{/if}}
+
+<!-- ===== 通知先 ＋ 署名欄 ===== -->
+{{#if SHOW_ORDER_SIGN_SECTION}}
+<div class="section-mark">■ 通知先</div>
+<table class="summary">
+  <tr>
+    <th>発注先（受注者）</th>
+    <td>担当：{{VENDOR_CONTACT_NAME}}　／　TEL：{{VENDOR_CONTACT_PHONE}}　／　E-mail：{{VENDOR_EMAIL}}</td>
+  </tr>
+  <tr>
+    <th>発注元（当社）</th>
+    <td>担当：{{STAFF_NAME}}　／　TEL：{{STAFF_PHONE}}　／　E-mail：{{STAFF_EMAIL}}</td>
+  </tr>
+</table>
+<p style="font-size:9pt; color:#555;">本発注に関する通知その他の連絡は、上記の通知先に対して行うものとします。基本契約がある場合は、その通知条項に従います。</p>
+
+<div class="section-mark">■ 署名欄</div>
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th style="width:50%;">発注者（甲）</th>
+    <th style="width:50%;">受注者（乙）</th>
+  </tr>
+  <tr>
+    <td>
+      <div>{{PARTY_A_NAME}}</div>
+      <div style="font-size:8.5pt; color:#555;">{{PARTY_A_ADDRESS}}</div>
+      <div style="margin-top:4px;">{{PARTY_A_REP}}</div>
+      <div class="sign-box"></div>
+    </td>
+    <td>
+      <div>{{VENDOR_NAME}}</div>
+      <div style="font-size:8.5pt; color:#555;">{{VENDOR_ADDRESS}}</div>
+      <div style="margin-top:4px;">{{#if VENDOR_REPRESENTATIVE_SAMA}}{{VENDOR_REPRESENTATIVE_SAMA}}{{else}}{{VENDOR_CONTACT_NAME}}{{/if}}</div>
+      <div class="sign-box"></div>
+    </td>
+  </tr>
+</table>
+{{/if}}
+
+<!-- ===== 受領確認（承諾） ===== -->
+{{#if (or ACCEPT_METHOD SHOW_SIGN_SECTION)}}
+<div class="section-mark">■ 受領確認（承諾）</div>
+{{#if ACCEPT_METHOD}}
+<div class="callout">
+  <strong>承諾方法</strong><br>
+  <span style="color:#555;">{{ACCEPT_METHOD}}{{#if ACCEPT_REPLY_DUE_DATE}}<br>返信期限: {{ACCEPT_REPLY_DUE_DATE}}{{/if}}</span>
+  {{#if ACCEPT_BY_PERFORMANCE}}<span style="color:#555; margin-top:6px; display:block;">なお、受注者が本発注に基づく業務へ着手した場合、その時点で本発注内容に承諾したものとして取り扱うことがあります。</span>{{/if}}
+</div>
+{{/if}}
+{{#if SHOW_SIGN_SECTION}}
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th>受領日（承諾日）</th>
+    <td>{{formatDate VENDOR_ACCEPT_DATE}}</td>
+  </tr>
+  {{#if (eq VENDOR_IS_CORPORATION "法人")}}
+  <tr>
+    <th>会社名（受注者）</th>
+    <td>{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}} {{VENDOR_SUFFIX}}{{/if}}</td>
+  </tr>
+  {{/if}}
+  <tr>
+    <th style="vertical-align:top;">受領者（承諾者）</th>
+    <td>
+      {{VENDOR_ACCEPT_NAME}}
+      <div class="sign-box"></div>
+      <div style="font-size:8.5pt; color:#555; margin-top:4px;">※ 記名押印（または署名）欄{{#if (eq VENDOR_IS_CORPORATION "法人")}} — 受注者の権限ある代表者または担当者の記名押印をお願いします{{/if}}</div>
+    </td>
+  </tr>
+</table>
+{{/if}}
+{{/if}}
+
+{{!-- 基本契約なしの場合は標準約款（terms_spot_2026）を別紙としてPDF末尾に添付 --}}
+{{#unless HAS_BASE_CONTRACT}}
+{{> terms_spot_2026}}
+{{/unless}}
+</body>
+</html>
+$po_html$ THEN
+    RAISE NOTICE '0123: purchase_order already up to date, skipping';
+    RETURN;
+  END IF;
+
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  VALUES (tid,
+          COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = tid), 0) + 1,
+          $po_html$<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>発注書</title>
+<style>
+  body { font-family:'Noto Sans CJK JP','Meiryo',sans-serif; font-size:10pt; line-height:1.5; color:#111; margin:0; padding:16px; }
+  h1.doc-title { font-size:22pt; margin:0 0 4px; letter-spacing:2px; }
+  .doc-head { text-align:center; margin-bottom:8px; }
+  .doc-sub { font-size:9pt; color:#555; }
+  hr.rule { border:none; border-top:2px solid #111; margin:0 0 14px; }
+  table { border-collapse:collapse; }
+  .party { width:100%; margin-bottom:14px; }
+  .party td { vertical-align:top; }
+  .party .vlabel { font-size:8pt; font-weight:700; color:#555; margin-bottom:3px; }
+  .vendor-name { font-size:13pt; font-weight:800; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; }
+  .muted { font-size:9pt; color:#555; }
+  .section-mark { font-size:10pt; font-weight:800; margin:12px 0 6px; border-left:4px solid #111; padding-left:8px; }
+  table.summary { width:100%; margin-bottom:12px; font-size:10pt; }
+  table.summary th { width:30%; background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; text-align:left; }
+  table.summary td { border:1px solid #cfcfcf; padding:7px 8px; }
+  .total-amount { font-size:13pt; font-weight:800; }
+  .amount-note { font-size:8.5pt; color:#555; }
+  table.items { width:100%; font-size:9pt; margin-top:4px; table-layout:fixed; }
+  table.items th { background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; }
+  table.items td { border:1px solid #cfcfcf; padding:7px 8px; vertical-align:top; }
+  table.items th.l, table.items td.l { text-align:left; }
+  .center { text-align:center; }
+  .right { text-align:right; }
+  .item-main td { border-bottom:none; padding:8px 8px 4px; }
+  .item-detail td { border-top:1px dashed #cfcfcf; padding:3px 8px 8px; font-size:8.5pt; color:#555; }
+  .item-detail ul { margin:4px 0 0; padding-left:16px; color:#333; line-height:1.55; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:800; background:#eef; color:#334; border-radius:3px; padding:1px 5px; margin-right:4px; }
+  .royalty-tag { background:#fef3c7; color:#92400e; }
+  .royalty-aside { color:#92400e; font-size:8pt; }
+  .callout { border:1px solid #cfcfcf; border-left:4px solid #111; padding:8px 10px; font-size:9pt; margin-top:12px; }
+  .terms-box { border:1px solid #cfcfcf; padding:10px; margin-top:12px; }
+  .terms-title { display:block; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; font-weight:800; }
+  .sign-box { height:22mm; border:1px solid #cfcfcf; margin-top:4px; }
+  .incl-note { font-size:7.5pt; color:#92400e; }
+</style>
+</head>
+<body>
+
+<!-- ===== ヘッダ ===== -->
+<div class="doc-head">
+  <h1 class="doc-title">発注書</h1>
+  <div class="doc-sub">
+    発注日: {{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{formatDate (or ORDER_DATE (concat ORDER_DATE_YEAR "-" ORDER_DATE_MONTH "-" ORDER_DATE_DAY))}}{{/if}}{{/if}}
+    　／　書類番号: {{ORDER_NO}}{{#if isReissue}}{{#unless (eq showReissueBanner false)}}　（元: {{BASE_DOC_NO}}）{{/unless}}{{/if}}
+  </div>
+</div>
+<hr class="rule">
+
+<!-- ===== 宛先 ＋ 発注者 ===== -->
+<table class="party">
+  <tr>
+    <td style="width:50%; padding-right:12px;">
+      <div class="vlabel">発注先（受注者）</div>
+      <div class="vendor-name">{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}}　{{VENDOR_SUFFIX}}{{else}}　御中{{/if}}</div>
+      {{#if VENDOR_ADDRESS}}<div class="muted">{{VENDOR_ADDRESS}}</div>{{/if}}
+      {{#if VENDOR_CONTACT_PHONE}}<div class="muted" style="margin-top:2px;">TEL: {{VENDOR_CONTACT_PHONE}}</div>{{/if}}
+      {{#if VENDOR_EMAIL}}<div class="muted" style="margin-top:2px;">E-mail: {{VENDOR_EMAIL}}</div>{{/if}}
+      {{#if VENDOR_CONTACT_NAME}}
+      <div style="margin-top:4px; font-size:9pt;">{{#if VENDOR_CONTACT_DEPARTMENT}}{{VENDOR_CONTACT_DEPARTMENT}}　{{/if}}{{VENDOR_CONTACT_NAME}} 様</div>
+      {{/if}}
+      <div style="margin-top:10px; font-size:9pt;">下記内容にて発注いたします。ご確認をお願いいたします。</div>
+      {{#if PROJECT_TITLE}}<div style="margin-top:8px; font-size:10pt;">件名: <strong>{{PROJECT_TITLE}}</strong></div>{{/if}}
+    </td>
+    <td style="width:50%; padding-left:12px; border-left:1px solid #cfcfcf;">
+      <div class="vlabel">発注者</div>
+      <div style="font-weight:900; font-size:12pt; margin-bottom:4px;">{{PARTY_A_NAME}}</div>
+      <div style="white-space:pre-wrap;">{{PARTY_A_ADDRESS}}</div>
+      {{#if PARTY_A_REP}}<div style="margin-top:2px;">{{PARTY_A_REP}}</div>{{/if}}
+      {{#if STAFF_NAME}}
+      <div style="margin-top:8px; padding-top:6px; border-top:1px solid #cfcfcf; font-size:9pt;">
+        {{#if STAFF_DEPARTMENT}}<strong>部署:</strong> {{STAFF_DEPARTMENT}}<br>{{/if}}
+        <strong>担当:</strong> {{STAFF_NAME}}<br>
+        {{#if STAFF_PHONE}}TEL: {{STAFF_PHONE}}<br>{{/if}}
+        {{#if STAFF_EMAIL}}E-mail: {{STAFF_EMAIL}}{{/if}}
+      </div>
+      {{/if}}
+    </td>
+  </tr>
+</table>
+
+<!-- ===== 発注概要 ===== -->
+<div class="section-mark">■ 発注概要</div>
+<table class="summary">
+  <tr>
+    <th>確定額 小計（税抜）</th>
+    <td>
+      {{#if (gt grandTotalExTax 0)}}
+      <strong class="total-amount">¥ {{formatCurrency grandTotalExTax}}</strong><br>
+      <span class="amount-note">※ 消費税等の精算は、支払通知または請求処理にて行います。</span>
+      {{#if has_performance_incentive}}
+      <div class="amount-note" style="margin-top:4px; color:#92400e;">※ 本件業務の報酬は、上記確定額のほかインセンティブ報酬が加算された額とします。なお、インセンティブ報酬の計算方法は下記記載のとおりとします。</div>
+      {{/if}}
+      {{else}}
+      {{#if has_performance_incentive}}
+      <strong style="color:#92400e;">報酬はインセンティブ報酬による</strong>
+      <span class="amount-note">／ インセンティブ報酬の計算方法は下記記載のとおり</span>
+      {{else}}
+      <strong style="color:#92400e;">報酬は利用許諾料に含む</strong>
+      <span class="amount-note">／ 算定方法は明細記載の計算方法の通り</span>
+      {{/if}}
+      {{/if}}
+    </td>
+  </tr>
+  <tr>
+    <th>利用許諾料</th>
+    <td>
+      {{#if has_seller_owned_license}}
+      <strong style="color:#92400e;">別途算定</strong>
+      <span style="font-size:8pt; color:#666;">／ 利用許諾計算書による（明細の ROYALTY 各行・計算式方法のとおり）</span>
+      {{else}}
+      <span style="color:#888;">—</span>
+      {{/if}}
+    </td>
+  </tr>
+  <tr>
+    <th>発注日</th>
+    <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
+  </tr>
+  <tr>
+    <th>納期<br><span style="font-size:8pt;color:#888;font-weight:400;">(または役務提供期間)</span></th>
+    <td>明細のとおり</td>
+  </tr>
+  <tr>
+    <th>支払日</th>
+    <td>明細のとおり</td>
+  </tr>
+</table>
+
+<!-- ===== 業務明細（2行レイアウト） ===== -->
+<div class="section-mark">■ 業務明細</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:5%;">No</th>
+      <th class="l" style="width:47%;">品目名・成果物</th>
+      <th class="center" style="width:10%;">数量</th>
+      <th class="right" style="width:18%;">単価</th>
+      <th class="right" style="width:20%;">金額（税抜）</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#if items}}
+    {{#each items}}
+    <!-- 1行目：核心情報 -->
+    <tr class="item-main">
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">
+        {{#if category}}<span class="tag">{{category}}</span>{{/if}}
+        <strong style="font-size:10pt;">{{item_name}}</strong>
+      </td>
+      <td class="right">{{or quantity qty}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}<strong>{{formatYen (or amount_ex_tax amount)}}</strong><div class="incl-note">{{or reward_label "執筆料"}}（{{#if (eq deliverable_ownership "受注者")}}利用許諾料{{else}}インセンティブ報酬{{/if}}は別途）</div>{{else}}<div class="incl-note">報酬は<br>{{#if (eq deliverable_ownership "受注者")}}利用許諾料{{else}}インセンティブ報酬{{/if}}に含む</div>{{/if}}{{else}}<strong>{{formatYen (or amount_ex_tax amount)}}</strong>{{/if}}</td>
+    </tr>
+    <!-- 2行目：詳細情報 -->
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        {{#if payment_terms}}契約種別：{{payment_terms}}　／　{{/if}}成果物の帰属先：{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}
+        　／　支払方法：{{or calc_method payment_method_display payment_method "FIXED"}}
+        　／　{{#if (eq calc_method "SUBSCRIPTION")}}役務提供期間{{else}}納期{{/if}}：{{#if (eq calc_method "SUBSCRIPTION")}}{{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDateCompact term_end}}{{else}}継続中{{/if}}{{else}}{{formatDate delivery_date}}{{/if}}
+        　／　支払日：{{#if (eq calc_method "SUBSCRIPTION")}}{{or (billingDayLabel billing_day cycle billing_timing) "支払日未設定"}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}{{#if (eq deliverable_ownership "受注者")}}利用許諾料計算書の通り{{else}}インセンティブ報酬の算定による{{/if}}{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}{{/if}}
+        {{!-- Phase: 利用許諾料/インセンティブ報酬の計算式は下段の「利用許諾条件」表に集約。
+             ここでの重複表示 (個数×基準価格×料率 ・料率N% ／ 利用許諾料は別途…) は撤去。 --}}
+        {{#if (or spec detailText)}}
+        <ul>
+          {{#if spec}}<li style="white-space:pre-line;">{{spec}}</li>{{/if}}
+          {{#if detailText}}<li>{{detailText}}</li>{{/if}}
+        </ul>
+        {{/if}}
+        {{#if payment_schedule}}
+        <div style="margin-top:4px; font-weight:700;">支払スケジュール</div>
+        <table style="width:100%; border-collapse:collapse; font-size:8.5pt;">
+          <tr><th class="l" style="width:8%;">回</th><th class="l">支払予定日</th><th class="right" style="width:30%;">金額</th></tr>
+          {{#each payment_schedule}}
+          <tr>
+            <td class="center">{{index1 @index}}</td>
+            <td>{{date}}</td>
+            <td class="right">{{#if amount}}{{formatYen amount}}{{/if}}</td>
+          </tr>
+          {{/each}}
+        </table>
+        {{/if}}
+      </td>
+    </tr>
+    {{/each}}
+    {{else}}
+    <!-- 単一明細フォールバック (items[] が空のとき) -->
+    <tr class="item-main">
+      <td class="center">1</td>
+      <td class="l"><strong style="font-size:10pt;">{{ITEM_NAME}}</strong></td>
+      <td class="right">1</td>
+      <td class="right">-</td>
+      <td class="right"><strong>¥ {{formatCurrency grandTotalExTax}}</strong></td>
+    </tr>
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        {{#if PAYMENT_TERMS}}契約種別：{{PAYMENT_TERMS}}　／　{{/if}}支払方法：{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}
+        　／　納期：{{formatDate DELIVERY_DATE}}
+        　／　支払日：{{summaryPaymentTerms}}
+      </td>
+    </tr>
+    {{/if}}
+    <!-- 合計 -->
+    <tr>
+      <td colspan="4" class="right"><strong>確定額 小計（税抜）</strong></td>
+      <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalExTax) 0)}}<strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong>{{else}}<span style="color:#888;">—</span>{{/if}}</td>
+    </tr>
+  </tbody>
+</table>
+
+{{#if has_license_conditions}}
+<p style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の{{#if has_performance_incentive}}{{#if has_seller_owned_license}}利用許諾料・インセンティブ報酬{{else}}インセンティブ報酬{{/if}}{{else}}利用許諾料{{/if}}（ROYALTY）明細に適用される算定条件です。発注の確定額（小計）には含まれず、別途、当該条件に基づき算定・支払われます。</p>
+{{/if}}
+
+<!-- ===== 利用許諾条件 / インセンティブ報酬条件（確定額外） ===== -->
+{{#if has_license_conditions}}
+<div class="section-mark">■ {{#if has_performance_incentive}}{{#if has_seller_owned_license}}利用許諾料・インセンティブ報酬条件{{else}}インセンティブ報酬条件{{/if}}{{else}}利用許諾条件{{/if}}（確定額外）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:4%;">#</th>
+      <th class="l" style="width:26%;">条件名称 / 区分</th>
+      <th class="l" style="width:34%;">計算式</th>
+      <th class="l" style="width:18%;">料率 / 基準</th>
+      <th class="right" style="width:18%;">MG / AG</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#if financial_conditions.length}}
+    {{#each financial_conditions}}
+    <tr>
+      <td class="center">{{or condition_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}利用許諾条件{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
+    </tr>
+    {{#if applies_scope}}
+    <tr><td style="border-top:0;"></td><td colspan="4" class="l" style="border-top:0; font-size:7.5pt; color:#444;"><strong>適用範囲:</strong> {{applies_scope}}</td></tr>
+    {{/if}}
+    {{/each}}
+    {{else}}
+    {{#each items}}
+    {{#if (eq calc_method "ROYALTY")}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
+    </tr>
+    {{/if}}
+    {{/each}}
+    {{/if}}
+  </tbody>
+</table>
+<div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の{{#if has_performance_incentive}}{{#if has_seller_owned_license}}利用許諾料・インセンティブ報酬{{else}}インセンティブ報酬{{/if}}{{else}}利用許諾料{{/if}}（ROYALTY）明細に適用される算定条件です。発注の確定額（小計）には含まれず、別途、当該条件に基づき算定・支払われます。</div>
+{{/if}}
+
+<!-- ===== その他手数料 ===== -->
+{{#if other_fees}}
+{{#if (gt (length other_fees) 0)}}
+<div class="section-mark">■ その他手数料（税抜・合計に加算）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:6mm;">No</th>
+      <th class="l">項目名</th>
+      <th class="right" style="width:30mm;">金額（税抜）</th>
+      <th class="l">摘要</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each other_fees}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l"><strong>{{fee_name}}</strong></td>
+      <td class="right">{{formatYen amount}}</td>
+      <td class="l">{{remarks}}</td>
+    </tr>
+    {{/each}}
+    <tr>
+      <td colspan="2" class="right"><strong>手数料 小計（税抜）</strong></td>
+      <td class="right"><strong>¥ {{formatCurrency otherFeesTotal}}</strong></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th style="width:40%;">発注合計（税抜・業務委託 + 手数料）</th>
+    <td>
+      <strong class="total-amount">¥ {{formatCurrency grandTotalExTax}}</strong><br>
+      <span class="amount-note">※ 業務委託 ¥{{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}} ＋ 手数料 ¥{{formatCurrency otherFeesTotal}}</span>
+    </td>
+  </tr>
+</table>
+{{/if}}
+{{/if}}
+
+<!-- ===== 経費 ===== -->
+{{#if expenses}}
+{{#if (gt (length expenses) 0)}}
+<div class="section-mark">■ 経費（交通費等／税込み額）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:6mm;">No</th>
+      <th class="l">費目</th>
+      <th class="center" style="width:24mm;">発生日</th>
+      <th class="right" style="width:26mm;">金額（税込）</th>
+      <th class="l">摘要</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each expenses}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l"><strong>{{expense_name}}</strong>{{#if spec}}<div style="font-size:8pt;color:#666;">{{spec}}</div>{{/if}}</td>
+      <td class="center">{{formatDate spent_date}}</td>
+      <td class="right">{{formatYen amount_inc_tax}}</td>
+      <td class="l">{{remarks}}</td>
+    </tr>
+    {{/each}}
+    <tr>
+      <td colspan="3" class="right"><strong>経費合計（税込）</strong></td>
+      <td class="right"><strong>¥ {{formatCurrency expensesTotalIncTax}}</strong></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+<p style="margin-top:4px; font-size:8.5pt; color:#555;">※ 経費は税込み額にて精算します。本発注書に記載の各項目の領収書原本またはそのコピーを添付してください。</p>
+{{/if}}
+{{/if}}
+
+<!-- ===== 特約事項 ===== -->
+{{#if SPECIAL_TERMS}}
+<div class="terms-box">
+  <strong class="terms-title">特約事項</strong>
+  <div style="white-space:pre-wrap;">{{SPECIAL_TERMS}}</div>
+</div>
+{{/if}}
+
+<!-- ===== 備考 ===== -->
+{{#if REMARKS}}
+<div class="terms-box">
+  <strong class="terms-title">備考</strong>
+  {{#if REMARKS_FIXED}}<div style="white-space:pre-wrap;">{{REMARKS_FIXED}}</div>{{/if}}
+  {{#if REMARKS_FREE}}<div style="white-space:pre-wrap; margin-top:{{#if REMARKS_FIXED}}8px{{else}}0{{/if}};">{{REMARKS_FREE}}</div>{{/if}}
+</div>
+{{/if}}
+
+<!-- ===== 準拠契約 / 適用約款 ===== -->
+{{#if HAS_BASE_CONTRACT}}
+<div class="callout">
+  <strong>準拠契約:</strong> 本発注書は、甲乙間で締結済みの基本契約（{{MASTER_CONTRACT_REF}}）に基づき発行されるものであり、本発注書に定めのない事項については当該基本契約の定めによるものとします。
+</div>
+{{else}}
+<div class="callout">
+  <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用・2026年改正法対応版）」が適用されます。受注者は本発注書を承諾することにより、当該約款にも同意したものとみなします。
+</div>
+{{/if}}
+
+<!-- ===== 支払先情報 ===== -->
+{{#if BANK_NAME}}
+<div class="terms-box">
+  <strong class="terms-title">支払先情報</strong>
+  <table class="summary" style="margin-bottom:6px;">
+    <tr><th>金融機関</th><td>{{BANK_NAME}} {{BRANCH_NAME}}</td></tr>
+    <tr><th>口座</th><td>{{ACCOUNT_TYPE}} {{ACCOUNT_NUMBER}}</td></tr>
+    <tr><th>口座名義</th><td>{{ACCOUNT_HOLDER_KANA}}</td></tr>
+    {{#if INVOICE_REGISTRATION_NUMBER}}
+    <tr><th>適格請求書発行事業者</th><td>登録番号: T{{INVOICE_REGISTRATION_NUMBER}}</td></tr>
+    {{/if}}
+  </table>
+  {{#if TRANSFER_FEE_PAYER}}<span style="font-size:8.5pt; color:#555;">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</span>{{/if}}
+</div>
+{{else}}
+{{#if BANK_INFO}}
+<div class="terms-box">
+  <strong class="terms-title">支払先情報</strong>
+  <div style="white-space:pre-wrap;">{{BANK_INFO}}</div>
+  {{#if TRANSFER_FEE_PAYER}}<div style="font-size:8.5pt; color:#555; margin-top:4px;">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</div>{{/if}}
+</div>
+{{/if}}
+{{/if}}
+
+<!-- ===== 通知先 ＋ 署名欄 ===== -->
+{{#if SHOW_ORDER_SIGN_SECTION}}
+<div class="section-mark">■ 通知先</div>
+<table class="summary">
+  <tr>
+    <th>発注先（受注者）</th>
+    <td>担当：{{VENDOR_CONTACT_NAME}}　／　TEL：{{VENDOR_CONTACT_PHONE}}　／　E-mail：{{VENDOR_EMAIL}}</td>
+  </tr>
+  <tr>
+    <th>発注元（当社）</th>
+    <td>担当：{{STAFF_NAME}}　／　TEL：{{STAFF_PHONE}}　／　E-mail：{{STAFF_EMAIL}}</td>
+  </tr>
+</table>
+<p style="font-size:9pt; color:#555;">本発注に関する通知その他の連絡は、上記の通知先に対して行うものとします。基本契約がある場合は、その通知条項に従います。</p>
+
+<div class="section-mark">■ 署名欄</div>
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th style="width:50%;">発注者（甲）</th>
+    <th style="width:50%;">受注者（乙）</th>
+  </tr>
+  <tr>
+    <td>
+      <div>{{PARTY_A_NAME}}</div>
+      <div style="font-size:8.5pt; color:#555;">{{PARTY_A_ADDRESS}}</div>
+      <div style="margin-top:4px;">{{PARTY_A_REP}}</div>
+      <div class="sign-box"></div>
+    </td>
+    <td>
+      <div>{{VENDOR_NAME}}</div>
+      <div style="font-size:8.5pt; color:#555;">{{VENDOR_ADDRESS}}</div>
+      <div style="margin-top:4px;">{{#if VENDOR_REPRESENTATIVE_SAMA}}{{VENDOR_REPRESENTATIVE_SAMA}}{{else}}{{VENDOR_CONTACT_NAME}}{{/if}}</div>
+      <div class="sign-box"></div>
+    </td>
+  </tr>
+</table>
+{{/if}}
+
+<!-- ===== 受領確認（承諾） ===== -->
+{{#if (or ACCEPT_METHOD SHOW_SIGN_SECTION)}}
+<div class="section-mark">■ 受領確認（承諾）</div>
+{{#if ACCEPT_METHOD}}
+<div class="callout">
+  <strong>承諾方法</strong><br>
+  <span style="color:#555;">{{ACCEPT_METHOD}}{{#if ACCEPT_REPLY_DUE_DATE}}<br>返信期限: {{ACCEPT_REPLY_DUE_DATE}}{{/if}}</span>
+  {{#if ACCEPT_BY_PERFORMANCE}}<span style="color:#555; margin-top:6px; display:block;">なお、受注者が本発注に基づく業務へ着手した場合、その時点で本発注内容に承諾したものとして取り扱うことがあります。</span>{{/if}}
+</div>
+{{/if}}
+{{#if SHOW_SIGN_SECTION}}
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th>受領日（承諾日）</th>
+    <td>{{formatDate VENDOR_ACCEPT_DATE}}</td>
+  </tr>
+  {{#if (eq VENDOR_IS_CORPORATION "法人")}}
+  <tr>
+    <th>会社名（受注者）</th>
+    <td>{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}} {{VENDOR_SUFFIX}}{{/if}}</td>
+  </tr>
+  {{/if}}
+  <tr>
+    <th style="vertical-align:top;">受領者（承諾者）</th>
+    <td>
+      {{VENDOR_ACCEPT_NAME}}
+      <div class="sign-box"></div>
+      <div style="font-size:8.5pt; color:#555; margin-top:4px;">※ 記名押印（または署名）欄{{#if (eq VENDOR_IS_CORPORATION "法人")}} — 受注者の権限ある代表者または担当者の記名押印をお願いします{{/if}}</div>
+    </td>
+  </tr>
+</table>
+{{/if}}
+{{/if}}
+
+{{!-- 基本契約なしの場合は標準約款（terms_spot_2026）を別紙としてPDF末尾に添付 --}}
+{{#unless HAS_BASE_CONTRACT}}
+{{> terms_spot_2026}}
+{{/unless}}
+</body>
+</html>
+$po_html$,
+          cur_schema,
+          '0123: 受注者TEL上段表示 + 仕様の複数行表示(white-space:pre-line)',
+          'migration-0123')
+  RETURNING id INTO vid;
+
+  UPDATE document_templates SET current_version_id = vid, updated_at = now() WHERE id = tid;
+END $mig_po$;
