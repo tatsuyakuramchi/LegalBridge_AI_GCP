@@ -1,5 +1,8 @@
 # 利用許諾・作品モデル 共通化 設計メモ
 
+> [!WARNING]
+> **Superseded by:** [`plans/legalbridge-remediation-plan-20260714.md`](plans/legalbridge-remediation-plan-20260714.md) — 2026-07-14 / Phase 0 基準固定。作品・利用許諾モデルの統合は上位の修正計画書 P2 に統合。本書は草案(未実装)として経緯参照用に保持。
+
 > 目的: 出版(PUB)とボードゲーム(BDG)で「名称は違うが計算構造は同じ・最終地点は利用許諾計算書」
 > という前提のもと、**(Part 1) 利用許諾条件テーブルと計算モジュールを共通化**し、さらに
 > **(Part 2) 原作テーブル(source_ips)と作品テーブル(works)を `works.kind` で統合**する。

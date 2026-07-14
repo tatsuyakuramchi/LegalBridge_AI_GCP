@@ -1,5 +1,8 @@
 # 新課題(統一課題)UI 設計
 
+> [!WARNING]
+> **Superseded by:** [`../plans/legalbridge-remediation-plan-20260714.md`](../plans/legalbridge-remediation-plan-20260714.md) — 2026-07-14 / Phase 0 基準固定。統一課題UIは上位の修正計画書 P1(Matterワークスペース)に統合。本書は草案(未実装)として経緯参照用に保持。
+
 ステータス: **ドラフト(設計合意フェーズ)** / 2026-06-25 起票
 関連: [`issue-control-consistency-plan.md`](./issue-control-consistency-plan.md)（2フェイズモデル・条件明細背骨）/ [`condition_lines_unification_design.md`](../condition_lines_unification_design.md)（第10章 課題詳細）
 

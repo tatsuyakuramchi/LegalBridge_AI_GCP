@@ -17169,6 +17169,31 @@ ${details}
         });
       }
 
+      // LB-01/F14: 完了画面から「Matterへ戻る」導線を出すため、文書に紐づく
+      //   案件(matters)を解決して返す。documents.matter_id は autolink トリガ
+      //   (tg_doc_autolink_matter)で付与される。未紐付け(null)なら matter 情報は返らない。
+      //   非致命: 解決に失敗しても発行自体は成功として返す。
+      let matterId: number | null = null;
+      let matterCode: string | null = null;
+      let matterTitle: string | null = null;
+      try {
+        if (documentId) {
+          const mr = await query(
+            `SELECT m.id, m.matter_code, m.title
+               FROM documents d JOIN matters m ON m.id = d.matter_id
+              WHERE d.id = $1`,
+            [documentId]
+          );
+          if (mr.rows[0]) {
+            matterId = Number(mr.rows[0].id);
+            matterCode = mr.rows[0].matter_code || null;
+            matterTitle = mr.rows[0].title || null;
+          }
+        }
+      } catch (matErr) {
+        console.warn("[generate] matter resolve skipped (non-fatal):", matErr);
+      }
+
       // Phase 9g: documentNumber も返してフロントのサクセス画面で
       // 表示する。
       // Phase 17q: 同期警告があれば warnings として一緒に返す。
@@ -17184,6 +17209,10 @@ ${details}
         templateType,
         // DB登録のみモードで処理した場合 true (フロントの完了表示切替用)
         dbOnly,
+        // LB-01/F14: 完了画面の「Matterへ戻る」導線用(未紐付けなら null)
+        matterId,
+        matterCode,
+        matterTitle,
         warnings: syncWarnings,
       });
     } catch (error) {

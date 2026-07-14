@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useSearchParams } from "react-router-dom"
+import { useSearchParams, useNavigate } from "react-router-dom"
 import { saveAs } from "file-saver"
 import {
   Database,
@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/sheet"
 import { DocumentForm } from "@/src/components/document/DocumentForm"
 import { RingiSelector } from "@/src/components/document/RingiSelector"
+import { resolveDirectionMode } from "@/src/components/document/templateDirectionMode"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 import {
   DocumentNumberLookup,
@@ -123,6 +124,10 @@ export function DocumentEditorPage() {
   //   以前は contract_purposes の多数の目的をグループ表示していたが、文書生成フローで
   //   実際に効くのは方向(in/out)だけなので、ユーザー要望により2択へ簡素化。
   const [selectedDirection, setSelectedDirection] = React.useState<"" | "in" | "out">("")
+  // LB-F03/F04 (§5.5.4): テンプレの請求方向モード。not_applicable(NDA/通知/同意/回答等)は
+  //   請求の向きが存在しないため UI 非表示・未選択でも生成可にする。
+  const directionMode = resolveDirectionMode(selectedTemplate)
+  const directionApplicable = directionMode !== "not_applicable"
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   // Phase 23.2: 旧 Split preview (画面を半分にして並べる) は狭幅で厳しいため
   //   廃止し、別タブでプレビューを開く方式に一本化。
@@ -187,11 +192,20 @@ export function DocumentEditorPage() {
   const [isSavingDraft, setIsSavingDraft] = React.useState(false)
   // Phase 9g: 文書生成完了後の達成感のあるサクセス画面用
   // Phase 22.21.104: 検収書 / 利用許諾料計算書では excelLink も返るので保持
+  // LB-01/F14: 完了画面は文書種別・Matter・発行モードに応じて次アクションを出し分ける。
+  //   DB登録のみ(mode='dbOnly')でも toast で終わらせず、この画面を表示する(§5.6)。
   const [completionResult, setCompletionResult] = React.useState<{
-    driveLink: string;
+    driveLink?: string | null;
     excelLink?: string | null;
     documentNumber: string;
     templateLabel: string;
+    templateType: string;
+    mode: "issue" | "dbOnly";
+    matterId?: number | null;
+    matterCode?: string | null;
+    matterTitle?: string | null;
+    fileLink?: string | null;   // DB登録のみで既存PDF等のURLを登録した場合
+    standalone?: boolean;       // DB登録のみ・単独契約区分
   } | null>(null)
   // 選択中 Backlog 課題のオブジェクト (件名/本文/ステータス)。
   //   旧実装は課題プルダウン操作時のみセットされる useState だったため、
@@ -280,6 +294,7 @@ export function DocumentEditorPage() {
   //   ?reopen=<id>         既に生成済み文書を再編集 (Phase 16)
   // どちらも /api/documents/:id で form_data を取得して setFormData する。
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const fromPendingId = searchParams.get("from_pending")
   const reopenId = searchParams.get("reopen")
   // ハブ(課題詳細)由来のディープリンク(?template=...&prefill=1)を初回マウント時に
@@ -382,9 +397,11 @@ export function DocumentEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromPendingId, reopenId])
 
-  // 請求の向き(selectedDirection)の既定値。未選択だと Finalize & Sync が押せないため、
+  // 請求の向き(selectedDirection)の既定値(§5.5.4 DirectionMode)。
   //   - form_data.FLOW_DIRECTION があればそれを採用
-  //   - 発注書 / 検収書 は「当社が払う(in)」を既定にする(仕入・支払のため)
+  //   - auto_in(発注書/検収書/利用許諾条件書 等)は「当社が払う(in)」を既定
+  //   - auto_out は「当社が受け取る(out)」を既定
+  //   - not_applicable(NDA 等)/required は自動既定しない
   // ユーザーは必要に応じてプルダウンで変更可能。
   React.useEffect(() => {
     if (selectedDirection) return
@@ -393,19 +410,10 @@ export function DocumentEditorPage() {
       setSelectedDirection(fd)
       return
     }
-    if (
-      selectedTemplate === "purchase_order" ||
-      (selectedTemplate || "").startsWith("inspection_certificate") ||
-      // 利用許諾条件書(個別/出版)は当社が許諾を受け許諾料を払う = ライセンスイン(in)。
-      //   これらは従来 auto-default 対象外で、請求の向き未選択のため生成ボタンが押せなかった。
-      selectedTemplate === "individual_license_terms" ||
-      selectedTemplate === "pub_license_terms" ||
-      selectedTemplate === "pub_additional_terms"
-    ) {
-      setSelectedDirection("in")
-    }
+    if (directionMode === "auto_in") setSelectedDirection("in")
+    else if (directionMode === "auto_out") setSelectedDirection("out")
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTemplate, (formData as any)?.FLOW_DIRECTION])
+  }, [selectedTemplate, directionMode, (formData as any)?.FLOW_DIRECTION])
 
   // インポート由来 / 既存文書を読み込んだ際、form_data の取引先コードから
   // activeVendor を解決して取引先プルダウンを自動選択する。
@@ -1097,8 +1105,8 @@ export function DocumentEditorPage() {
       )
       return
     }
-    // 請求の向きは必須。未選択なら送信を止める。
-    if (!selectedDirection) {
+    // 請求の向きは金銭文書のみ必須。not_applicable(NDA/通知/同意/回答等)は未選択でも生成可。
+    if (directionApplicable && !selectedDirection) {
       showNotification(
         "請求の向き(当社が払う / 当社が受け取る)を選択してください。台帳の方向(in/out)確定に必須です。",
         "error"
@@ -1219,9 +1227,11 @@ export function DocumentEditorPage() {
       const reissueFlag = isReopen && saveMode === "reissue"
       // 請求の向き(in/out)を formData に載せて送る。worker は FLOW_DIRECTION を
       //   そのまま capability / 明細の flow_direction に反映する(out=請求台帳へ)。
+      // not_applicable は方向を送らない(空)。worker は in/out 以外を無視する(server.ts の
+      //   `if (dir)` ガード)ため、空送信でも flow_direction は更新されない。
       const formDataWithPurpose = {
         ...formData,
-        FLOW_DIRECTION: selectedDirection,
+        FLOW_DIRECTION: directionApplicable ? selectedDirection : "",
       }
       const res = await fetch("/api/documents/generate", {
         method: "POST",
@@ -1278,16 +1288,24 @@ export function DocumentEditorPage() {
         // DB登録のみ: PDF は作っていないのでサクセスモーダル (driveLink 前提)
         //   ではなく通知で完了を伝える。未発行分は PDF 未作成キューから
         //   同じ番号のまま後日発行できる。
+        // LB-01/F14 (§5.6): DB登録のみでも toast だけで終わらせず完了画面を出す。
+        //   文書番号・Matter・ファイル有無・PDF未作成キュー状態・次アクションを表示。
+        setCompletionResult({
+          driveLink: data?.driveLink || fileLink || null,
+          excelLink: data?.excelLink || null,
+          documentNumber: data?.documentNumber || "",
+          templateLabel:
+            templateMetadata[selectedTemplate]?.label || selectedTemplate,
+          templateType: selectedTemplate,
+          mode: "dbOnly",
+          matterId: data?.matterId ?? null,
+          matterCode: data?.matterCode ?? null,
+          matterTitle: data?.matterTitle ?? null,
+          fileLink: fileLink || null,
+          standalone: !!dbOnlyStandalone,
+        })
         showNotification(
-          `DB登録が完了しました (${data?.documentNumber || "番号未取得"})${
-            dbOnlyStandalone ? "・区分: 単独契約" : ""
-          }。文書は発行していません${
-            fileLink
-              ? " — 指定されたファイルリンクを登録しました"
-              : data?.driveLink
-                ? ""
-                : " — 後から「PDF未作成」キューで発行できます"
-          }。`,
+          `DB登録が完了しました (${data?.documentNumber || "番号未取得"})。`,
           "success"
         )
         setDbOnlyFileLink("")
@@ -1302,6 +1320,11 @@ export function DocumentEditorPage() {
           documentNumber: data.documentNumber || "",
           templateLabel:
             templateMetadata[selectedTemplate]?.label || selectedTemplate,
+          templateType: selectedTemplate,
+          mode: "issue",
+          matterId: data?.matterId ?? null,
+          matterCode: data?.matterCode ?? null,
+          matterTitle: data?.matterTitle ?? null,
         })
         showNotification("Document generated and uploaded.", "success")
       } else {
@@ -1610,7 +1633,9 @@ export function DocumentEditorPage() {
                   </NativeSelect>
                 </div>
 
-                {/* ②' 請求の向き (必須) — 台帳の方向(in/out)を確定する。2択 */}
+                {/* ②' 請求の向き (必須) — 台帳の方向(in/out)を確定する。2択。
+                    §5.5.4: not_applicable(NDA/通知/同意/回答)は請求方向が無いため非表示。 */}
+                {directionApplicable && (
                 <div className="space-y-1.5">
                   <Label className="flex items-center gap-1.5 text-[11px]">
                     <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground text-background text-[9px] font-bold">
@@ -1635,6 +1660,7 @@ export function DocumentEditorPage() {
                     </p>
                   )}
                 </div>
+                )}
 
                 {/* ③ 担当者 */}
                 <div className="space-y-1.5">
@@ -2284,9 +2310,9 @@ export function DocumentEditorPage() {
                 <Button
                   variant="outline"
                   onClick={() => handleGenerate({ dbOnly: true })}
-                  disabled={isGenerating || !selectedDirection}
+                  disabled={isGenerating || (directionApplicable && !selectedDirection)}
                   title={
-                    !selectedDirection
+                    directionApplicable && !selectedDirection
                       ? "請求の向きを選択すると登録できます"
                       : "文書(PDF)を発行せずにDBへ登録のみ行います。後から「PDF未作成」キューで同じ番号のまま発行できます。"
                   }
@@ -2300,9 +2326,9 @@ export function DocumentEditorPage() {
                 </Button>
                 <Button
                   onClick={() => handleGenerate()}
-                  disabled={isGenerating || !selectedDirection}
+                  disabled={isGenerating || (directionApplicable && !selectedDirection)}
                   title={
-                    !selectedDirection
+                    directionApplicable && !selectedDirection
                       ? "請求の向きを選択すると生成できます"
                       : undefined
                   }
@@ -2315,7 +2341,7 @@ export function DocumentEditorPage() {
                   Finalize & Sync
                 </Button>
               </div>
-              {!selectedDirection && !isGenerating && (
+              {directionApplicable && !selectedDirection && !isGenerating && (
                 <p className="mt-2 text-[11px] font-mono text-destructive/80">
                   ※「請求の向き（②′・上部）」が未選択のため「Finalize &amp; Sync」は無効です。請求の向きを選択すると有効になります。
                 </p>
@@ -2831,29 +2857,44 @@ export function DocumentEditorPage() {
             className="lb-overlay bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
+            {/* Header — 発行モードで文言を変える */}
             <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-5 flex items-center gap-4">
               <div className="h-12 w-12 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
                 <PartyPopper className="h-6 w-6" />
               </div>
               <div>
                 <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald-700">
-                  Generation Complete
+                  {completionResult.mode === "dbOnly" ? "DB Registered" : "Generation Complete"}
                 </div>
                 <div className="text-base font-bold text-emerald-900 mt-0.5">
-                  文書を作成しました
+                  {completionResult.mode === "dbOnly" ? "DBに登録しました" : "文書を作成しました"}
                 </div>
               </div>
             </div>
 
             {/* Body */}
             <div className="px-6 py-5 space-y-3">
+              {/* 案件(Matter) — 紐付けがあれば表示 */}
+              {completionResult.matterCode && (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                    案件 (Matter)
+                  </div>
+                  <div className="text-sm font-mono font-bold">
+                    {completionResult.matterCode}
+                    {completionResult.matterTitle ? ` — ${completionResult.matterTitle}` : ""}
+                  </div>
+                </div>
+              )}
               <div className="space-y-1">
                 <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
                   テンプレ
                 </div>
                 <div className="text-sm font-mono">
                   {completionResult.templateLabel}
+                  {completionResult.mode === "dbOnly" && completionResult.standalone
+                    ? "（区分: 単独契約）"
+                    : ""}
                 </div>
               </div>
               {completionResult.documentNumber && (
@@ -2866,20 +2907,31 @@ export function DocumentEditorPage() {
                   </div>
                 </div>
               )}
-              <div className="space-y-1">
-                <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
-                  Drive リンク (PDF)
+              {/* Drive/登録ファイル リンク or PDF未作成の案内 */}
+              {completionResult.driveLink ? (
+                <div className="space-y-1">
+                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                    {completionResult.mode === "dbOnly" && completionResult.fileLink
+                      ? "登録ファイル"
+                      : "Drive リンク (PDF)"}
+                  </div>
+                  <a
+                    href={completionResult.driveLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-mono text-blue-700 hover:text-blue-900 underline break-all flex items-center gap-1"
+                  >
+                    <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                    {completionResult.driveLink}
+                  </a>
                 </div>
-                <a
-                  href={completionResult.driveLink}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs font-mono text-blue-700 hover:text-blue-900 underline break-all flex items-center gap-1"
-                >
-                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
-                  {completionResult.driveLink}
-                </a>
-              </div>
+              ) : completionResult.mode === "dbOnly" ? (
+                <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-[11px] font-mono text-amber-800">
+                    PDF 未作成 — 文書は DB 登録のみ。「PDF未作成」キューから同じ番号のまま後日発行できます。
+                  </p>
+                </div>
+              ) : null}
               {/* Phase 22.21.104: 検収書 / 利用許諾料計算書のみ Excel リンク表示 */}
               {completionResult.excelLink && (
                 <div className="space-y-1">
@@ -2902,8 +2954,8 @@ export function DocumentEditorPage() {
               )}
             </div>
 
-            {/* Footer actions */}
-            <div className="bg-muted/30 border-t border-border px-6 py-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
+            {/* Footer actions — 文書種別・Matter に応じた次アクション(§5.6) */}
+            <div className="bg-muted/30 border-t border-border px-6 py-4 flex flex-col sm:flex-row flex-wrap gap-2 sm:justify-end">
               <Button
                 variant="outline"
                 size="sm"
@@ -2920,15 +2972,65 @@ export function DocumentEditorPage() {
                 <Plus />
                 新しい文書を作成
               </Button>
-              <Button
-                size="sm"
-                onClick={() =>
-                  window.open(completionResult.driveLink, "_blank")
-                }
-              >
-                <ExternalLink />
-                Drive で開く
-              </Button>
+              {/* 発注書: 検収待ち一覧へ */}
+              {(completionResult.templateType === "purchase_order" ||
+                completionResult.templateType === "intl_purchase_order") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setCompletionResult(null)
+                    navigate("/condition-lines?tab=inspections")
+                  }}
+                >
+                  <CheckCircle2 />
+                  検収待ちへ
+                </Button>
+              )}
+              {/* 検収書 / 利用許諾料計算書: 条件・請求(支払処理)へ */}
+              {(completionResult.templateType.startsWith("inspection_certificate") ||
+                completionResult.templateType === "royalty_statement") && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setCompletionResult(null)
+                    navigate("/condition-lines")
+                  }}
+                >
+                  <ClipboardList />
+                  条件・請求へ
+                </Button>
+              )}
+              {/* Matterへ戻る(紐付けがあるとき) */}
+              {completionResult.matterId != null && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const id = completionResult.matterId
+                    setCompletionResult(null)
+                    navigate(`/matters/${id}`)
+                  }}
+                >
+                  <Building2 />
+                  Matterへ戻る
+                </Button>
+              )}
+              {/* Drive/ファイルを開く(リンクがあるとき) */}
+              {completionResult.driveLink && (
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    window.open(completionResult.driveLink!, "_blank")
+                  }
+                >
+                  <ExternalLink />
+                  {completionResult.mode === "dbOnly" && completionResult.fileLink
+                    ? "ファイルを開く"
+                    : "Drive で開く"}
+                </Button>
+              )}
             </div>
           </div>
         </div>
