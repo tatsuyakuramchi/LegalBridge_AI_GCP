@@ -140,6 +140,13 @@
             color: #1a1a1a;
         }
 
+        /* 受託者(乙)通知先セル: クラウドサイン入力フォーム設置のため行間を広めに確保。 */
+        .tobogaki .col-value.notice-contractor {
+            line-height: 2.3;
+            padding-top: 0.5em;
+            padding-bottom: 0.9em;
+        }
+
         .tobogaki .special-cell {
             min-height: 2.5em;
             word-break: break-all;
@@ -324,7 +331,7 @@
                     契約期間<span class="art-ref">（第14条）</span>
                     <span class="sub-note">更新・中途解約は本契約本文による</span>
                 </td>
-                <td class="col-value">{{CONTRACT_START_DATE}}（契約開始日）から１年間</td>
+                <td class="col-value">{{#if CONTRACT_PERIOD_SUMMARY}}{{CONTRACT_PERIOD_SUMMARY}}{{else}}本契約の有効期間は、契約締結日から1年間とする。ただし、期間満了日の1か月前までに、いずれか一方の当事者から相手方に対して書面による更新拒絶の意思表示がないときは、本契約は同一条件でさらに1年間自動的に更新されるものとし、以後も同様とする。{{/if}}</td>
             </tr>
 
             <!-- 報酬・支払・税務 -->
@@ -376,7 +383,7 @@
                     受託者（乙）通知先<span class="art-ref">（第23条）</span>
                     <span class="sub-note">本契約上の通知の宛先</span>
                 </td>
-                <td class="col-value">
+                <td class="col-value notice-contractor">
                     担当者：{{NOTICE_CONTACT_NAME}}<br>
                     電話：{{NOTICE_CONTACT_PHONE}}<br>
                     E-mail：{{NOTICE_CONTACT_EMAIL}}
