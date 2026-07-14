@@ -1,5 +1,8 @@
 # スキーマ単純化プラン（条件明細コアの再構築）
 
+> [!WARNING]
+> **Superseded by:** [`../plans/legalbridge-remediation-plan-20260714.md`](../plans/legalbridge-remediation-plan-20260714.md) — 2026-07-14 / Phase 0 基準固定。DB正本(documents + condition_lines)の再構築は上位の修正計画書 P0 に統合。本書は草案(未実装)として経緯参照用に保持。
+
 - 版: v0.1（ドラフト）— 2026-06
 - 前提: **現状データは破棄してよい**（再ビルド可能）。周辺モジュール（vendors / ringi /
   royalty_calculations / signature / invoices 等）は**対象外**。本プランは

@@ -1,5 +1,8 @@
 # 作品 / 原作 / 原作マテリアル テーブル整理 設計メモ
 
+> [!WARNING]
+> **Superseded by:** [`../plans/legalbridge-remediation-plan-20260714.md`](../plans/legalbridge-remediation-plan-20260714.md) — 2026-07-14 / Phase 0 基準固定。作品/原作テーブル整理は上位の修正計画書 P2 へ先送り統合。本書は設計検討中(未着手)として経緯参照用に保持。
+
 ステータス: **設計検討中（実装未着手）** / 2026-06-26 起票
 関連: [`work-material-condition-copy-plan.md`](./work-material-condition-copy-plan.md)（WMC コピー）/ [`per-line-work-attribution-plan.md`](./per-line-work-attribution-plan.md)（作品1:文書N:明細N）/ [`condition_lines_unification_design.md`](../condition_lines_unification_design.md)
 
