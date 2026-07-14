@@ -15034,6 +15034,22 @@ ${details}
         (formData?.licensor as string) ||
         "";
 
+      // 業務委託基本契約書(service_master)の契約名(DB保存名)を
+      //   「取引先名_契約日_業務委託基本契約書」に統一する。発注書の基本契約ピッカーは
+      //   この contract_title を引用する(purchaseOrder MASTER_CONTRACT_REF)ため、命名を
+      //   構造化しておく。service_master フォームには CONTRACT_TITLE 欄が無く、従来は
+      //   Backlog 課題名(issue.summary)が流用されて不揃いだった。
+      const serviceMasterContractTitle: string =
+        templateType === "service_master"
+          ? [
+              vendorNameForFile,
+              String((formData?.CONTRACT_DATE as string) || "").replace(/[^0-9]/g, ""),
+              "業務委託基本契約書",
+            ]
+              .filter((s) => s && String(s).trim())
+              .join("_")
+          : "";
+
       // Phase 22.21.97: 利用許諾料計算書テンプレが参照する licensor_t_number。
       //   - 実 Backlog 課題キーで作成された文書 → そのまま表示
       //   - フォーム経由の合成キー (LEGAL-* / IMPORT-* / DEMO-* / PREVIEW-* /
@@ -15714,6 +15730,8 @@ ${details}
             templateType,
             formData.CONTRACT_TITLE ||
               formData.contract_title ||
+              // 業務委託基本契約書は「取引先名_契約日_業務委託基本契約書」を既定名に。
+              serviceMasterContractTitle ||
               // Phase 25: 出版系は作品名を契約タイトルに採用
               formData["対象出版物名"] ||
               formData["原著作物名"] ||
