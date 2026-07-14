@@ -110,6 +110,8 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       // 担当者・部署は法人の概念。個人取引先では空にする(代表者様と同方針)。
       VENDOR_CONTACT_DEPARTMENT: isCorp ? v.contact_department || "" : "",
       VENDOR_CONTACT_NAME: isCorp ? v.contact_name || "" : "",
+      // 電話番号は法人/個人を問わず連絡先として充填(取引先マスタ vendors.phone)。
+      VENDOR_CONTACT_PHONE: v.phone || v.contact_phone || "",
       VENDOR_EMAIL: v.email || "",
       VENDOR_IS_CORPORATION: isCorp ? "法人" : "個人",
       VENDOR_SUFFIX: isCorp ? "御中" : "様",
