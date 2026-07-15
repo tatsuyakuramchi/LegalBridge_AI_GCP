@@ -144,7 +144,7 @@ export async function recalculateCapabilityTotal(
   const { taxAmount, amountIncTax } = calculateTax(amountExTax, taxRate);
 
   await query(
-    `UPDATE contract_capabilities
+    `UPDATE documents
         SET amount_ex_tax  = $1,
             tax_rate       = $2,
             tax_amount     = $3,

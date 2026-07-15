@@ -489,7 +489,7 @@ export async function initDb() {
          DELETE FROM capability_financial_conditions cfc
           USING _cc_losers l
           WHERE cfc.capability_id = l.loser_id;
-         DELETE FROM contract_capabilities cc
+         DELETE FROM documents cc
           USING _cc_losers l
           WHERE cc.id = l.loser_id;
          RAISE NOTICE

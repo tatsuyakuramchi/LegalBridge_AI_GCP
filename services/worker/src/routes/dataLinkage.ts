@@ -1066,7 +1066,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             documentsSuperseded = d.rowCount || 0;
 
             const c = await client.query(
-              `UPDATE contract_capabilities cc
+              `UPDATE documents cc
                   SET lifecycle_status = 'superseded',
                       superseded_by = COALESCE(NULLIF(cc.superseded_by, ''), p.document_number)
                  FROM contract_capabilities p
