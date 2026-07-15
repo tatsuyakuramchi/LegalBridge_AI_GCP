@@ -205,6 +205,11 @@ export class GoogleDriveService {
    * ようにする (DB rename は既に確定しているので、Drive 側だけ失敗しても
    * 警告ログだけで継続したい)。
    */
+  /** webViewLink から fileId を抽出(公開版)。document_files 登録などで使用。 */
+  extractFileId(driveLink: string): string | null {
+    return this.fileIdFromLink(driveLink);
+  }
+
   /** webViewLink から fileId を抽出。複数 URL 形式に対応。 */
   private fileIdFromLink(driveLink: string): string | null {
     const s = driveLink || "";
@@ -252,6 +257,125 @@ export class GoogleDriveService {
         ok: false,
         error: `fileId=${fileId} email=${email}: ${error?.message || String(error)}`,
       };
+    }
+  }
+
+  /**
+   * Phase 3 (LB-08, §7): 親フォルダ配下に指定名のフォルダを冪等に用意する。
+   *   既存(自SAが作成したもの)があれば再利用し、無ければ作成する。
+   *   ※ スコープは drive.file のため、検索は自SAが作成/共有されたフォルダに限る。
+   *     案件フォルダは常に本サービスが作るため運用上は一致する。
+   */
+  async ensureFolder(name: string, parentId?: string): Promise<{ id: string; link: string }> {
+    const parent = parentId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const esc = name.replace(/'/g, "\\'");
+    const q =
+      `name = '${esc}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false` +
+      (parent ? ` and '${parent}' in parents` : "");
+    const found = await this.drive.files.list({
+      q,
+      fields: "files(id, webViewLink)",
+      pageSize: 1,
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true,
+    });
+    const hit = found.data.files?.[0];
+    if (hit?.id) {
+      return {
+        id: hit.id,
+        link: hit.webViewLink || `https://drive.google.com/drive/folders/${hit.id}`,
+      };
+    }
+    const created = await this.drive.files.create({
+      requestBody: {
+        name,
+        mimeType: "application/vnd.google-apps.folder",
+        parents: parent ? [parent] : [],
+      },
+      fields: "id, webViewLink",
+      supportsAllDrives: true,
+    });
+    const id = created.data.id || "";
+    return {
+      id,
+      link: created.data.webViewLink || `https://drive.google.com/drive/folders/${id}`,
+    };
+  }
+
+  /**
+   * Phase 3 (LB-08, §7): Matter の案件フォルダ一式を作成する。
+   *   <root>/<YYYY>/<MTR-code>_<相手方>_<案件名> + 標準サブフォルダ8個。
+   *   root は GOOGLE_DRIVE_MATTERS_ROOT_ID(未設定なら GOOGLE_DRIVE_FOLDER_ID)。
+   *   冪等(既存フォルダは再利用)。失敗は throw(呼び出し側で best-effort 処理)。
+   */
+  static readonly MATTER_SUBFOLDERS = [
+    "01_Request",
+    "02_Draft",
+    "03_Review",
+    "04_Final",
+    "05_Signed",
+    "06_Deliverables_Inspection",
+    "07_Invoice_Payment",
+    "90_Reference",
+  ] as const;
+
+  async createMatterFolder(m: {
+    matter_code?: string | null;
+    counterparty?: string | null;
+    title?: string | null;
+  }): Promise<{ folderId: string; folderUrl: string }> {
+    const root =
+      process.env.GOOGLE_DRIVE_MATTERS_ROOT_ID || process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const year = String(new Date().getFullYear());
+    // フォルダ名: MTR-YYYY-NNNNN_相手方_案件名(Drive 禁則文字を除去し全体を短めに)。
+    const clean = (s: string) => s.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim();
+    const nameParts = [
+      clean(String(m.matter_code || "MTR")),
+      clean(String(m.counterparty || "")).slice(0, 30),
+      clean(String(m.title || "")).slice(0, 40),
+    ].filter(Boolean);
+    const folderName = nameParts.join("_");
+
+    const yearFolder = await this.ensureFolder(year, root);
+    const matterFolder = await this.ensureFolder(folderName, yearFolder.id);
+    // 標準サブフォルダ(§7)。1つ失敗しても残りは作る。
+    for (const sub of GoogleDriveService.MATTER_SUBFOLDERS) {
+      try {
+        await this.ensureFolder(sub, matterFolder.id);
+      } catch (e: any) {
+        console.warn(
+          `[createMatterFolder] subfolder ${sub} failed (non-fatal):`,
+          e?.message || e
+        );
+      }
+    }
+    return { folderId: matterFolder.id, folderUrl: matterFolder.link };
+  }
+
+  /**
+   * Phase 3 (欠損検査): ファイルの実在・状態を確認する。
+   *   ok / missing(404 or ゴミ箱) / forbidden(403) / error を返す(throw しない)。
+   */
+  async statFile(
+    fileId: string
+  ): Promise<{ status: "ok" | "missing" | "forbidden" | "error"; name?: string; size?: number; error?: string }> {
+    try {
+      const r = await this.drive.files.get({
+        fileId,
+        fields: "id, name, trashed, size",
+        supportsAllDrives: true,
+      });
+      if (r.data.trashed) return { status: "missing", name: r.data.name || undefined };
+      return {
+        status: "ok",
+        name: r.data.name || undefined,
+        size: r.data.size ? Number(r.data.size) : undefined,
+      };
+    } catch (e: any) {
+      const code = Number(e?.code || e?.response?.status);
+      if (code === 404) return { status: "missing", error: e?.message };
+      if (code === 403) return { status: "forbidden", error: e?.message };
+      return { status: "error", error: e?.message || String(e) };
     }
   }
 

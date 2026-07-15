@@ -9,6 +9,7 @@
  *   PATCH  /api/matters/:id                  … 案件更新（title/status/vendor_id/counterparty/remarks/primary_issue_key
  *                                              + LB-04: lifecycle_stage/owner_staff_id/target_due_date/blocked_reason/
  *                                                drive_folder_id/drive_folder_url/completion_reason）
+ *   POST   /api/matters/:id/drive-folder     … Drive 案件フォルダの後付け作成/修復（LB-08）
  *   POST   /api/matters/:id/tasks            … タスク作成（LB-05。is_primary=true で「次アクション」に指定）
  *   PATCH  /api/matters/:id/tasks/:taskId    … タスク更新（status/is_primary/担当/期限 等）
  *   DELETE /api/matters/:id/tasks/:taskId    … タスク削除
@@ -28,6 +29,15 @@ import express from "express";
 
 export interface MatterDeps {
   query: (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number | null }>;
+  /**
+   * LB-08 (§7): Drive 案件フォルダの作成(<root>/<YYYY>/<MTR>_相手方_案件名 + 標準サブフォルダ)。
+   * 省略時はフォルダ生成をスキップ(単体テスト・Drive 無効環境)。
+   */
+  createMatterFolder?: (m: {
+    matter_code?: string | null;
+    counterparty?: string | null;
+    title?: string | null;
+  }) => Promise<{ folderId: string; folderUrl: string }>;
 }
 
 const s = (v: any): string | null =>
@@ -64,8 +74,46 @@ async function nextMatterCode(query: MatterDeps["query"]): Promise<string> {
 }
 
 export function registerMatters(app: Express, deps: MatterDeps): void {
-  const { query } = deps;
+  const { query, createMatterFolder } = deps;
   const json = express.json({ limit: "1mb" });
+
+  // LB-08: Drive 案件フォルダを作成して matters に保存する(best-effort)。
+  //   失敗しても案件操作は成功のまま(フォルダは後から POST :id/drive-folder で作れる)。
+  async function ensureMatterDriveFolder(matter: any): Promise<{
+    drive_folder_id: string | null;
+    drive_folder_url: string | null;
+    error?: string;
+  }> {
+    if (matter?.drive_folder_id) {
+      return {
+        drive_folder_id: matter.drive_folder_id,
+        drive_folder_url: matter.drive_folder_url ?? null,
+      };
+    }
+    if (!createMatterFolder) {
+      return { drive_folder_id: null, drive_folder_url: null, error: "drive 無効(未設定)" };
+    }
+    try {
+      const f = await createMatterFolder({
+        matter_code: matter.matter_code,
+        counterparty: matter.counterparty,
+        title: matter.title,
+      });
+      await query(
+        `UPDATE matters SET drive_folder_id = $1, drive_folder_url = $2, updated_at = now()
+          WHERE id = $3`,
+        [f.folderId, f.folderUrl, matter.id]
+      );
+      console.log(`📁 [matter-folder] ${matter.matter_code || matter.id}: ${f.folderId}`);
+      return { drive_folder_id: f.folderId, drive_folder_url: f.folderUrl };
+    } catch (e: any) {
+      console.warn(
+        `[matter-folder] create failed for matter ${matter?.id} (non-fatal):`,
+        e?.message || e
+      );
+      return { drive_folder_id: null, drive_folder_url: null, error: String(e?.message || e) };
+    }
+  }
 
   // ── 一覧 ──────────────────────────────────────────────────────────────────
   app.get("/api/matters", async (req, res) => {
@@ -144,7 +192,17 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
           [matter.id, matter.primary_issue_key]
         );
       }
-      res.json({ ok: true, matter });
+      // LB-08 (§7): 案件フォルダを自動生成し folder ID / URL を保存(best-effort)。
+      const folder = await ensureMatterDriveFolder(matter);
+      res.json({
+        ok: true,
+        matter: {
+          ...matter,
+          drive_folder_id: folder.drive_folder_id,
+          drive_folder_url: folder.drive_folder_url,
+        },
+        drive_folder_error: folder.error,
+      });
     } catch (e: any) {
       console.error("[matters] create failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -277,6 +335,30 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
       res.json({ ok: true, deleted: id });
     } catch (e: any) {
       console.error("[matters] delete failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // ── Drive 案件フォルダの後付け作成/修復（LB-08） ──────────────────────────────
+  //   既存案件(0126 以前に作成・フォルダ生成失敗)向け。既にあればそれを返す(冪等)。
+  app.post("/api/matters/:id/drive-folder", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const m = await query(`SELECT * FROM matters WHERE id = $1`, [id]);
+      if (!m.rows[0]) return res.status(404).json({ ok: false, error: "案件が見つかりません" });
+      const folder = await ensureMatterDriveFolder(m.rows[0]);
+      if (!folder.drive_folder_id) {
+        return res
+          .status(502)
+          .json({ ok: false, error: folder.error || "Drive フォルダを作成できませんでした" });
+      }
+      res.json({
+        ok: true,
+        drive_folder_id: folder.drive_folder_id,
+        drive_folder_url: folder.drive_folder_url,
+      });
+    } catch (e: any) {
+      console.error("[matters] drive-folder failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

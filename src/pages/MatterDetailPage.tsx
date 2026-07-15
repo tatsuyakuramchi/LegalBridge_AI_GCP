@@ -144,6 +144,8 @@ export function MatterDetailPage() {
   }>({ title: "", assignee_staff_id: null, due_at: "", is_primary: false })
   // タスク一覧の展開(既定は未完了のみ表示し、完了分は畳む)。
   const [showDoneTasks, setShowDoneTasks] = React.useState(false)
+  // LB-08: Drive 案件フォルダの後付け作成(既存案件・作成失敗時の修復)。
+  const [creatingFolder, setCreatingFolder] = React.useState(false)
   const [showLines, setShowLines] = React.useState(false)
   // Backlog統合: 束ねた課題(重複/誤起票)を Request 側でも実際に統合する。
   const [mergeSel, setMergeSel] = React.useState<string[]>([])
@@ -263,6 +265,25 @@ export function MatterDetailPage() {
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
+    }
+  }
+
+  // LB-08 (§7): Drive 案件フォルダ(YYYY/MTR-…_相手方_案件名 + 標準サブフォルダ)を
+  //   後付けで作成する。新規案件は作成時に自動生成されるため、これは既存案件・
+  //   生成失敗時の修復用。
+  async function createDriveFolder() {
+    setCreatingFolder(true)
+    try {
+      await call(
+        `/api/matters/${matterId}/drive-folder`,
+        { method: "POST" },
+        "Drive 案件フォルダを作成しました"
+      )
+      await load()
+    } catch (e: any) {
+      push(`フォルダ作成に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setCreatingFolder(false)
     }
   }
 
@@ -626,6 +647,27 @@ export function MatterDetailPage() {
                   </button>
                 )}
                 <span>更新 {fmtDate(m.updated_at)}</span>
+                {/* LB-08 (§7): 案件フォルダ。あればリンク、なければその場で作成。 */}
+                {m.drive_folder_url ? (
+                  <a
+                    href={m.drive_folder_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sky-700 hover:underline inline-flex items-center gap-1"
+                    title="Drive の案件フォルダを開く"
+                  >
+                    <ExternalLink className="h-3 w-3" /> Driveフォルダ
+                  </a>
+                ) : (
+                  <button
+                    className="text-sky-700 hover:underline disabled:opacity-50"
+                    disabled={creatingFolder}
+                    onClick={createDriveFolder}
+                    title="Drive に案件フォルダ(YYYY/MTR-…_相手方_案件名 + 標準サブフォルダ)を作成して紐づけます"
+                  >
+                    {creatingFolder ? "フォルダ作成中…" : "＋Driveフォルダ作成"}
+                  </button>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
