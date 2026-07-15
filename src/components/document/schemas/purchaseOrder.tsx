@@ -23,7 +23,7 @@ import { UnifiedContractPicker } from "../UnifiedContractPicker"
 import { EntitySearchSelect } from "../../search/EntitySearch"
 import { FkField } from "../formkit/DocFormKit"
 import type { DocFormSchema, FkCtx } from "../SchemaDocumentForm"
-import { Briefcase, Database, Building2, User, List, Coins, Scale } from "lucide-react"
+import { Briefcase, Building2, User, List, Coins, Scale } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const stripLeadingT = (s?: string | null): string =>
@@ -220,21 +220,12 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       </div>
 
       {/* 1. 前提条件 (発注概要) */}
+      {/* LB-F08 (§5.5.6): セクション内の Backlog Sync 重複ボタンは撤去
+          (エディタヘッダーの「依頼原票から再取得」に一本化)。 */}
       <FormSection
         title="1. 前提条件 (発注概要)"
         variant="default"
         icon={<Briefcase className="w-4 h-4" />}
-        headerActions={
-          <button
-            type="button"
-            onClick={onSync}
-            className="text-[10px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
-            title="Backlog 課題から自動補完"
-          >
-            <Database className="w-2 h-2 inline mr-1" />
-            Backlog Sync
-          </button>
-        }
       >
         {renderGroup("I. 発注概要")}
       </FormSection>

@@ -28,7 +28,7 @@ import { SchemaDocumentForm } from './SchemaDocumentForm';
 import { isSchemaMigrated, buildDocFormSchema } from './documentFormSchemas';
 import { EntitySearchSelect } from '../search/EntitySearch';
 import { TemplateMetadata } from './types';
-import { Database } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,7 +42,9 @@ interface DocumentFormProps {
   metadata: TemplateMetadata;
   formData: any;
   setFormData: (data: any) => void;
-  onSync: () => void;
+  // LB-F08 (§5.5.6): Backlog Sync の入力点はエディタヘッダーの「依頼原票から再取得」
+  //   1箇所に統一したため、フォーム内の重複ボタンは撤去済み。後方互換のため optional。
+  onSync?: () => void;
   onLinkAsset?: (callback: (asset: any) => void) => void;
   // Phase 22.21.122: callback なしで Legal Asset Search Sheet を開く。
   //   inspection_certificate / royalty_statement の master+archive 横断検索を
@@ -1050,13 +1052,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {hasVendorFields && metaFillBtn('取引先', () => fillByPrefix('vendor.'), !activeVendor)}
         {hasCompanyFields && metaFillBtn('自社', () => fillByPrefix('company.'), !companyProfile)}
         {hasStaffFields && metaFillBtn('Sync Staff', () => fillByPrefix('staff.'), !selectedStaff)}
-        <button
-          type="button"
-          onClick={onSync}
-          className="text-[10px] font-mono bg-blue-600 text-white px-2 py-0.5 uppercase flex items-center gap-1 ml-auto"
-        >
-          <Database className="w-2 h-2" /> Backlog Sync
-        </button>
+        {/* LB-F07 (§5.5.5): 取引先の主入力点は上部バー1箇所。ここでは反映状態だけを示す。
+            LB-F08 (§5.5.6): フォーム内の Backlog Sync 重複ボタンは撤去
+            (ヘッダーの「依頼原票から再取得」に一本化)。 */}
+        {activeVendor?.vendor_name && (
+          <span className="text-[10px] font-mono text-muted-foreground ml-auto">
+            取引先反映済み: {activeVendor.vendor_name}（変更は上部バーの「変更」から）
+          </span>
+        )}
       </div>
       {/* Phase 26: 出版利用許諾条件書は原作マスタ (ledgers) と紐付け。
           選択すると formData.ledger_ref_id / ledger_code を保持し、原著作物名を

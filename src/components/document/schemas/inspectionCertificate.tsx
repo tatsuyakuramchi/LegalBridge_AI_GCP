@@ -31,7 +31,7 @@ import {
 import { EntitySearchSelect } from "../../search/EntitySearch"
 import { FkField } from "../formkit/DocFormKit"
 import type { DocFormSchema, FkCtx } from "../SchemaDocumentForm"
-import { Database, Building2, User, Scale, Link, Briefcase, Coins } from "lucide-react"
+import { Building2, User, Scale, Link, Briefcase, Coins } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
@@ -610,21 +610,12 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           ここでは手動編集が必要な documentDate / isPartial のみを最前面に
           出し、残りの I. 基本情報 フィールドは折りたたみで参照可能にする。
       */}
+      {/* LB-F08 (§5.5.6): セクション内の Backlog Sync 重複ボタンは撤去
+          (エディタヘッダーの「依頼原票から再取得」に一本化)。 */}
       <FormSection
         title="ステップ 4 — 検収情報"
         variant="default"
         icon={<Briefcase className="w-4 h-4" />}
-        headerActions={
-          <button
-            type="button"
-            onClick={onSync}
-            className="text-[10px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
-            title="Backlog 課題から自動補完"
-          >
-            <Database className="w-2 h-2 inline mr-1" />
-            Backlog Sync
-          </button>
-        }
       >
         {/* Phase 23.5: orderDate (発注日) を主表示エリアに昇格。
             親 PO 選択で contract_capabilities.issue_date_po から自動補完
