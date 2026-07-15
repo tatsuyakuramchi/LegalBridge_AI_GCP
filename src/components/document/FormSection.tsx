@@ -14,8 +14,10 @@ interface FormSectionProps {
 }
 
 // 新デザイン: 色付き上ボーダーのカード(SchemaDocumentForm の FkSection と統一)。
-//   ※ ボディは従来と同じ 3 カラムグリッドを維持し、既存の col-span-full(明細表・
-//     注記など)がそのまま全幅で効くようにする(レイアウト非破壊)。
+//   LB-F11 (§5.5.8): ボディのグリッドを FkGrid と同じ「通常2カラム」へ統一
+//   (旧: md2/lg3 の3カラム)。既存の col-span-full(明細表・住所・長文・注記など)は
+//   そのまま全幅で効く。金額・率・日付のコンパクトグリッドは各フォームの
+//   ローカルグリッドで表現する。
 const TOP: Record<NonNullable<FormSectionProps['variant']>, string> = {
   blue: 'border-t-sky-500',
   amber: 'border-t-amber-500',
@@ -47,8 +49,12 @@ export const FormSection: React.FC<FormSectionProps> = ({
   return (
     <section
       id={id}
+      // LB-F12: 左セクションナビ(DocumentEditorPage)がこの属性を走査して
+      //   見出し一覧・未入力件数・アンカー移動を構築する。
+      data-form-section=""
+      data-section-title={title}
       className={cn(
-        'rounded-xl border border-border border-t-[3px] bg-card overflow-hidden',
+        'rounded-xl border border-border border-t-[3px] bg-card overflow-hidden scroll-mt-4',
         TOP[variant],
         className
       )}
@@ -62,7 +68,7 @@ export const FormSection: React.FC<FormSectionProps> = ({
         </div>
         {headerActions && <div className="flex items-center gap-1.5 shrink-0">{headerActions}</div>}
       </header>
-      <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
         {children}
       </div>
     </section>

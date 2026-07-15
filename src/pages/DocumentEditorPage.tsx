@@ -1752,12 +1752,13 @@ export function DocumentEditorPage() {
   }, [selectedTemplate])
 
   // LB-F10 (§5.5.11) の一部: 固定文言(Draft valid / Live syncing)をやめ、
-  //   実際の必須項目充足数をフッターに表示する。判定は handleGenerate の
-  //   プレ検証と同一ロジック(required=true + service_master の個人事業主例外)。
-  const missingRequiredCount = React.useMemo(() => {
+  //   実際の必須項目充足をフッター・右パネル・セクションナビに表示する。
+  //   判定は handleGenerate のプレ検証と同一ロジック
+  //   (required=true + service_master の個人事業主例外)。
+  const missingRequiredIds = React.useMemo(() => {
     const meta = templateMetadata[selectedTemplate]
-    if (!meta?.vars) return 0
-    let n = 0
+    if (!meta?.vars) return [] as string[]
+    const ids: string[] = []
     for (const [id, mv] of Object.entries<any>(meta.vars)) {
       if (mv?.required !== true) continue
       if (
@@ -1767,10 +1768,69 @@ export function DocumentEditorPage() {
       )
         continue
       const v = (formData as any)?.[id]
-      if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) n++
+      if (v === undefined || v === null || (typeof v === "string" && v.trim() === ""))
+        ids.push(id)
     }
-    return n
+    return ids
   }, [selectedTemplate, formData, templateMetadata])
+  const missingRequiredCount = missingRequiredIds.length
+
+  // LB-F12 (§5.5.7): 左セクションナビ。FormSection / FkSection / 折りたたみが
+  //   付与する data-form-section / data-section-title を DOM 走査して見出し一覧を
+  //   構築し、data-field-id との突合でセクション別の必須未入力件数を出す。
+  //   テンプレ実装(専用/AUTO)に依存しない汎用方式。
+  const formBodyRef = React.useRef<HTMLDivElement | null>(null)
+  const [sectionNav, setSectionNav] = React.useState<
+    { title: string; missing: number }[]
+  >([])
+  React.useEffect(() => {
+    if (typeof window === "undefined") return
+    const idSet = new Set(missingRequiredIds)
+    const raf = window.requestAnimationFrame(() => {
+      const root = formBodyRef.current
+      if (!root || !selectedTemplate) {
+        setSectionNav((prev) => (prev.length ? [] : prev))
+        return
+      }
+      const secs = Array.from(
+        root.querySelectorAll<HTMLElement>("[data-form-section]")
+      ) as HTMLElement[]
+      const items = secs.map((el: HTMLElement, i: number) => {
+        const title =
+          el.getAttribute("data-section-title") || `セクション ${i + 1}`
+        let missing = 0
+        el.querySelectorAll<HTMLElement>("[data-field-id]").forEach((f) => {
+          const fid = f.getAttribute("data-field-id")
+          if (fid && idSet.has(fid)) missing++
+        })
+        return { title, missing }
+      })
+      setSectionNav((prev) =>
+        prev.length === items.length &&
+        prev.every((p, i) => p.title === items[i].title && p.missing === items[i].missing)
+          ? prev
+          : items
+      )
+    })
+    return () => window.cancelAnimationFrame(raf)
+  }, [selectedTemplate, formData, missingRequiredIds, isRefreshingFields])
+
+  // ナビ項目 i ↔ DOM 上 i 番目のセクション(走査と同一セレクタ・同一順序)。
+  const scrollToSection = (idx: number) => {
+    const el = formBodyRef.current?.querySelectorAll<HTMLElement>(
+      "[data-form-section]"
+    )[idx]
+    if (!el) return
+    if (el.tagName === "DETAILS") el.setAttribute("open", "")
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    el.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    })
+  }
 
   // ---- Filters --------------------------------------------------------
   const filteredTemplates = templateList.filter((t) => {
@@ -2329,11 +2389,51 @@ export function DocumentEditorPage() {
               </div>
             </div>
 
-            {/* Body — Phase 23.2: Split preview 廃止により常に縦並び */}
+            {/* Body — Phase 23.2: Split preview 廃止により常に縦並び。
+                LB-F12 (§5.5.7): xl 以上では左にセクションナビ(完了/未入力状態 +
+                アンカー移動)を置く3ペインの中核。ナビはスクロールに追従(sticky)。 */}
             <div className="flex flex-col overflow-hidden">
               <div
-                className={`flex-1 overflow-y-auto custom-scrollbar p-6`}
+                ref={formBodyRef}
+                className="flex-1 overflow-y-auto custom-scrollbar p-6"
               >
+                <div className="flex items-start gap-5">
+                  {sectionNav.length >= 2 && (
+                    <nav
+                      className="hidden xl:block w-44 shrink-0 sticky top-0 space-y-0.5"
+                      aria-label="フォームセクション"
+                    >
+                      <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1.5">
+                        ▍ セクション
+                      </p>
+                      {sectionNav.map((s, i) => (
+                        <button
+                          key={`${i}-${s.title}`}
+                          type="button"
+                          onClick={() => scrollToSection(i)}
+                          className="w-full text-left text-[11px] font-mono px-2 py-1 rounded-sm hover:bg-muted flex items-center gap-1.5"
+                          title={
+                            s.missing > 0
+                              ? `必須 ${s.missing} 件未入力 — クリックで移動`
+                              : "必須項目は入力済み — クリックで移動"
+                          }
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                              s.missing > 0 ? "bg-amber-500" : "bg-emerald-500"
+                            }`}
+                          />
+                          <span className="truncate flex-1">{s.title}</span>
+                          {s.missing > 0 && (
+                            <span className="text-amber-700 font-bold shrink-0">
+                              {s.missing}
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </nav>
+                  )}
+                  <div className="flex-1 min-w-0">
                 {isRefreshingFields ? (
                   <div className="space-y-3">
                     {[1, 2, 3, 4, 5].map((i) => (
@@ -2558,6 +2658,8 @@ export function DocumentEditorPage() {
                     </div>
                   </div>
                 )}
+                  </div>
+                </div>
               </div>
 
               {/* Phase 23.2: Split preview ペインは廃止 (別タブで開く方式に統一)。 */}
@@ -2801,25 +2903,63 @@ export function DocumentEditorPage() {
             縦並びで表示。Editor 本体とは独立した補助 panel。
             狭幅では Editor の下に回り込む (lg 未満で col-span-12)。 */}
         <aside className="col-span-12 lg:col-span-3 space-y-4">
-          {/* LB-F13 (§5.5.7 右ペインの第一歩): 案件サマリー。
-              Matter・相手方・入力状況を常時参照でき、案件へ1クリックで戻れる。 */}
-          {matterContext && (
-            <Card className="border-sky-600/40">
+          {/* LB-F13 (§5.5.7): 案件サマリー。Matter・相手方・関連契約・関連文書・
+              入力状況を常時参照でき、案件へ1クリックで戻れる。 */}
+          {(matterContext || selectedTemplate) && (
+            <Card className={matterContext ? "border-sky-600/40" : undefined}>
               <CardContent className="px-4 py-3 space-y-2">
                 <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
                   ▍ 案件サマリー
                 </p>
                 <div className="space-y-1 text-[12px] font-mono">
-                  <p className="font-bold text-sky-800 flex items-center gap-1.5">
-                    <FolderKanban className="h-3.5 w-3.5 shrink-0" />
-                    {matterContext.matter_code || `#${matterContext.id}`}
-                  </p>
-                  {matterContext.title && (
-                    <p className="text-[12px] leading-snug">{matterContext.title}</p>
-                  )}
-                  {matterContext.counterparty && (
+                  {matterContext ? (
+                    <>
+                      <p className="font-bold text-sky-800 flex items-center gap-1.5">
+                        <FolderKanban className="h-3.5 w-3.5 shrink-0" />
+                        {matterContext.matter_code || `#${matterContext.id}`}
+                      </p>
+                      {matterContext.title && (
+                        <p className="text-[12px] leading-snug">{matterContext.title}</p>
+                      )}
+                      {matterContext.counterparty && (
+                        <p className="text-[11px] text-muted-foreground">
+                          相手方: {matterContext.counterparty}
+                        </p>
+                      )}
+                    </>
+                  ) : (
                     <p className="text-[11px] text-muted-foreground">
-                      相手方: {matterContext.counterparty}
+                      案件(Matter)未紐付け — 案件詳細の「文書作成」から開くと自動で紐づきます
+                    </p>
+                  )}
+                  {/* 関連契約(親発注書/親契約) — フォームで選択済みのとき */}
+                  {(formData?.linked_contract_number || formData?.parent_po_id) && (
+                    <p className="text-[11px] text-muted-foreground">
+                      関連契約:{" "}
+                      <span className="text-foreground">
+                        {formData?.linked_contract_number ||
+                          `capability #${formData.parent_po_id}`}
+                      </span>
+                    </p>
+                  )}
+                  {/* 関連文書(同課題×同種別の前回発行文書) */}
+                  {previousDocument?.document_number && (
+                    <p className="text-[11px] text-muted-foreground">
+                      前回文書:{" "}
+                      {previousDocument.drive_link ? (
+                        <a
+                          href={previousDocument.drive_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sky-700 hover:underline"
+                        >
+                          {previousDocument.document_number}
+                        </a>
+                      ) : (
+                        <span className="text-foreground">
+                          {previousDocument.document_number}
+                        </span>
+                      )}
                     </p>
                   )}
                   <p className="text-[11px]">
@@ -2834,15 +2974,17 @@ export function DocumentEditorPage() {
                     )}
                   </p>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={() => navigate(`/matters/${matterContext.id}`)}
-                >
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                  案件を開く
-                </Button>
+                {matterContext && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => navigate(`/matters/${matterContext.id}`)}
+                  >
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                    案件を開く
+                  </Button>
+                )}
               </CardContent>
             </Card>
           )}
