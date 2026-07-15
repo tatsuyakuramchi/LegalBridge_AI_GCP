@@ -105,6 +105,10 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   //   admin-ui DocumentEditorPage の「DBSYNC」ボタンと
   //   閲覧/編集モードトグル時に直叩きする。
   /^\/api\/document-drafts(?:\/|$|\?)/,
+  // Phase 3 (LB-F10/§7): 連携疎通ステータスと実ファイル台帳サマリは worker のみ実装。
+  //   エディタフッターの接続表示 / Drive 健全性の俯瞰で GET する。
+  /^\/api\/integrations\/status(?:\?|$)/,
+  /^\/api\/drive\/file-health(?:\?|$)/,
   // Phase 23.6.12: /api/management/* は worker のみに実装。
   //   GET /api/management/issues/:issueKey/line-items (WorkflowPanel)
   //   PATCH /api/management/order-line-items/:id/deadline

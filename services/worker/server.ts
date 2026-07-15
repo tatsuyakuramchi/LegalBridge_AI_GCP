@@ -91,6 +91,7 @@ import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
 import { registerUnifiedIssues } from "./src/routes/unifiedIssues.ts";
 import { registerMatters } from "./src/routes/matters.ts";
+import { registerDocumentFile } from "./src/lib/documentFiles.ts";
 import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
 // C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
 import { registerSharedReads } from "./src/routes/sharedReads.ts";
@@ -2516,6 +2517,18 @@ ${details}
       await query(
         "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
         [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
+      );
+      // LB-09 (§7): Webhook 自動生成分も document_files(実ファイル台帳)へ登録。
+      await registerDocumentFile(
+        { query, extractFileId: (l) => googleDriveService.extractFileId(l) },
+        {
+          documentNumber: docNumber,
+          driveLink,
+          fileRole: "primary_pdf",
+          fileName: docNumber,
+          mimeType: "application/pdf",
+          createdBy: user || "backlog-webhook",
+        }
       );
     } else {
       console.log(
@@ -5470,34 +5483,27 @@ ${details}
         );
         await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [matterId]);
 
-        // LB-09 (§7): 添付も document_files(実ファイル台帳)へ登録(0127 未適用はスキップ)。
-        try {
-          const fileId = googleDriveService.extractFileId(driveLink);
-          if (fileId && ins.rows[0]?.id) {
-            await query(
-              `INSERT INTO document_files
-                 (document_id, matter_id, drive_file_id, drive_folder_id, file_role,
-                  file_name, mime_type, size_bytes, revision, is_current, drive_link, created_by)
-               VALUES ($1,$2,$3,$4,'attachment',$5,$6,$7,0,TRUE,$8,$9)
-               ON CONFLICT (document_id, file_role, drive_file_id) DO NOTHING`,
-              [
-                Number(ins.rows[0].id),
-                matterId,
-                fileId,
-                attachFolderId || null,
-                fileName,
-                req.file.mimetype || null,
-                req.file.size || null,
-                driveLink,
-                createdBy,
-              ]
-            );
-          }
-        } catch (dfErr: any) {
-          if (dfErr?.code !== "42P01") {
+        // LB-09 (§7): 添付も document_files(実ファイル台帳)へ登録(共通ヘルパ)。
+        if (ins.rows[0]?.id) {
+          const df = await registerDocumentFile(
+            { query, extractFileId: (l) => googleDriveService.extractFileId(l) },
+            {
+              documentId: Number(ins.rows[0].id),
+              driveLink,
+              fileRole: "attachment",
+              fileName,
+              mimeType: req.file.mimetype || null,
+              sizeBytes: req.file.size || null,
+              driveFolderId: attachFolderId || null,
+              createdBy,
+              // 添付は複数共存が普通なので既存を demote しない。
+              demoteOthers: false,
+            }
+          );
+          if (df.error) {
             console.warn(
               "[matters] attachment document_files register failed (non-fatal):",
-              dfErr?.message || dfErr
+              df.error
             );
           }
         }
@@ -9921,6 +9927,18 @@ ${details}
       await query(
         `UPDATE documents SET drive_link = $1 WHERE document_number = $2`,
         [driveLink, documentNumber]
+      );
+      // LB-09 (§7): バルクインポート/PDF未作成キュー発行分も実ファイル台帳へ登録。
+      await registerDocumentFile(
+        { query, extractFileId: (l) => googleDriveService.extractFileId(l) },
+        {
+          documentNumber,
+          driveLink,
+          fileRole: "primary_pdf",
+          fileName: documentNumber,
+          mimeType: "application/pdf",
+          createdBy: "bulk-import",
+        }
       );
       return { generated: true, drive_link: driveLink };
     } catch (err: any) {
@@ -14647,6 +14665,22 @@ ${details}
               AND excel_issued_at IS NULL`,
           [issuedNumbers, link]
         );
+        // LB-09 (§7): 会計 Excel も document_files へ登録(役割 excel)。
+        //   バッチ出力は複数文書で1ファイルを共有するため、各文書に同 fileId を紐付ける。
+        for (const num of issuedNumbers) {
+          await registerDocumentFile(
+            { query, extractFileId: (l) => googleDriveService.extractFileId(l) },
+            {
+              documentNumber: num,
+              driveLink: link,
+              fileRole: "excel",
+              fileName: xlsxName,
+              mimeType:
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              createdBy: "excel-batch",
+            }
+          );
+        }
 
         console.log(
           `[excel-batches/export] ${label} ${safeName} ${paymentDate}: ` +
@@ -15687,55 +15721,26 @@ ${details}
 
       // LB-09 (§7): 発行ファイルを document_files(実ファイル台帳)へ登録する。
       //   documents.drive_link(URL 文字列)は互換のため残しつつ、file ID・役割・版・
-      //   現在フラグを構造化して追跡する。内部修正(overwrite)は同 fileId の再登録
-      //   (ON CONFLICT UPDATE)、再発行は新 fileId が current になり旧ファイルは
-      //   is_current=FALSE へ倒す。0127 未適用環境ではスキップ(非致命)。
+      //   現在フラグを構造化して追跡する。内部修正(overwrite)は同 fileId の再登録、
+      //   再発行は新 fileId が current になり旧ファイルは is_current=FALSE へ倒す。
+      //   共通ヘルパ registerDocumentFile(全アップロード経路で共用)に集約。
       if (documentId && driveLink) {
-        try {
-          const fileId = googleDriveService.extractFileId(driveLink);
-          if (fileId) {
-            await query(
-              `UPDATE document_files
-                  SET is_current = FALSE
-                WHERE document_id = $1 AND file_role = 'primary_pdf'
-                  AND is_current AND drive_file_id <> $2`,
-              [documentId, fileId]
-            );
-            await query(
-              `INSERT INTO document_files
-                 (document_id, matter_id, drive_file_id, drive_folder_id, file_role,
-                  file_name, mime_type, revision, is_current, drive_link, created_by)
-               VALUES ($1, (SELECT matter_id FROM documents WHERE id = $1), $2, $3,
-                       'primary_pdf', $4, 'application/pdf', $5, TRUE, $6, $7)
-               ON CONFLICT (document_id, file_role, drive_file_id) DO UPDATE SET
-                 is_current      = TRUE,
-                 revision        = EXCLUDED.revision,
-                 drive_link      = EXCLUDED.drive_link,
-                 file_name       = EXCLUDED.file_name,
-                 matter_id       = EXCLUDED.matter_id,
-                 drive_folder_id = COALESCE(EXCLUDED.drive_folder_id, document_files.drive_folder_id)`,
-              [
-                documentId,
-                fileId,
-                uploadFolderId || null,
-                docNumber,
-                revision,
-                driveLink,
-                requesterEmail || "legal_user",
-              ]
-            );
+        const df = await registerDocumentFile(
+          { query, extractFileId: (l) => googleDriveService.extractFileId(l) },
+          {
+            documentId,
+            driveLink,
+            fileRole: "primary_pdf",
+            fileName: docNumber,
+            mimeType: "application/pdf",
+            revision,
+            driveFolderId: uploadFolderId || null,
+            createdBy: requesterEmail || "legal_user",
           }
-        } catch (dfErr: any) {
-          if (dfErr?.code !== "42P01") {
-            console.warn(
-              `[document-files] register failed for ${docNumber}:`,
-              dfErr?.message || dfErr
-            );
-            syncWarnings.push({
-              step: "document_files",
-              error: String(dfErr?.message || dfErr),
-            });
-          }
+        );
+        if (df.error) {
+          console.warn(`[document-files] register failed for ${docNumber}:`, df.error);
+          syncWarnings.push({ step: "document_files", error: df.error });
         }
       }
 
@@ -17436,6 +17441,84 @@ ${details}
     } catch (error) {
       console.error("Error in /api/documents/generate:", error);
       res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // LB-F10 (§5.5.11): 外部連携(Backlog / Drive)の疎通状態。エディタのフッターが
+  //   「実状態と連動した接続表示」に使う。負荷を避けるため 60 秒キャッシュ。
+  //   backlog: プロジェクトのステータス一覧取得(軽量・認証込みの実疎通)。
+  //   drive:   既定フォルダの files.get(実在+権限の実疎通)。未設定なら null(不明)。
+  let integrationsStatusCache: { at: number; body: any } | null = null;
+  app.get("/api/integrations/status", async (_req, res) => {
+    try {
+      if (integrationsStatusCache && Date.now() - integrationsStatusCache.at < 60_000) {
+        return res.json(integrationsStatusCache.body);
+      }
+      const [backlog, drive] = await Promise.all([
+        (async () => {
+          try {
+            await backlogService.getStatuses();
+            return { ok: true as boolean | null };
+          } catch (e: any) {
+            return { ok: false as boolean | null, error: String(e?.message || e).slice(0, 200) };
+          }
+        })(),
+        (async () => {
+          const folderId =
+            process.env.GOOGLE_DRIVE_FOLDER_ID ||
+            process.env.GOOGLE_DRIVE_MATTERS_ROOT_ID;
+          if (!folderId)
+            return { ok: null as boolean | null, error: "GOOGLE_DRIVE_FOLDER_ID 未設定" };
+          const st = await googleDriveService.statFile(folderId);
+          return st.status === "ok"
+            ? { ok: true as boolean | null }
+            : { ok: false as boolean | null, error: st.error || st.status };
+        })(),
+      ]);
+      const body = {
+        ok: true,
+        backlog,
+        drive,
+        checkedAt: new Date().toISOString(),
+      };
+      integrationsStatusCache = { at: Date.now(), body };
+      res.json(body);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // Phase 3 (§7): 実ファイル台帳の健全性サマリ。verify-files の検査結果を俯瞰する。
+  app.get("/api/drive/file-health", async (_req, res) => {
+    try {
+      const counts = await query(
+        `SELECT COALESCE(verify_status, 'unverified') AS status, count(*)::int AS n
+           FROM document_files WHERE is_current GROUP BY 1 ORDER BY 1`
+      );
+      const problems = await query(
+        `SELECT f.id, f.document_id, f.drive_file_id, f.file_role, f.verify_status,
+                f.verified_at, d.document_number
+           FROM document_files f LEFT JOIN documents d ON d.id = f.document_id
+          WHERE f.is_current AND f.verify_status IN ('missing','forbidden','error')
+          ORDER BY f.verified_at DESC NULLS LAST
+          LIMIT 20`
+      );
+      const last = await query(
+        `SELECT MAX(verified_at) AS last_verified_at FROM document_files`
+      );
+      res.json({
+        ok: true,
+        counts: counts.rows,
+        problems: problems.rows,
+        last_verified_at: last.rows[0]?.last_verified_at ?? null,
+      });
+    } catch (e: any) {
+      if (e?.code === "42P01") {
+        return res
+          .status(400)
+          .json({ ok: false, error: "document_files 未作成(migration 0127 未適用)" });
+      }
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
 
