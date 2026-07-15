@@ -166,11 +166,39 @@ async function resolveTermsCapability(db: Db, cap: any): Promise<number> {
   if (existing.rows.length) return existing.rows[0].id;
 
   const ins = await db.query(
-    `INSERT INTO contract_capabilities
-       (record_type, contract_category, contract_type, contract_title,
-        vendor_id, effective_date, expiration_date,
-        structural_role, parent_capability_id, template_family, backlog_issue_key)
-     VALUES ('standalone_contract', $1, $2, $3, $4, $5, $6, 'terms', $7, $8, $9)
+    `INSERT INTO documents (
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             vendor_id,
+             effective_date,
+             expiration_date,
+             structural_role,
+             parent_capability_id,
+             template_family,
+             backlog_issue_key,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             'standalone_contract',
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             'terms',
+             $7,
+             $8,
+             $9,
+             COALESCE($2, ''),
+             NULL,
+             NULL,
+             NULL
+           )
      RETURNING id`,
     [
       cap.contract_category,

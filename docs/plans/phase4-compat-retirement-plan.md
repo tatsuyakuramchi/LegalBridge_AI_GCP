@@ -42,16 +42,20 @@ INSERT/UPDATE/DELETE すべて INSTEAD OF トリガ(`cfc_*` / `cli_*` / `exp_*` 
 |---|---|---|
 | Phase 0 基準(2026-07-14) | **102** | cc: UPDATE 22 / DELETE 5 / INSERT 17、capability_*: 58 |
 | Phase 4 第1弾(2026-07-15) | **75** | cc UPDATE/DELETE **27箇所を documents 直書き化**(純リネーム)。<br>付随して「cc↔documents の版同期 UPDATE」(1:1ビュー化後は自己代入の無駄撃ち)2箇所を撤去 |
+| Phase 4 第2弾(2026-07-15) | **57** | cc INSERT **18箇所を documents 直書き化**。cc_compat_ins の意味論を各サイトへ移植:<br>① template_type=COALESCE(contract_type,'') / drive_link=COALESCE(document_url,'') を明示付与<br>② revision / is_primary / lifecycle_status を NULL 明示(documents の列デフォルト 0/TRUE/'final' がトリガ経路の NULL 挿入と食い違うため)<br>③ document_number 提供時は ON CONFLICT (document_number) DO UPDATE SET 提供列=COALESCE(EXCLUDED.列, documents.列), updated_at=now()<br>→ **contract_capabilities への書込みはゼロ達成**(tg_cc_ins は撤去可能状態。G2 は capability_* 完了後に一括で) |
 
-### 残り 75 箇所の内訳（次スライスの対象）
+### 残り 57 箇所の内訳（次スライスの対象）
 
 | 操作 | 件数 | 変換難度 |
 |---|---|---|
-| INSERT INTO contract_capabilities | 18 | 中: COALESCE アップサート移植（§1.1③） |
-| capability_line_items (INS 4 / UPD 8 / DEL 6) | 18 | 中〜高: cli_* トリガ移植 |
-| capability_financial_conditions (INS 6 / UPD 6 / DEL 7) | 19 | 中〜高: cfc_* トリガ移植 |
-| capability_expenses (INS 4 / DEL 6) | 10 | 中: exp_* トリガ移植 |
-| capability_other_fees (INS 4 / DEL 6) | 10 | 中: fee_* トリガ移植 |
+| capability_line_items (INS 4 / UPD 8 / DEL 6) | 18 | 中〜高: cli_* トリガ移植(line_no+1000 / scheme / direction / cl_next_code) |
+| capability_financial_conditions (INS 6 / UPD 6 / DEL 7) | 19 | 中〜高: cfc_* トリガ移植(scheme別の rate/mg/ag/amount CASE) |
+| capability_expenses (INS 4 / DEL 6) | 10 | 中: exp_* トリガ移植(line_no+3000 / legacy_role='expense') |
+| capability_other_fees (INS 4 / DEL 6) | 10 | 中: fee_* トリガ移植(line_no+2000 / legacy_role='other_fee') |
+
+DELETE 系(計 19)は `cl_view_del`(単純に condition_lines を id で DELETE)のため
+`DELETE FROM condition_lines WHERE id = …` への置換で足りるが、WHERE 句が
+view 列(capability_id 等)を参照する場合は legacy_role 条件の付与が必要。
 
 読取り(FROM/JOIN)は **309 箇所**(Phase 7 対象。書込みゼロ達成後に着手)。
 

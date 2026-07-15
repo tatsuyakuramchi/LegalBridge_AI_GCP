@@ -165,10 +165,48 @@ async function unlinkWorkComponent(query: Query, workId: number, lineId: number)
 async function ensureMasterLicenseCapability(query: Query, sw: any): Promise<number> {
   const docNo = `MLC-${sw.work_code}`;
   await query(
-    `INSERT INTO contract_capabilities
-       (record_type, contract_category, contract_type, contract_title, document_number,
-        vendor_id, original_work, work_name, contract_status, source_system)
-     VALUES ('license_condition', 'license', 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register')`,
+    `INSERT INTO documents (
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             vendor_id,
+             original_work,
+             work_name,
+             contract_status,
+             source_system,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             'license_condition',
+             'license',
+             'registered_master',
+             $1,
+             $2,
+             $3,
+             $4,
+             $4,
+             'executed',
+             'master_register',
+             COALESCE('registered_master', ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             original_work = COALESCE(EXCLUDED.original_work, documents.original_work),
+             work_name = COALESCE(EXCLUDED.work_name, documents.work_name),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
     [`原作利用許諾条件(マスター登録): ${sw.title}`, docNo, sw.rights_holder_vendor_id ?? null, sw.title ?? null]
   );
   const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [docNo]);
@@ -2019,11 +2057,57 @@ export function registerWorkModelRoutes(
         const titlePrefix = isPub ? "出版等利用許諾条件(マテリアル登録)" : "個別利用許諾条件(マテリアル登録)";
         const newNo = await getNewDocumentNumber(numberingType);
         await query(
-          `INSERT INTO contract_capabilities
-             (record_type, contract_category, contract_type, contract_title, document_number,
-              vendor_id, original_work, work_name, contract_status, source_system, document_url,
-              is_active, lifecycle_status)
-           VALUES ($6, $7, NULL, $1, $2, $3, $4, $4, 'executed', NULL, $5, TRUE, 'final')`,
+          `INSERT INTO documents (
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             vendor_id,
+             original_work,
+             work_name,
+             contract_status,
+             source_system,
+             document_url,
+             is_active,
+             lifecycle_status,
+             template_type,
+             drive_link,
+             revision,
+             is_primary
+           ) VALUES (
+             $6,
+             $7,
+             NULL,
+             $1,
+             $2,
+             $3,
+             $4,
+             $4,
+             'executed',
+             NULL,
+             $5,
+             TRUE,
+             'final',
+             COALESCE(NULL, ''),
+             COALESCE($5, ''),
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             original_work = COALESCE(EXCLUDED.original_work, documents.original_work),
+             work_name = COALESCE(EXCLUDED.work_name, documents.work_name),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             is_active = COALESCE(EXCLUDED.is_active, documents.is_active),
+             lifecycle_status = COALESCE(EXCLUDED.lifecycle_status, documents.lifecycle_status),
+             updated_at = now()`,
           [
             `${titlePrefix}: ${sw.rows[0].title ?? ""}`,
             newNo,

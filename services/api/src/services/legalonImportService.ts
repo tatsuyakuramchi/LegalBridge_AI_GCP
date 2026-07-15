@@ -588,12 +588,57 @@ export async function importLegalOnRows(
 
       // 本番 upsert
       await query(
-        `INSERT INTO contract_capabilities (
-           vendor_id, additional_parties, record_type, contract_category, contract_type,
-           contract_title, document_number, contract_status,
-           effective_date, expiration_date, auto_renewal,
-           legalon_url, source_system
-         ) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+        `INSERT INTO documents (
+             vendor_id,
+             additional_parties,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             legalon_url,
+             source_system,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2::jsonb,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             $13,
+             COALESCE($5, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             additional_parties = COALESCE(EXCLUDED.additional_parties, documents.additional_parties),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             legalon_url = COALESCE(EXCLUDED.legalon_url, documents.legalon_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
         [
           primary.vendor_id,
           JSON.stringify(additional),

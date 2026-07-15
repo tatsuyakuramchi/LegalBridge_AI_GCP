@@ -6641,13 +6641,45 @@ ${details}
         const docNo = `MLC-${workCode}`;
         // MLC マスター器を ensure(ensureMasterLicenseCapability 相当のインライン upsert)。
         await query(
-          `INSERT INTO contract_capabilities (
-             record_type, contract_category, contract_type, contract_title,
-             document_number, original_work, work_name, contract_status, source_system
+          `INSERT INTO documents (
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             original_work,
+             work_name,
+             contract_status,
+             source_system,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
            ) VALUES (
-             'license_condition', 'license', 'registered_master', $1,
-             $2, $3, $3, 'executed', 'master_register'
-           )`,
+             'license_condition',
+             'license',
+             'registered_master',
+             $1,
+             $2,
+             $3,
+             $3,
+             'executed',
+             'master_register',
+             COALESCE('registered_master', ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             original_work = COALESCE(EXCLUDED.original_work, documents.original_work),
+             work_name = COALESCE(EXCLUDED.work_name, documents.work_name),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
           [
             `原作利用許諾条件(マスター登録): ${w.title || workCode}`,
             docNo,
@@ -8771,11 +8803,74 @@ ${details}
           }
 
           await query(
-            `INSERT INTO contract_capabilities (
-              vendor_id, record_type, contract_category, contract_type, contract_title,
-              document_number, contract_status, effective_date, expiration_date, auto_renewal,
-              original_work, product_name, work_name, media, territory, language, document_url, source_system
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+            `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             original_work,
+             product_name,
+             work_name,
+             media,
+             territory,
+             language,
+             document_url,
+             source_system,
+             template_type,
+             drive_link,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             $13,
+             $14,
+             $15,
+             $16,
+             $17,
+             $18,
+             COALESCE($4, ''),
+             COALESCE($17, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             original_work = COALESCE(EXCLUDED.original_work, documents.original_work),
+             product_name = COALESCE(EXCLUDED.product_name, documents.product_name),
+             work_name = COALESCE(EXCLUDED.work_name, documents.work_name),
+             media = COALESCE(EXCLUDED.media, documents.media),
+             territory = COALESCE(EXCLUDED.territory, documents.territory),
+             language = COALESCE(EXCLUDED.language, documents.language),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
             [
               vendorId,
               recordType,
@@ -8944,11 +9039,59 @@ ${details}
             }
 
             const ins = await query(
-              `INSERT INTO contract_capabilities
-                 (vendor_id, record_type, contract_category, contract_type, contract_title,
-                  document_number, base_document_number, backlog_issue_key, contract_status,
-                  effective_date, expiration_date, document_url, source_system)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')
+              `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             base_document_number,
+             backlog_issue_key,
+             contract_status,
+             effective_date,
+             expiration_date,
+             document_url,
+             source_system,
+             template_type,
+             drive_link,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             'executed',
+             $9,
+             $10,
+             $11,
+             'f1b-backfill',
+             COALESCE($4, ''),
+             COALESCE($11, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             base_document_number = COALESCE(EXCLUDED.base_document_number, documents.base_document_number),
+             backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, documents.backlog_issue_key),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()
                RETURNING id`,
               [
                 vendorId,
@@ -9540,11 +9683,56 @@ ${details}
 
       // 2. contract_capabilities (master_contract / service)
       await query(
-        `INSERT INTO contract_capabilities (
-           vendor_id, record_type, contract_category, contract_type, contract_title,
-           document_number, contract_status, effective_date, expiration_date,
-           auto_renewal, document_url, source_system
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             document_url,
+             source_system,
+             template_type,
+             drive_link,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             COALESCE($4, ''),
+             COALESCE($11, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
         [
           vendorId,
           "master_contract",
@@ -10037,11 +10225,56 @@ ${details}
             }
 
             await query(
-              `INSERT INTO contract_capabilities (
-                 vendor_id, record_type, contract_category, contract_type, contract_title,
-                 document_number, contract_status, effective_date, expiration_date,
-                 auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+              `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             document_url,
+             source_system,
+             template_type,
+             drive_link,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             COALESCE($4, ''),
+             COALESCE($11, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
               [
                 vendorId,
                 "master_contract",
@@ -10177,11 +10410,51 @@ ${details}
 
             // 1) contract_capabilities (service / individual or standalone) を upsert
             const ccRes = await query(
-              `INSERT INTO contract_capabilities (
-                 vendor_id, record_type, contract_category, contract_type, contract_title,
-                 document_number, contract_status, effective_date, expiration_date,
-                 auto_renewal, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+              `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             source_system,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             COALESCE($4, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()
                RETURNING id`,
               [
                 vendorId,
@@ -10370,11 +10643,56 @@ ${details}
               r.party_b_name || r.counterparty
             );
             await query(
-              `INSERT INTO contract_capabilities (
-                 vendor_id, record_type, contract_category, contract_type, contract_title,
-                 document_number, contract_status, effective_date, expiration_date,
-                 auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+              `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             document_url,
+             source_system,
+             template_type,
+             drive_link,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             COALESCE($4, ''),
+             COALESCE($11, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
               [
                 ndaVendorId,
                 "master_contract",
@@ -10516,11 +10834,56 @@ ${details}
 
             // contract_capabilities
             await query(
-              `INSERT INTO contract_capabilities (
-                 vendor_id, record_type, contract_category, contract_type, contract_title,
-                 document_number, contract_status, effective_date, expiration_date,
-                 auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+              `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             document_url,
+             source_system,
+             template_type,
+             drive_link,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             COALESCE($4, ''),
+             COALESCE($11, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             updated_at = now()`,
               [
                 vendorId,
                 "master_contract",
@@ -15906,13 +16269,85 @@ ${details}
         }
 
         await query(
-          `INSERT INTO contract_capabilities (
-            vendor_id, record_type, contract_category, contract_type, contract_title,
-            document_number, contract_status, effective_date, expiration_date, auto_renewal,
-            original_work, product_name, work_name, media, territory, language, document_url, source_system,
-            base_document_number, revision, is_primary,
-            ledger_ref_id, ledger_code
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE, $21, $22)`,
+          `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             original_work,
+             product_name,
+             work_name,
+             media,
+             territory,
+             language,
+             document_url,
+             source_system,
+             base_document_number,
+             revision,
+             is_primary,
+             ledger_ref_id,
+             ledger_code,
+             template_type,
+             drive_link,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             $13,
+             $14,
+             $15,
+             $16,
+             $17,
+             $18,
+             $19,
+             $20,
+             TRUE,
+             $21,
+             $22,
+             COALESCE($4, ''),
+             COALESCE($17, ''),
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             original_work = COALESCE(EXCLUDED.original_work, documents.original_work),
+             product_name = COALESCE(EXCLUDED.product_name, documents.product_name),
+             work_name = COALESCE(EXCLUDED.work_name, documents.work_name),
+             media = COALESCE(EXCLUDED.media, documents.media),
+             territory = COALESCE(EXCLUDED.territory, documents.territory),
+             language = COALESCE(EXCLUDED.language, documents.language),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             source_system = COALESCE(EXCLUDED.source_system, documents.source_system),
+             base_document_number = COALESCE(EXCLUDED.base_document_number, documents.base_document_number),
+             revision = COALESCE(EXCLUDED.revision, documents.revision),
+             is_primary = COALESCE(EXCLUDED.is_primary, documents.is_primary),
+             ledger_ref_id = COALESCE(EXCLUDED.ledger_ref_id, documents.ledger_ref_id),
+             ledger_code = COALESCE(EXCLUDED.ledger_code, documents.ledger_code),
+             updated_at = now()`,
           [
             vendorId,
             recordType,
@@ -16170,12 +16605,48 @@ ${details}
           vendorIdForPo = vr.rows[0]?.id ? Number(vr.rows[0].id) : null;
         }
         const orderItemRes = await query(
-          `INSERT INTO contract_capabilities
-             (legal_request_id, vendor_id, contract_title, amount_ex_tax,
-              due_date, backlog_issue_key, record_type, contract_category,
-              contract_type, document_number)
-           VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
-                   'purchase_order', $7)
+          `INSERT INTO documents (
+             legal_request_id,
+             vendor_id,
+             contract_title,
+             amount_ex_tax,
+             due_date,
+             backlog_issue_key,
+             record_type,
+             contract_category,
+             contract_type,
+             document_number,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             'purchase_order',
+             'service',
+             'purchase_order',
+             $7,
+             COALESCE('purchase_order', ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             legal_request_id = COALESCE(EXCLUDED.legal_request_id, documents.legal_request_id),
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             amount_ex_tax = COALESCE(EXCLUDED.amount_ex_tax, documents.amount_ex_tax),
+             due_date = COALESCE(EXCLUDED.due_date, documents.due_date),
+             backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, documents.backlog_issue_key),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             updated_at = now()
            RETURNING id`,
           [
             lrId,
@@ -16830,10 +17301,39 @@ ${details}
         //   license 固有値は列が無く documents.form_data に保持されPDFはそこから描画。
         //   ここでは実在列(原作名/文書番号/種別/タイトル)のみを登録する。
         await query(
-          `INSERT INTO contract_capabilities
-             (backlog_issue_key, original_work,
-              document_number, record_type, contract_category, contract_type, contract_title)
-           VALUES ($1, $2, $3, 'master_contract', 'license', 'license_basic', $4)`,
+          `INSERT INTO documents (
+             backlog_issue_key,
+             original_work,
+             document_number,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             'master_contract',
+             'license',
+             'license_basic',
+             $4,
+             COALESCE('license_basic', ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, documents.backlog_issue_key),
+             original_work = COALESCE(EXCLUDED.original_work, documents.original_work),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             updated_at = now()`,
           [
             issueKey,
             formData.WORK_TITLE || "",
