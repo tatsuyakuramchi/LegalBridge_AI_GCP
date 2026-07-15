@@ -8,9 +8,9 @@ import {
   Plus,
   ChevronRight,
   FileText,
-  Send,
   ListChecks,
   Layers,
+  AlertTriangle,
 } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -30,9 +30,12 @@ import {
 import { useAppData } from "@/src/context/AppDataContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { IssuePicker } from "@/src/components/IssuePicker"
+import { STAGE_LABEL } from "@/src/components/matter/matterStages"
 
 // 案件管理 一覧。1行 = 1案件。Backlog課題(重複/部分)・文書・送信・条件明細を束ねる。
 //   API: GET /api/matters (matter_overview_v)。詳細は /matters/:id。
+//   LB-06 (§5.2): 件数中心から作業中心へ。現在工程 / 次アクション / 担当 / 期限 /
+//   ブロッカーを表示し、一覧から「次に何をすべき案件か」を判断できるようにする。
 type MatterRow = {
   id: number
   matter_code: string | null
@@ -45,6 +48,15 @@ type MatterRow = {
   condition_count: number
   last_sent_at: string | null
   updated_at: string | null
+  // LB-04/05/06 (migration 0126, matter_overview_v 拡張列)
+  lifecycle_stage: string | null
+  owner_name: string | null
+  target_due_date: string | null
+  blocked_reason: string | null
+  next_task_title: string | null
+  next_task_due_at: string | null
+  next_task_assignee_name: string | null
+  open_task_count: number
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -59,6 +71,13 @@ const STATUS_VARIANT: Record<string, any> = {
   closed: "success",
   archived: "outline",
 }
+const fmtShortDate = (v: string | null | undefined) =>
+  v ? new Date(v).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" }) : "—"
+// 期限超過: 未完了(closed/archived 以外)かつ期限が今日より前。
+const isOverdue = (m: MatterRow) =>
+  !!m.target_due_date &&
+  !["closed", "archived"].includes(m.status) &&
+  new Date(m.target_due_date).setHours(23, 59, 59, 999) < Date.now()
 
 export function MattersListPage() {
   const navigate = useNavigate()
@@ -177,12 +196,16 @@ export function MattersListPage() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 px-3 py-2.5 border-b border-border text-[11px] font-mono font-bold text-muted-foreground">
+          {/* LB-06 (§5.2): 作業中心の列構成。
+              案件/相手方 | 現在工程(+ブロッカー) | 次アクション | 担当 | 期限 | 文書等 | 更新 */}
+          <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-2 px-3 py-2.5 border-b border-border text-[11px] font-mono font-bold text-muted-foreground">
             <span>案件 / 相手方</span>
-            <span className="text-center">課題</span>
-            <span className="text-center">文書</span>
-            <span className="text-center">条件</span>
-            <span className="text-center">最終送信</span>
+            <span>工程</span>
+            <span>次アクション</span>
+            <span>担当</span>
+            <span className="text-center">期限</span>
+            <span className="text-center">課題/文書/条件</span>
+            <span className="text-center">更新</span>
             <span />
           </div>
           {loading ? (
@@ -198,8 +221,9 @@ export function MattersListPage() {
               <button
                 key={m.id}
                 onClick={() => navigate(`/matters/${m.id}`)}
-                className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 px-3 py-2.5 border-b border-border/60 items-center text-left hover:bg-muted/40 transition-colors w-full"
+                className="grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-y-1 md:gap-2 px-3 py-2.5 border-b border-border/60 items-center text-left hover:bg-muted/40 transition-colors w-full"
               >
+                {/* 案件 / 相手方 */}
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
                     <span className="font-mono text-[11px] text-muted-foreground">{m.matter_code || `#${m.id}`}</span>
@@ -212,20 +236,69 @@ export function MattersListPage() {
                     <span className="block text-[11px] text-muted-foreground truncate">{m.counterparty}</span>
                   )}
                 </span>
-                <span className="flex items-center justify-center gap-1 text-[12px] tabular-nums">
-                  <Layers className="h-3 w-3 text-muted-foreground" /> {m.issue_count}
+                {/* 現在工程 + ブロッカー */}
+                <span className="min-w-0">
+                  <span className="block text-[12px] font-mono truncate">
+                    {m.lifecycle_stage ? STAGE_LABEL[m.lifecycle_stage] || m.lifecycle_stage : "—"}
+                  </span>
+                  {m.blocked_reason && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[10px] font-mono text-destructive"
+                      title={`ブロッカー: ${m.blocked_reason}`}
+                    >
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      <span className="truncate max-w-[70px]">{m.blocked_reason}</span>
+                    </span>
+                  )}
                 </span>
-                <span className="flex items-center justify-center gap-1 text-[12px] tabular-nums">
-                  <FileText className="h-3 w-3 text-muted-foreground" /> {m.document_count}
+                {/* 次アクション(primary の未完了タスク) */}
+                <span className="min-w-0">
+                  {m.next_task_title ? (
+                    <>
+                      <span className="block text-[12px] truncate" title={m.next_task_title}>
+                        {m.next_task_title}
+                      </span>
+                      <span className="block text-[10px] font-mono text-muted-foreground truncate">
+                        {m.next_task_assignee_name || ""}
+                        {m.next_task_due_at ? ` 〜${fmtShortDate(m.next_task_due_at)}` : ""}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      {m.open_task_count > 0 ? `未完了 ${m.open_task_count} 件(次アクション未選定)` : "—"}
+                    </span>
+                  )}
                 </span>
-                <span className="flex items-center justify-center gap-1 text-[12px] tabular-nums">
-                  <ListChecks className="h-3 w-3 text-muted-foreground" /> {m.condition_count}
+                {/* 担当 */}
+                <span className="text-[11px] font-mono truncate" title={m.owner_name || ""}>
+                  {m.owner_name || "—"}
                 </span>
-                <span className="flex items-center justify-center gap-1 text-[11px] text-muted-foreground tabular-nums">
-                  <Send className="h-3 w-3" />
-                  {m.last_sent_at ? new Date(m.last_sent_at).toLocaleDateString("ja-JP") : "—"}
+                {/* 期限 */}
+                <span
+                  className={`text-center text-[11px] font-mono tabular-nums ${
+                    isOverdue(m) ? "text-destructive font-bold" : "text-muted-foreground"
+                  }`}
+                  title={isOverdue(m) ? "期限超過" : undefined}
+                >
+                  {fmtShortDate(m.target_due_date)}
                 </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                {/* 課題/文書/条件 (従来の件数はコンパクトに1列へ) */}
+                <span className="flex items-center justify-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+                  <span className="inline-flex items-center gap-0.5" title="課題">
+                    <Layers className="h-3 w-3" /> {m.issue_count}
+                  </span>
+                  <span className="inline-flex items-center gap-0.5" title="文書">
+                    <FileText className="h-3 w-3" /> {m.document_count}
+                  </span>
+                  <span className="inline-flex items-center gap-0.5" title="条件明細">
+                    <ListChecks className="h-3 w-3" /> {m.condition_count}
+                  </span>
+                </span>
+                {/* 最終更新 */}
+                <span className="text-center text-[11px] font-mono text-muted-foreground tabular-nums">
+                  {fmtShortDate(m.updated_at)}
+                </span>
+                <ChevronRight className="h-4 w-4 text-muted-foreground hidden md:block" />
               </button>
             ))
           )}

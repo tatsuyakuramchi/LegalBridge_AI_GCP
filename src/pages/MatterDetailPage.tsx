@@ -20,6 +20,11 @@ import {
   StickyNote,
   ChevronDown,
   ChevronRight as ChevronRightIcon,
+  AlertTriangle,
+  CheckCircle2,
+  Circle,
+  Star,
+  Flag,
 } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -41,6 +46,11 @@ import {
 import { useAppData } from "@/src/context/AppDataContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { IssuePicker } from "@/src/components/IssuePicker"
+import {
+  MATTER_STAGES,
+  STAGE_LABEL,
+  stageLabel,
+} from "@/src/components/matter/matterStages"
 
 const RELATION_LABEL: Record<string, string> = {
   primary: "代表",
@@ -103,7 +113,7 @@ export function MatterDetailPage() {
   const { matterId } = useParams()
   const navigate = useNavigate()
   const { push } = useToast()
-  const { vendors, issues, refreshIssues } = useAppData()
+  const { vendors, issues, refreshIssues, staffList } = useAppData()
 
   const [data, setData] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(true)
@@ -123,6 +133,17 @@ export function MatterDetailPage() {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [absorbId, setAbsorbId] = React.useState("")
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
+  // LB-05: タスク追加フォーム(次アクションパネル内)。
+  const [taskFormOpen, setTaskFormOpen] = React.useState(false)
+  const [taskSaving, setTaskSaving] = React.useState(false)
+  const [newTask, setNewTask] = React.useState<{
+    title: string
+    assignee_staff_id: number | null
+    due_at: string
+    is_primary: boolean
+  }>({ title: "", assignee_staff_id: null, due_at: "", is_primary: false })
+  // タスク一覧の展開(既定は未完了のみ表示し、完了分は畳む)。
+  const [showDoneTasks, setShowDoneTasks] = React.useState(false)
   const [showLines, setShowLines] = React.useState(false)
   // Backlog統合: 束ねた課題(重複/誤起票)を Request 側でも実際に統合する。
   const [mergeSel, setMergeSel] = React.useState<string[]>([])
@@ -173,6 +194,13 @@ export function MatterDetailPage() {
         vendor_id: json.matter.vendor_id ?? null,
         primary_issue_key: json.matter.primary_issue_key || "",
         remarks: json.matter.remarks || "",
+        // LB-04: 工程 / 担当 / 期限 / ブロッカー(migration 0126)
+        lifecycle_stage: json.matter.lifecycle_stage || "",
+        owner_staff_id: json.matter.owner_staff_id ?? null,
+        target_due_date: json.matter.target_due_date
+          ? String(json.matter.target_due_date).slice(0, 10)
+          : "",
+        blocked_reason: json.matter.blocked_reason || "",
       })
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -218,6 +246,68 @@ export function MatterDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: next }),
       }, "ステータスを更新しました")
+      await load()
+    } catch (e: any) {
+      push(String(e?.message || e), "error")
+    }
+  }
+
+  // LB-04: 工程(lifecycle_stage)もヘッダーから即保存で切り替える。空 = 未設定。
+  async function changeStage(next: string) {
+    try {
+      await call(`/api/matters/${matterId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lifecycle_stage: next || null }),
+      }, "工程を更新しました")
+      await load()
+    } catch (e: any) {
+      push(String(e?.message || e), "error")
+    }
+  }
+
+  // ── LB-05: タスク(次アクション) CRUD ────────────────────────────────────────
+  async function addTask() {
+    if (!newTask.title.trim()) return push("タスク名を入力してください", "error")
+    setTaskSaving(true)
+    try {
+      await call(`/api/matters/${matterId}/tasks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: newTask.title.trim(),
+          assignee_staff_id: newTask.assignee_staff_id,
+          due_at: newTask.due_at || null,
+          is_primary: newTask.is_primary,
+        }),
+      }, "タスクを追加しました")
+      setNewTask({ title: "", assignee_staff_id: null, due_at: "", is_primary: false })
+      setTaskFormOpen(false)
+      await load()
+    } catch (e: any) {
+      push(String(e?.message || e), "error")
+    } finally {
+      setTaskSaving(false)
+    }
+  }
+
+  async function updateTask(taskId: number, patch: Record<string, any>, okMsg?: string) {
+    try {
+      await call(`/api/matters/${matterId}/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      }, okMsg)
+      await load()
+    } catch (e: any) {
+      push(String(e?.message || e), "error")
+    }
+  }
+
+  async function deleteTask(taskId: number) {
+    if (!window.confirm("このタスクを削除します。よろしいですか？")) return
+    try {
+      await call(`/api/matters/${matterId}/tasks/${taskId}`, { method: "DELETE" })
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -486,6 +576,16 @@ export function MatterDetailPage() {
   }
 
   const m = data.matter
+  // LB-05: タスク(次アクション)。API は primary優先 → 未完了 → 期限昇順で返す。
+  const tasks: any[] = data.tasks || []
+  const primaryTask =
+    tasks.find(
+      (t) => t.is_primary && (t.status === "open" || t.status === "in_progress")
+    ) || null
+  const openTasks = tasks.filter((t) => t.status === "open" || t.status === "in_progress")
+  const doneTasks = tasks.filter((t) => t.status === "done" || t.status === "cancelled")
+  const isPastDue = (v: any) =>
+    !!v && !["closed", "archived"].includes(m.status) && new Date(v).getTime() < Date.now()
   const dupCount = (data.issues || []).filter((i: any) => i.relation === "duplicate").length
   const unsentCount = (data.documents || []).filter((d: any) => !sentDocIds.has(Number(d.id))).length
   const lastSentAt = (data.sends || []).reduce(
@@ -529,6 +629,20 @@ export function MatterDetailPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {/* LB-04: 現在工程(詳細ステージ)。status とは別軸で即保存。 */}
+              <NativeSelect
+                value={m.lifecycle_stage || ""}
+                onChange={(e: any) => changeStage(e.target.value)}
+                className="h-8 text-[12px] w-36"
+                title="現在工程（即保存）"
+              >
+                <option value="">工程: 未設定</option>
+                {MATTER_STAGES.map((st) => (
+                  <option key={st} value={st}>
+                    {STAGE_LABEL[st]}
+                  </option>
+                ))}
+              </NativeSelect>
               <NativeSelect
                 value={m.status}
                 onChange={(e: any) => changeStatus(e.target.value)}
@@ -589,6 +703,45 @@ export function MatterDetailPage() {
                   onSelect={(i) => setEdit({ ...edit, primary_issue_key: i?.issueKey ?? "" })}
                 />
               </div>
+              {/* LB-04: 案件の担当 / 期限 / ブロッカー(工程はヘッダーの即保存セレクトで変更) */}
+              <div className="space-y-1">
+                <Label className="text-[12px]">案件担当者</Label>
+                <NativeSelect
+                  value={edit.owner_staff_id ?? ""}
+                  onChange={(e: any) =>
+                    setEdit({ ...edit, owner_staff_id: e.target.value ? Number(e.target.value) : null })
+                  }
+                  className="h-8 text-[12px]"
+                >
+                  <option value="">— 未設定 —</option>
+                  {(staffList as any[])
+                    .filter((s) => s.id != null)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.staff_name}
+                        {s.department ? ` · ${s.department}` : ""}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[12px]">目標期限</Label>
+                <Input
+                  type="date"
+                  value={edit.target_due_date || ""}
+                  onChange={(e) => setEdit({ ...edit, target_due_date: e.target.value })}
+                  className="h-8 text-[12px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[12px]">ブロッカー（空欄 = ブロックなし）</Label>
+                <Input
+                  value={edit.blocked_reason || ""}
+                  onChange={(e) => setEdit({ ...edit, blocked_reason: e.target.value })}
+                  placeholder="例: 相手方の押印待ち"
+                  className="h-8 text-[12px]"
+                />
+              </div>
               <div className="space-y-1 md:col-span-2">
                 <Label className="text-[12px]">備考</Label>
                 <Textarea value={edit.remarks} onChange={(e) => setEdit({ ...edit, remarks: e.target.value })} className="text-[12px] min-h-[60px]" />
@@ -615,6 +768,245 @@ export function MatterDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* 常設「次アクション」パネル (§5.4, LB-05):
+          現在工程 / 次に行う操作 / 担当 / 期限 / ブロッカー を1か所に集約し、
+          タスクの追加・完了・次アクション選定(is_primary)をここで行う。 */}
+      <Card className={m.blocked_reason ? "border-destructive/50" : undefined}>
+        <CardContent className="p-4 space-y-3">
+          <SectionHead
+            icon={ListChecks}
+            label="次アクション"
+            count={openTasks.length}
+            right={
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setTaskFormOpen((v) => !v)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" /> タスク追加
+              </Button>
+            }
+          />
+
+          {/* サマリー行: 工程 / 次アクション / 担当 / 期限 */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div>
+              <p className="text-[11px] font-mono text-muted-foreground">現在工程</p>
+              <p className="text-[13px] font-mono font-bold flex items-center gap-1.5 mt-0.5">
+                <Flag className="h-3.5 w-3.5 text-muted-foreground" />
+                {stageLabel(m.lifecycle_stage)}
+              </p>
+            </div>
+            <div className="md:col-span-2 min-w-0">
+              <p className="text-[11px] font-mono text-muted-foreground">次に行う操作</p>
+              {primaryTask ? (
+                <p className="text-[13px] font-bold truncate mt-0.5" title={primaryTask.title}>
+                  {primaryTask.title}
+                </p>
+              ) : (
+                <p className="text-[12px] text-muted-foreground mt-0.5">
+                  {openTasks.length > 0
+                    ? "未選定（下のタスクの ☆ で次アクションに指定）"
+                    : "未登録（「タスク追加」から登録）"}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-[11px] font-mono text-muted-foreground">担当</p>
+              <p className="text-[12px] font-mono mt-0.5 truncate">
+                {primaryTask?.assignee_name || m.owner_name || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] font-mono text-muted-foreground">期限</p>
+              <p
+                className={`text-[12px] font-mono mt-0.5 tabular-nums ${
+                  isPastDue(primaryTask?.due_at || m.target_due_date)
+                    ? "text-destructive font-bold"
+                    : ""
+                }`}
+              >
+                {fmtDate(primaryTask?.due_at || m.target_due_date)}
+                {isPastDue(primaryTask?.due_at || m.target_due_date) && "（超過）"}
+              </p>
+            </div>
+          </div>
+
+          {/* ブロッカー(案件レベル)。解除は編集パネルから。 */}
+          {m.blocked_reason && (
+            <div className="flex items-start gap-2 rounded-sm border border-destructive/50 bg-destructive/10 px-2.5 py-1.5 text-[12px]">
+              <AlertTriangle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+              <span>
+                <span className="font-bold text-destructive">ブロッカー: </span>
+                {m.blocked_reason}
+              </span>
+            </div>
+          )}
+
+          {/* タスク追加フォーム */}
+          {taskFormOpen && (
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_160px_130px_auto_auto] gap-2 items-end rounded-sm border border-border/60 bg-muted/30 p-2.5">
+              <div className="space-y-1">
+                <Label className="text-[11px]">タスク名 *</Label>
+                <Input
+                  value={newTask.title}
+                  onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                  placeholder="例: 発注書を受注者へ送付"
+                  className="h-8 text-[12px]"
+                  onKeyDown={(e) => e.key === "Enter" && addTask()}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">担当</Label>
+                <NativeSelect
+                  value={newTask.assignee_staff_id ?? ""}
+                  onChange={(e: any) =>
+                    setNewTask({
+                      ...newTask,
+                      assignee_staff_id: e.target.value ? Number(e.target.value) : null,
+                    })
+                  }
+                  className="h-8 text-[12px]"
+                >
+                  <option value="">— 未設定 —</option>
+                  {(staffList as any[])
+                    .filter((s) => s.id != null)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.staff_name}
+                      </option>
+                    ))}
+                </NativeSelect>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px]">期限</Label>
+                <Input
+                  type="date"
+                  value={newTask.due_at}
+                  onChange={(e) => setNewTask({ ...newTask, due_at: e.target.value })}
+                  className="h-8 text-[12px]"
+                />
+              </div>
+              <label className="flex items-center gap-1.5 text-[11px] font-mono pb-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 accent-foreground"
+                  checked={newTask.is_primary}
+                  onChange={(e) => setNewTask({ ...newTask, is_primary: e.target.checked })}
+                />
+                次アクションに設定
+              </label>
+              <Button size="sm" onClick={addTask} disabled={taskSaving}>
+                {taskSaving && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}追加
+              </Button>
+            </div>
+          )}
+
+          {/* タスク一覧(未完了)。☆=次アクション指定、○→✓=完了。 */}
+          {openTasks.length > 0 && (
+            <div className="space-y-1">
+              {openTasks.map((t) => (
+                <div
+                  key={t.id}
+                  className={`flex items-center gap-2 text-[12px] px-2.5 py-1.5 rounded-sm border ${
+                    t.is_primary ? "border-amber-500/60 bg-amber-500/10" : "border-border/60"
+                  }`}
+                >
+                  <button
+                    onClick={() => updateTask(t.id, { status: "done" }, "タスクを完了しました")}
+                    className="text-muted-foreground hover:text-emerald-600 shrink-0"
+                    title="完了にする"
+                  >
+                    <Circle className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={() =>
+                      updateTask(
+                        t.id,
+                        { is_primary: !t.is_primary },
+                        t.is_primary ? "次アクション指定を解除しました" : "次アクションに設定しました"
+                      )
+                    }
+                    className={`shrink-0 ${
+                      t.is_primary ? "text-amber-500" : "text-muted-foreground hover:text-amber-500"
+                    }`}
+                    title={t.is_primary ? "次アクション指定を解除" : "次アクションに設定"}
+                  >
+                    <Star className="h-3.5 w-3.5" fill={t.is_primary ? "currentColor" : "none"} />
+                  </button>
+                  <span className="flex-1 min-w-0 truncate" title={t.title}>
+                    {t.title}
+                  </span>
+                  {t.blocked_reason && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-destructive shrink-0" title={t.blocked_reason}>
+                      <AlertTriangle className="h-3 w-3" /> ブロック
+                    </span>
+                  )}
+                  {t.assignee_name && (
+                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">{t.assignee_name}</span>
+                  )}
+                  {t.due_at && (
+                    <span
+                      className={`text-[11px] font-mono tabular-nums shrink-0 ${
+                        isPastDue(t.due_at) ? "text-destructive font-bold" : "text-muted-foreground"
+                      }`}
+                    >
+                      〜{fmtDate(t.due_at)}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => deleteTask(t.id)}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                    title="削除"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 完了済みタスク(畳み) */}
+          {doneTasks.length > 0 && (
+            <div>
+              <button
+                className="text-[11px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1"
+                onClick={() => setShowDoneTasks((v) => !v)}
+              >
+                {showDoneTasks ? <ChevronDown className="h-3 w-3" /> : <ChevronRightIcon className="h-3 w-3" />}
+                完了済み {doneTasks.length} 件
+              </button>
+              {showDoneTasks && (
+                <div className="space-y-1 mt-1">
+                  {doneTasks.map((t) => (
+                    <div key={t.id} className="flex items-center gap-2 text-[12px] px-2.5 py-1 rounded-sm border border-border/40 text-muted-foreground">
+                      <button
+                        onClick={() => updateTask(t.id, { status: "open" }, "タスクを未完了に戻しました")}
+                        className="text-emerald-600 shrink-0"
+                        title="未完了に戻す"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </button>
+                      <span className="flex-1 min-w-0 truncate line-through">{t.title}</span>
+                      {t.completed_at && (
+                        <span className="text-[11px] font-mono tabular-nums shrink-0">{fmtDate(t.completed_at)}</span>
+                      )}
+                      <button
+                        onClick={() => deleteTask(t.id)}
+                        className="hover:text-destructive shrink-0"
+                        title="削除"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* サマリーストリップ: 開いた瞬間に「何が残っているか」を出す。 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
