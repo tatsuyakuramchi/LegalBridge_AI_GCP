@@ -127,7 +127,7 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT TRUE;`,
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS superseded_by VARCHAR(100);`,
     // documents から base_document_number / revision / is_primary / superseded_by を逆ミラー
-    `UPDATE contract_capabilities cc
+    `UPDATE documents cc
         SET base_document_number = d.base_document_number,
             revision             = d.revision,
             is_primary           = d.is_primary,
@@ -158,7 +158,7 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(20) DEFAULT 'final';`,
     `UPDATE documents SET lifecycle_status = 'final'
       WHERE lifecycle_status IS NULL OR lifecycle_status = '';`,
-    `UPDATE contract_capabilities SET lifecycle_status = 'final'
+    `UPDATE documents SET lifecycle_status = 'final'
       WHERE lifecycle_status IS NULL OR lifecycle_status = '';`,
     `CREATE INDEX IF NOT EXISTS idx_documents_lifecycle ON documents(lifecycle_status);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_lifecycle ON contract_capabilities(lifecycle_status);`,
@@ -1128,7 +1128,7 @@ export async function initDb() {
           USING _cc_losers l
           WHERE cfc.capability_id = l.loser_id;
          -- (4) delete loser contract_capabilities rows
-         DELETE FROM contract_capabilities cc
+         DELETE FROM documents cc
           USING _cc_losers l
           WHERE cc.id = l.loser_id;
          RAISE NOTICE
@@ -1303,7 +1303,7 @@ export async function initDb() {
     //   - contract_type LIKE '%inspection%' or document_number LIKE 'ARC-IC-%'
     //     かつ record_type='individual_contract' → 'delivery_record'
     // -----------------------------------------------------------------
-    `UPDATE contract_capabilities
+    `UPDATE documents
         SET record_type = 'purchase_order',
             contract_category = COALESCE(contract_category, 'service'),
             updated_at = CURRENT_TIMESTAMP
@@ -1314,7 +1314,7 @@ export async function initDb() {
           OR document_number LIKE 'ARC-PO-%'
           OR document_number LIKE 'ARC-IPO-%'
         );`,
-    `UPDATE contract_capabilities
+    `UPDATE documents
         SET record_type = 'delivery_record',
             contract_category = COALESCE(contract_category, 'service'),
             updated_at = CURRENT_TIMESTAMP
@@ -2265,7 +2265,7 @@ export async function markPrimaryDocument(
   // 旧データで base_document_number が未設定の row もカバーするため
   // documents JOIN もチェックする。
   await query(
-    `UPDATE contract_capabilities
+    `UPDATE documents
         SET is_primary    = (document_number = $2),
             superseded_by = CASE WHEN document_number = $2 THEN NULL ELSE $2 END,
             updated_at    = CURRENT_TIMESTAMP

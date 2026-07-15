@@ -347,7 +347,7 @@ async function upsertContract(
         const taxAmount = Math.ceil((totalExTax * taxRate) / 100);
         const incTax = totalExTax + taxAmount;
         await client.query(
-          `UPDATE contract_capabilities
+          `UPDATE documents
               SET amount_ex_tax = $2,
                   tax_amount    = $3,
                   amount_inc_tax= $4,
@@ -1031,7 +1031,7 @@ async function mergePurchaseOrders(
     const taxAmount = Math.ceil((totalExTax * taxRate) / 100);
     const incTax = totalExTax + taxAmount;
     await client.query(
-      `UPDATE contract_capabilities
+      `UPDATE documents
           SET amount_ex_tax = $2, tax_amount = $3, amount_inc_tax = $4,
               updated_at = CURRENT_TIMESTAMP
         WHERE id = $1`,
@@ -1082,7 +1082,7 @@ async function mergePurchaseOrders(
     // 8. source を削除(子テーブルは ON DELETE CASCADE)
     const sourceCaps = sourceRows.map((r) => r.cap_id);
     await client.query(
-      `DELETE FROM contract_capabilities WHERE id = ANY($1::int[])`,
+      `DELETE FROM documents WHERE id = ANY($1::int[])`,
       [sourceCaps]
     );
     await client.query(`DELETE FROM contracts WHERE id = ANY($1::int[])`, [

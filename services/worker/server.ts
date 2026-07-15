@@ -611,7 +611,7 @@ async function startServer() {
     );
     if (isCompleted && reqRow.capability_id) {
       await query(
-        `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+        `UPDATE documents SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
         [reqRow.capability_id]
       );
     }
@@ -755,7 +755,7 @@ async function startServer() {
       // 締結済なら契約状態も executed に反映(自動送信と同じ挙動)。
       if (status === "completed" && capId) {
         await query(
-          `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+          `UPDATE documents SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
           [capId]
         );
       }
@@ -1643,7 +1643,7 @@ async function startServer() {
       if (isCompleted && reqRow.capability_id) {
         // 締結完了 → 契約状態を executed(締結中)へ。
         await query(
-          `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+          `UPDATE documents SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
           [reqRow.capability_id]
         );
         // TODO(実環境): 締結済みPDF + 合意締結証明書を DL → Drive 保存 → signed_drive_link 更新。
@@ -3282,7 +3282,7 @@ ${details}
           .filter(Boolean);
 
         const c = await client.query(
-          `UPDATE contract_capabilities
+          `UPDATE documents
               SET backlog_issue_key = $1,
                   updated_at = CURRENT_TIMESTAMP
             WHERE backlog_issue_key = $2`,
@@ -3333,19 +3333,10 @@ ${details}
             .map((r: any) => String(r.document_number || ""))
             .filter(Boolean);
 
-          const synced = await client.query(
-            `UPDATE contract_capabilities cc
-                SET is_primary = d.is_primary,
-                    lifecycle_status = d.lifecycle_status,
-                    superseded_by = d.superseded_by,
-                    updated_at = CURRENT_TIMESTAMP
-               FROM documents d
-              WHERE cc.document_number = d.document_number
-                AND d.issue_key = $1
-                AND d.template_type = ANY($2::text[])`,
-            [target, touchedTemplateTypes]
-          );
-          moved.capability_versions = synced.rowCount || 0;
+          // Phase 4 (LB-12): 旧 contract_capabilities への版同期は、cc が documents の
+          //   1:1 互換VIEW(0101)であるため実体としては同一行への自己代入だった。
+          //   documents 直書き(上の versions 更新)に一本化し、同期文は撤去。
+          moved.capability_versions = versions.rowCount || 0;
         }
       }
 
@@ -3911,7 +3902,7 @@ ${details}
 
     try {
       await query(
-        `UPDATE contract_capabilities
+        `UPDATE documents
             SET last_renewal_alert_at = CURRENT_TIMESTAMP
           WHERE id = $1`,
         [row.id]
@@ -4039,7 +4030,7 @@ ${details}
     //   terminated は早期解約のため触らない。
     try {
       const expired = await query(
-        `UPDATE contract_capabilities
+        `UPDATE documents
             SET contract_status = 'expired',
                 updated_at = CURRENT_TIMESTAMP
           WHERE expiration_date IS NOT NULL
@@ -5066,7 +5057,7 @@ ${details}
       } else if (type === "contract") {
         // Phase 23: license_contracts → contract_capabilities (license category)
         await query(
-          `UPDATE contract_capabilities
+          `UPDATE documents
               SET linked_asset_id = $1
             WHERE backlog_issue_key = $2
               AND contract_category = 'license'`,
@@ -6967,7 +6958,7 @@ ${details}
           `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS template_family VARCHAR(20)`
         ).catch(() => {});
         await query(
-          `UPDATE contract_capabilities SET template_family = $2 WHERE id = $1`,
+          `UPDATE documents SET template_family = $2 WHERE id = $1`,
           [capabilityId, tf]
         );
       }
@@ -7481,7 +7472,7 @@ ${details}
   app.delete("/api/master/contracts/:id", async (req, res) => {
     const { id } = req.params;
     try {
-      await query("DELETE FROM contract_capabilities WHERE id = $1", [id]);
+      await query("DELETE FROM documents WHERE id = $1", [id]);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: String(error) });
@@ -9161,7 +9152,7 @@ ${details}
           //   検収待ち/management line-items 等は cc.backlog_issue_key で絞るため、
           //   未連結だと capability_line_items があっても表示されない。
           await query(
-            `UPDATE contract_capabilities
+            `UPDATE documents
                 SET backlog_issue_key = $2, updated_at = CURRENT_TIMESTAMP
               WHERE id = $1 AND NULLIF(backlog_issue_key, '') IS NULL`,
             [t.capability_id, t.issue_key || null]
@@ -12049,7 +12040,7 @@ ${details}
         // capability 側にも反映(検収/条件明細・台帳の整合)
         if (orderDate) {
           await query(
-            `UPDATE contract_capabilities SET issue_date_po = $2, updated_at = now()
+            `UPDATE documents SET issue_date_po = $2, updated_at = now()
               WHERE document_number = $1`,
             [d.document_number, orderDate]
           );
@@ -12169,7 +12160,7 @@ ${details}
             }
           }
           await client.query(
-            `DELETE FROM contract_capabilities WHERE id = $1`,
+            `DELETE FROM documents WHERE id = $1`,
             [d.cap_id]
           );
           await client.query(`DELETE FROM contracts WHERE id = $1`, [d.cap_id]);
@@ -15526,19 +15517,12 @@ ${details}
       // Phase 23.1: 再発行 (isReissue=true) のときは、同 base 内の過去 final 行を
       //   lifecycle_status='reissued' に倒す。markPrimaryDocument は is_primary を
       //   倒すが lifecycle_status は触らないので、別途同期する。
-      //   contract_capabilities も同 base で同期。
+      //   Phase 4 (LB-12): 旧 contract_capabilities への同期は、cc が documents の
+      //   1:1 互換VIEW(0101)であるため同一 UPDATE の二重実行だった。直書き1本に統合。
       if (isReissue) {
         try {
           await query(
             `UPDATE documents
-                SET lifecycle_status = 'reissued'
-              WHERE base_document_number = $1
-                AND document_number <> $2
-                AND lifecycle_status = 'final'`,
-            [baseDocumentNumber, docNumber]
-          );
-          await query(
-            `UPDATE contract_capabilities
                 SET lifecycle_status = 'reissued',
                     updated_at       = CURRENT_TIMESTAMP
               WHERE base_document_number = $1
@@ -15984,7 +15968,7 @@ ${details}
           const dir = low === "out" || fd === "アウト" ? "out" : low === "in" || fd === "イン" ? "in" : null;
           if (dir) {
             await query(
-              `UPDATE contract_capabilities SET flow_direction = $2 WHERE document_number = $1`,
+              `UPDATE documents SET flow_direction = $2 WHERE document_number = $1`,
               [docNumber, dir]
             );
           }
