@@ -39,6 +39,13 @@ import {
   SheetTitle,
   SheetBody,
 } from "@/components/ui/sheet"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { DocumentForm } from "@/src/components/document/DocumentForm"
 import { RingiSelector } from "@/src/components/document/RingiSelector"
 import { resolveDirectionMode } from "@/src/components/document/templateDirectionMode"
@@ -981,23 +988,98 @@ export function DocumentEditorPage() {
     setIsAssetPickerOpen(false)
   }
 
-  // Backlog Sync は formData を全置換するため、入力済みなら確認してから実行。
-  //   (入力途中に押して打った内容が消える事故を防ぐ。)
-  const handleManualSync = React.useCallback(() => {
-    const hasContent = Object.keys(formData || {}).some(
-      (k) =>
-        !k.startsWith("__") &&
-        (formData as any)[k] != null &&
-        (formData as any)[k] !== ""
-    )
+  // LB-F08 (§5.5.6): 手動 Backlog Sync(全置換)を「依頼原票から再取得」1箇所に統一。
+  //   現在入力済みの値を一括で無条件に置き換えず、
+  //     (a) 空欄のみ補完(既定・非破壊) / (b) 選択グループのみ上書き
+  //   をダイアログで選ばせる。フォーム内の重複 Sync ボタンは撤去済み。
+  const [resyncOpen, setResyncOpen] = React.useState(false)
+  const [resyncing, setResyncing] = React.useState(false)
+  const [resyncMode, setResyncMode] = React.useState<"fill_empty" | "overwrite">(
+    "fill_empty"
+  )
+  const [resyncGroups, setResyncGroups] = React.useState<{
+    title: boolean
+    vendor: boolean
+    items: boolean
+    other: boolean
+  }>({ title: true, vendor: true, items: false, other: false })
+
+  // form-context のキーを上書きグループへ分類する。キーはテンプレ毎に異なるため
+  //   代表キー + 接頭辞で判定し、該当しないものは「その他」へ落とす。
+  const resyncGroupOf = (key: string): "title" | "vendor" | "items" | "other" => {
     if (
-      hasContent &&
-      !window.confirm("現在の入力内容を破棄して、DB(課題/下書き)の内容で置き換えます。よろしいですか?")
-    ) {
+      [
+        "PROJECT_TITLE",
+        "projectTitle",
+        "基本契約名",
+        "CONTRACT_TITLE",
+        "contract_title",
+        "description",
+        "summary",
+      ].includes(key)
+    )
+      return "title"
+    if (
+      /^(vendor_|VENDOR_)/.test(key) ||
+      ["counterparty", "CONTRACTOR_NAME", "PARTY_B_NAME", "licensor", "LICENSOR_NAME"].includes(key)
+    )
+      return "vendor"
+    if (
+      ["items", "line_items", "order_lines_for_inspection", "delivery_line_items"].includes(key)
+    )
+      return "items"
+    return "other"
+  }
+
+  const runResync = async () => {
+    if (!selectedIssue) {
+      showNotification("先に Backlog 課題(依頼原票)を選択してください。", "error")
       return
     }
-    void syncFromDatabase()
-  }, [formData, syncFromDatabase])
+    setResyncing(true)
+    try {
+      const res = await fetch(
+        `/api/backlog/issues/${encodeURIComponent(selectedIssue)}/form-context?template=${encodeURIComponent(
+          selectedTemplate
+        )}`
+      )
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const context = await res.json()
+      if (context && typeof context === "object") delete context._previousDocument
+      const issue = issues.find((i) => i.issueKey === selectedIssue)
+      const fetched: Record<string, any> = {
+        基本契約名: issue?.summary || "",
+        remarks: issue?.description || "",
+        ...(context && typeof context === "object" ? context : {}),
+      }
+      const isEmpty = (x: any) =>
+        x == null || x === "" || (Array.isArray(x) && x.length === 0)
+      setFormData((prev: any) => {
+        const next = { ...(prev || {}) }
+        for (const [k, v] of Object.entries(fetched)) {
+          if (k.startsWith("_")) continue
+          if (isEmpty(v)) continue
+          if (resyncMode === "fill_empty") {
+            if (isEmpty(next[k])) next[k] = v
+          } else if (resyncGroups[resyncGroupOf(k)]) {
+            next[k] = v
+          }
+        }
+        return next
+      })
+      showNotification(
+        resyncMode === "fill_empty"
+          ? "依頼原票から空欄のみ補完しました。"
+          : "依頼原票から選択グループを再取得しました。",
+        "success"
+      )
+      setResyncOpen(false)
+    } catch (e: any) {
+      showNotification(`再取得に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setResyncing(false)
+    }
+  }
 
   // Phase 22.11.2: 「前回内容を読み込む」 — 過去 doc の form_data を
   // 取得して formData に反映 (内部の __reopen_doc_number 等は付けない →
@@ -2030,6 +2112,99 @@ export function DocumentEditorPage() {
           </Card>
         </div>
 
+        {/* LB-F08 (§5.5.6): 依頼原票から再取得(項目別)ダイアログ */}
+        <Dialog open={resyncOpen} onOpenChange={setResyncOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="font-mono text-[15px]">
+                依頼原票から再取得 — {selectedIssue || "課題未選択"}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-2 text-[12px]">
+              <div role="radiogroup" aria-label="再取得モード" className="space-y-2">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="resyncMode"
+                    checked={resyncMode === "fill_empty"}
+                    onChange={() => setResyncMode("fill_empty")}
+                    className="mt-0.5 cursor-pointer"
+                  />
+                  <span>
+                    <span className="font-bold">空欄のみ補完（推奨）</span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      入力済みの値は変更せず、空欄だけを依頼原票の内容で埋めます。
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="resyncMode"
+                    checked={resyncMode === "overwrite"}
+                    onChange={() => setResyncMode("overwrite")}
+                    className="mt-0.5 cursor-pointer"
+                  />
+                  <span>
+                    <span className="font-bold">選択した項目を上書き</span>
+                    <span className="block text-[11px] text-muted-foreground">
+                      チェックしたグループだけを依頼原票の内容で置き換えます（他は保持）。
+                    </span>
+                  </span>
+                </label>
+              </div>
+              <div
+                className={`grid grid-cols-2 gap-2 pl-6 ${
+                  resyncMode !== "overwrite" ? "opacity-40 pointer-events-none" : ""
+                }`}
+              >
+                {(
+                  [
+                    ["title", "件名"],
+                    ["vendor", "相手方（取引先）"],
+                    ["items", "明細"],
+                    ["other", "その他（日付・金額等）"],
+                  ] as const
+                ).map(([g, label]) => (
+                  <label key={g} className="flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="cursor-pointer"
+                      checked={resyncGroups[g]}
+                      onChange={(e) =>
+                        setResyncGroups({ ...resyncGroups, [g]: e.target.checked })
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setResyncOpen(false)}
+                disabled={resyncing}
+              >
+                キャンセル
+              </Button>
+              <Button
+                size="sm"
+                onClick={runResync}
+                disabled={
+                  resyncing ||
+                  (resyncMode === "overwrite" &&
+                    !Object.values(resyncGroups).some(Boolean))
+                }
+              >
+                {resyncing && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+                再取得
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* ─── Stage ─────────────────────────────────────────── */}
         <section className="col-span-12 lg:col-span-9 space-y-4">
           <Card className="rounded-md">
@@ -2144,11 +2319,12 @@ export function DocumentEditorPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleManualSync}
-                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します(現在の入力は置き換わります)"
+                  onClick={() => setResyncOpen(true)}
+                  disabled={!selectedIssue}
+                  title="依頼原票(Backlog課題)から件名・取引先・明細などを再取得します。空欄のみ補完 / 項目別上書きを選べます"
                 >
                   <Database />
-                  Backlog Sync
+                  依頼原票から再取得
                 </Button>
               </div>
             </div>
@@ -2360,7 +2536,6 @@ export function DocumentEditorPage() {
                         metadata={templateMetadata[selectedTemplate] || { vars: {} }}
                         formData={formData}
                         setFormData={setFormData}
-                        onSync={() => syncFromDatabase()}
                         onLinkAsset={(cb) => {
                           setAssetPickerCallback(() => cb)
                           setIsAssetPickerOpen(true)
@@ -2626,6 +2801,51 @@ export function DocumentEditorPage() {
             縦並びで表示。Editor 本体とは独立した補助 panel。
             狭幅では Editor の下に回り込む (lg 未満で col-span-12)。 */}
         <aside className="col-span-12 lg:col-span-3 space-y-4">
+          {/* LB-F13 (§5.5.7 右ペインの第一歩): 案件サマリー。
+              Matter・相手方・入力状況を常時参照でき、案件へ1クリックで戻れる。 */}
+          {matterContext && (
+            <Card className="border-sky-600/40">
+              <CardContent className="px-4 py-3 space-y-2">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+                  ▍ 案件サマリー
+                </p>
+                <div className="space-y-1 text-[12px] font-mono">
+                  <p className="font-bold text-sky-800 flex items-center gap-1.5">
+                    <FolderKanban className="h-3.5 w-3.5 shrink-0" />
+                    {matterContext.matter_code || `#${matterContext.id}`}
+                  </p>
+                  {matterContext.title && (
+                    <p className="text-[12px] leading-snug">{matterContext.title}</p>
+                  )}
+                  {matterContext.counterparty && (
+                    <p className="text-[11px] text-muted-foreground">
+                      相手方: {matterContext.counterparty}
+                    </p>
+                  )}
+                  <p className="text-[11px]">
+                    {!selectedTemplate ? (
+                      <span className="text-muted-foreground">テンプレート未選択</span>
+                    ) : missingRequiredCount > 0 ? (
+                      <span className="text-amber-700 font-bold">
+                        必須項目 {missingRequiredCount} 件未入力
+                      </span>
+                    ) : (
+                      <span className="text-emerald-700 font-bold">必須項目 入力済み</span>
+                    )}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => navigate(`/matters/${matterContext.id}`)}
+                >
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  案件を開く
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardContent className="px-4 py-3 space-y-2">
               <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">

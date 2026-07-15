@@ -9,7 +9,7 @@
  * ここは「見た目の器」だけを提供し、フィールド描画は既存 <FormField> に委譲する。
  */
 import * as React from "react";
-import { Database } from "lucide-react";
+
 import { FormField } from "../FormField";
 import { EntitySearchSelect, ENTITY_LABEL, type EntityKind, type EntityOption } from "../../search/EntitySearch";
 
@@ -85,8 +85,10 @@ export const FkGrid: React.FC<{ children: React.ReactNode }> = (props) => {
 
 /**
  * DB補完バー: metadata の dbField(vendor./company./staff.) を持つフォームで、
- *   取引先・自社・担当者マスタから一括補完 + Backlog Sync。
+ *   取引先・自社・担当者マスタから一括補完。
  *   ロジックは DocumentForm の fillByPrefix と同一(汎用)。
+ *   LB-F08 (§5.5.6): Backlog Sync ボタンはエディタヘッダーの「依頼原票から再取得」に
+ *   一本化したためここからは撤去(onSync prop は後方互換のため残置・未使用)。
  */
 export function DbFillBar(props: {
   metadata: any;
@@ -138,21 +140,18 @@ export function DbFillBar(props: {
   const hasVendor = hasPrefix("vendor.");
   const hasCompany = hasPrefix("company.");
   const hasStaff = hasPrefix("staff.");
-  if (!hasVendor && !hasCompany && !hasStaff && !props.onSync) return null;
+  if (!hasVendor && !hasCompany && !hasStaff) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
       <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">DB 補完</span>
       {hasVendor && btn("取引先", () => fillByPrefix("vendor."), !props.activeVendor)}
       {hasCompany && btn("自社", () => fillByPrefix("company."), !props.companyProfile)}
       {hasStaff && btn("Sync Staff", () => fillByPrefix("staff."), !props.selectedStaff)}
-      {props.onSync && (
-        <button
-          type="button"
-          onClick={props.onSync}
-          className="text-[10px] font-mono bg-blue-600 text-white px-2 py-0.5 uppercase rounded flex items-center gap-1 ml-auto"
-        >
-          <Database className="w-2 h-2" /> Backlog Sync
-        </button>
+      {/* LB-F07 (§5.5.5): 取引先の主入力点は上部バー1箇所。ここでは反映状態のみ表示。 */}
+      {props.activeVendor?.vendor_name && (
+        <span className="text-[10px] font-mono text-muted-foreground ml-auto">
+          取引先反映済み: {props.activeVendor.vendor_name}（変更は上部バーの「変更」から）
+        </span>
       )}
     </div>
   );
