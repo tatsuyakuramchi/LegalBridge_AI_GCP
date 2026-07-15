@@ -141,6 +141,11 @@ export function DocumentEditorPage() {
     vendor_id?: number | null
     primary_issue_key?: string | null
   } | null>(null)
+  // LB-F06 (§5.5.2): 上部バーは読み取り3ブロック(Matter・依頼 / 作成文書 / 当事者・担当)を
+  //   基本とし、「変更」を押したときだけ従来の選択グリッド(課題/テンプレ/向き/担当/取引先)を
+  //   開く。新規で何も選択していない間は開いたまま、Matter起点・既存文書ロード時は
+  //   コンテキストが揃っているので自動で畳む。
+  const [setupBarOpen, setSetupBarOpen] = React.useState(true)
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   // Phase 23.2: 旧 Split preview (画面を半分にして並べる) は狭幅で厳しいため
   //   廃止し、別タブでプレビューを開く方式に一本化。
@@ -395,6 +400,9 @@ export function DocumentEditorPage() {
         setSelectedDirection("")
         setPreviousDocument(null)
         setIsReadOnly(false)
+        // LB-F06: 既存文書のロードで課題・テンプレ・取引先は確定済みのため、
+        //   上部の選択グリッドは畳んで読み取り表示にする。
+        setSetupBarOpen(false)
         const verb = fromPendingId ? "PDF 未作成キューから" : "既存文書を再編集モードで"
         showNotification(
           `「${data.document_number}」を${verb}読み込みました。`,
@@ -521,6 +529,9 @@ export function DocumentEditorPage() {
           setSelectedIssue(issueKey)
           void syncFromDatabase(issueKey, { skipRestore: true })
         }
+        // LB-F06: Matter 起点はコンテキストが揃っているので選択グリッドは畳んで
+        //   読み取り表示にする(必要なら「変更」で開く)。
+        setSetupBarOpen(false)
         showNotification(
           `案件「${m.matter_code || `#${m.id}`}${m.title ? ` ${m.title}` : ""}」のコンテキストで作成します。`,
           "info"
@@ -1694,49 +1705,120 @@ export function DocumentEditorPage() {
   return (
     <div className="px-6 py-6 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-12 gap-5">
-        {/* ─── LB-F01/F02: Matter コンテキストバナー(§5.5.2 の第一歩) ─────────
-            Matter 起点で作成中は「どの案件の一工程か」を常時表示し、案件へ
-            1クリックで戻れるようにする。取引先・依頼原票は自動設定済み。 */}
-        {matterContext && (
-          <div className="col-span-12">
-            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap rounded-md border border-sky-600/40 bg-sky-500/10 px-3 py-2 text-[12px] font-mono">
-              <FolderKanban className="h-3.5 w-3.5 shrink-0 text-sky-700" />
-              <span className="font-bold text-sky-800">
-                案件 {matterContext.matter_code || `#${matterContext.id}`}
-              </span>
-              {matterContext.title && (
-                <span className="truncate max-w-[32ch]" title={matterContext.title}>
-                  {matterContext.title}
-                </span>
-              )}
-              {matterContext.counterparty && (
-                <span className="text-muted-foreground">
-                  相手方: {matterContext.counterparty}
-                </span>
-              )}
-              <span className="text-muted-foreground hidden sm:inline">
-                — この案件に紐づけて文書を作成します
-              </span>
-              <button
-                type="button"
-                className="ml-auto inline-flex items-center gap-1 shrink-0 text-sky-700 hover:underline"
-                onClick={() => navigate(`/matters/${matterContext.id}`)}
-                title="案件詳細へ戻る"
-              >
-                案件へ戻る <ArrowUpRight className="h-3 w-3" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ─── Phase 23.2: 上部 Setup Bar (4 スロット) ───────────────
-            動線を「左→右上→右下」から「上→下」に直すため、入力前の
-            必須選択 (課題 / テンプレ / 担当者 / 取引先) を画面上部に
-            水平 4 列で配置する。lg 未満は 2 列、sm 未満は 1 列に折る。 */}
+        {/* ─── LB-F06 (§5.5.2): 上部 Matter コンテキスト ───────────────
+            読み取り3ブロック(Matter・依頼 / 作成文書 / 当事者・担当)を基本とし、
+            「変更」を押したときだけ従来の選択グリッド(①課題/②テンプレ/②′向き/
+            ③担当者/④取引先 — 旧 Phase 23.2 Setup Bar)を開く。
+            Matter 起点(LB-F01/F02)・既存文書ロード時はコンテキストが揃っている
+            ため自動で畳む。 */}
         <div className="col-span-12">
           <Card className="rounded-md">
-            <CardContent className="px-4 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <CardContent className="px-4 py-3 space-y-3">
+              {/* 読み取りコンテキスト行 */}
+              <div className="flex flex-wrap items-start gap-x-8 gap-y-2">
+                {/* ブロック1: Matter・依頼 */}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                    Matter・依頼
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 min-w-0 text-[12px] font-mono">
+                    {matterContext ? (
+                      <>
+                        <FolderKanban className="h-3.5 w-3.5 shrink-0 text-sky-700" />
+                        <span className="font-bold text-sky-800 shrink-0">
+                          {matterContext.matter_code || `#${matterContext.id}`}
+                        </span>
+                        {matterContext.title && (
+                          <span className="truncate max-w-[26ch]" title={matterContext.title}>
+                            {matterContext.title}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">案件未紐付け</span>
+                    )}
+                  </div>
+                  <p
+                    className="text-[11px] font-mono text-muted-foreground mt-0.5 truncate max-w-[40ch]"
+                    title={issueSummary?.summary || undefined}
+                  >
+                    Request: {selectedIssue || "未選択"}
+                    {issueSummary?.summary ? ` ${issueSummary.summary}` : ""}
+                  </p>
+                </div>
+
+                {/* ブロック2: 作成文書 */}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                    作成文書
+                  </p>
+                  <p className="text-[12px] font-mono font-bold mt-1 truncate max-w-[26ch]">
+                    {selectedTemplate
+                      ? templateMetadata[selectedTemplate]?.label || selectedTemplate
+                      : "未選択"}
+                  </p>
+                  <p className="text-[11px] font-mono mt-0.5">
+                    <span className="text-muted-foreground">請求の向き: </span>
+                    {!selectedTemplate ? (
+                      "—"
+                    ) : !directionApplicable ? (
+                      "対象外(非金銭)"
+                    ) : selectedDirection === "in" ? (
+                      "当社が払う"
+                    ) : selectedDirection === "out" ? (
+                      "当社が受け取る"
+                    ) : (
+                      <span className="text-destructive font-bold">未選択</span>
+                    )}
+                  </p>
+                </div>
+
+                {/* ブロック3: 当事者・担当 */}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                    当事者・担当
+                  </p>
+                  <p className="text-[12px] font-mono mt-1 truncate max-w-[24ch]">
+                    <span className="text-muted-foreground">取引先: </span>
+                    {activeVendor?.vendor_name || matterContext?.counterparty || "未選択"}
+                  </p>
+                  <p className="text-[11px] font-mono mt-0.5 truncate max-w-[24ch]">
+                    <span className="text-muted-foreground">担当: </span>
+                    {selectedStaff?.staff_name || "未設定"}
+                  </p>
+                </div>
+
+                {/* 右端: 案件へ戻る / 変更トグル */}
+                <div className="ml-auto flex items-center gap-3 shrink-0">
+                  {matterContext && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-[12px] font-mono text-sky-700 hover:underline"
+                      onClick={() => navigate(`/matters/${matterContext.id}`)}
+                      title="案件詳細へ戻る"
+                    >
+                      案件へ戻る <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSetupBarOpen((v) => !v)}
+                    title={
+                      setupBarOpen
+                        ? "選択グリッドを閉じて読み取り表示にします"
+                        : "課題・テンプレート・請求の向き・担当者・取引先を変更します"
+                    }
+                  >
+                    {setupBarOpen ? "選択を閉じる" : "変更"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* 選択グリッド(「変更」時のみ表示)。旧・上部 Setup Bar (Phase 23.2) の
+                  4スロット。lg 未満は 2 列、sm 未満は 1 列に折る。 */}
+              {setupBarOpen && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-dashed border-border/70 pt-3">
                 {/* ① Backlog 課題 */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -1943,6 +2025,7 @@ export function DocumentEditorPage() {
                     )}
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
         </div>
