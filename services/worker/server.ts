@@ -5388,13 +5388,31 @@ ${details}
 
         // 案件と代表課題キーを引く(documents.issue_key に使い autolink とも整合)。
         const m = await query(
-          `SELECT id, matter_code, primary_issue_key FROM matters WHERE id = $1`,
+          `SELECT id, matter_code, primary_issue_key, drive_folder_id FROM matters WHERE id = $1`,
           [matterId]
         );
         if (!m.rows[0]) {
           return res.status(404).json({ ok: false, error: "案件が見つかりません" });
         }
         const issueKey = String(m.rows[0].primary_issue_key || "").trim();
+
+        // LB-08 (§7): 案件フォルダがあれば、添付は 90_Reference 配下へ格納する。
+        //   解決失敗時は従来どおり既定フォルダ(非致命)。
+        let attachFolderId: string | undefined;
+        if (m.rows[0].drive_folder_id) {
+          try {
+            const sub = await googleDriveService.ensureFolder(
+              "90_Reference",
+              m.rows[0].drive_folder_id
+            );
+            attachFolderId = sub.id;
+          } catch (fe: any) {
+            console.warn(
+              "[matters] attachment folder resolve failed (non-fatal):",
+              fe?.message || fe
+            );
+          }
+        }
 
         // 生ファイルを Drive へアップロード。
         const safeName = String(req.file.originalname).replace(/[\r\n]/g, "_");
@@ -5403,7 +5421,8 @@ ${details}
         const driveLink = await googleDriveService.uploadFile(
           stream,
           fileName,
-          req.file.mimetype
+          req.file.mimetype,
+          attachFolderId
         );
         // 空リンクは保存しない(後段の fileId 抽出/本文抽出が壊れるため)。
         //   uploadFile 側で fileId からの合成を試みるので、ここに来るのは想定外。
@@ -5450,6 +5469,39 @@ ${details}
           ]
         );
         await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [matterId]);
+
+        // LB-09 (§7): 添付も document_files(実ファイル台帳)へ登録(0127 未適用はスキップ)。
+        try {
+          const fileId = googleDriveService.extractFileId(driveLink);
+          if (fileId && ins.rows[0]?.id) {
+            await query(
+              `INSERT INTO document_files
+                 (document_id, matter_id, drive_file_id, drive_folder_id, file_role,
+                  file_name, mime_type, size_bytes, revision, is_current, drive_link, created_by)
+               VALUES ($1,$2,$3,$4,'attachment',$5,$6,$7,0,TRUE,$8,$9)
+               ON CONFLICT (document_id, file_role, drive_file_id) DO NOTHING`,
+              [
+                Number(ins.rows[0].id),
+                matterId,
+                fileId,
+                attachFolderId || null,
+                fileName,
+                req.file.mimetype || null,
+                req.file.size || null,
+                driveLink,
+                createdBy,
+              ]
+            );
+          }
+        } catch (dfErr: any) {
+          if (dfErr?.code !== "42P01") {
+            console.warn(
+              "[matters] attachment document_files register failed (non-fatal):",
+              dfErr?.message || dfErr
+            );
+          }
+        }
+
         res.json({ ok: true, document: ins.rows[0] });
       } catch (error) {
         console.error("[matters] attachment upload failed:", error);
@@ -9922,7 +9974,11 @@ ${details}
 
   // 新課題(統一課題)導出API。docs/design/unified-issue-ui-plan.md
   registerUnifiedIssues(app, { query });
-  registerMatters(app, { query });
+  registerMatters(app, {
+    query,
+    // LB-08 (§7): 案件作成時の Drive 案件フォルダ自動生成。
+    createMatterFolder: (m) => googleDriveService.createMatterFolder(m),
+  });
 
   // 関連当事者取引 判定 (/rpt/*): RPT.gs の書込 (法人/役員/株主構成/議案)。読取は search-API。
   registerRelatedParty(app, { query, pool });
@@ -15201,6 +15257,10 @@ ${details}
       //      draft 完成として overwrite 扱いにするため)。
       const dbOnly = skipPdf === true || skipPdf === "true";
       let driveLink: string;
+      // LB-08 (§7): 生成 PDF の保存先フォルダ(案件フォルダ 04_Final)。
+      //   解決できなければ undefined = 従来どおり既定フォルダ(挙動互換)。
+      //   document_files 登録(LB-09)でも保存先の記録に使う。
+      let uploadFolderId: string | undefined;
       if (dbOnly) {
         // 優先順: ① フォームで指定されたファイルリンク (既存の締結済み PDF 等)
         //         ② 既存 row の drive_link 温存
@@ -15255,6 +15315,43 @@ ${details}
         //   変わらないので、Backlog コメントや Slack 共有 link がそのまま生きる。
         //   - 既存 row の drive_link を取得して overwritePdf を呼ぶ
         //   - 既存 link が無い (DB 不整合) 場合は uploadPdf にフォールバック
+
+        // LB-08 (§7): 案件(Matter)が解決でき、案件フォルダがあれば生成 PDF は
+        //   その配下 04_Final へ保存する。明示 matterId(LB-F02) → issue_key の
+        //   matter_issues 解決の順。失敗時は既定フォルダへ(非致命)。
+        //   ※ overwrite(内部修正)は既存 fileId を維持するため移動しない。
+        try {
+          const rm = Number((req.body as any)?.matterId);
+          let mrow: any;
+          if (Number.isFinite(rm) && rm > 0) {
+            mrow = (
+              await query(`SELECT drive_folder_id FROM matters WHERE id = $1`, [rm])
+            ).rows[0];
+          } else if (issueKey && !isManualIssue) {
+            mrow = (
+              await query(
+                `SELECT m.drive_folder_id
+                   FROM matter_issues mi JOIN matters m ON m.id = mi.matter_id
+                  WHERE mi.backlog_issue_key = $1
+                  ORDER BY mi.id LIMIT 1`,
+                [issueKey]
+              )
+            ).rows[0];
+          }
+          if (mrow?.drive_folder_id) {
+            const sub = await googleDriveService.ensureFolder(
+              "04_Final",
+              mrow.drive_folder_id
+            );
+            uploadFolderId = sub.id;
+          }
+        } catch (folderErr: any) {
+          console.warn(
+            "[generate] matter folder resolve failed (non-fatal):",
+            folderErr?.message || folderErr
+          );
+        }
+
         if (overwrite) {
           const existingRow = await query(
             `SELECT drive_link FROM documents WHERE document_number = $1 LIMIT 1`,
@@ -15276,15 +15373,15 @@ ${details}
                 `[overwrite] failed for ${docNumber} (${existingLink}), fallback to upload:`,
                 overwriteErr?.message || overwriteErr
               );
-              driveLink = await googleDriveService.uploadPdf(html, fileName);
+              driveLink = await googleDriveService.uploadPdf(html, fileName, uploadFolderId);
             }
           } else {
             // 既存 link が DB に無い (= 過去の生成失敗で row だけ残った等)。
             // 新規アップロードで補完する。
-            driveLink = await googleDriveService.uploadPdf(html, fileName);
+            driveLink = await googleDriveService.uploadPdf(html, fileName, uploadFolderId);
           }
         } else {
-          driveLink = await googleDriveService.uploadPdf(html, fileName);
+          driveLink = await googleDriveService.uploadPdf(html, fileName, uploadFolderId);
         }
       }
 
@@ -15585,6 +15682,60 @@ ${details}
             step: "matter_link",
             error: String(mlErr?.message || mlErr),
           });
+        }
+      }
+
+      // LB-09 (§7): 発行ファイルを document_files(実ファイル台帳)へ登録する。
+      //   documents.drive_link(URL 文字列)は互換のため残しつつ、file ID・役割・版・
+      //   現在フラグを構造化して追跡する。内部修正(overwrite)は同 fileId の再登録
+      //   (ON CONFLICT UPDATE)、再発行は新 fileId が current になり旧ファイルは
+      //   is_current=FALSE へ倒す。0127 未適用環境ではスキップ(非致命)。
+      if (documentId && driveLink) {
+        try {
+          const fileId = googleDriveService.extractFileId(driveLink);
+          if (fileId) {
+            await query(
+              `UPDATE document_files
+                  SET is_current = FALSE
+                WHERE document_id = $1 AND file_role = 'primary_pdf'
+                  AND is_current AND drive_file_id <> $2`,
+              [documentId, fileId]
+            );
+            await query(
+              `INSERT INTO document_files
+                 (document_id, matter_id, drive_file_id, drive_folder_id, file_role,
+                  file_name, mime_type, revision, is_current, drive_link, created_by)
+               VALUES ($1, (SELECT matter_id FROM documents WHERE id = $1), $2, $3,
+                       'primary_pdf', $4, 'application/pdf', $5, TRUE, $6, $7)
+               ON CONFLICT (document_id, file_role, drive_file_id) DO UPDATE SET
+                 is_current      = TRUE,
+                 revision        = EXCLUDED.revision,
+                 drive_link      = EXCLUDED.drive_link,
+                 file_name       = EXCLUDED.file_name,
+                 matter_id       = EXCLUDED.matter_id,
+                 drive_folder_id = COALESCE(EXCLUDED.drive_folder_id, document_files.drive_folder_id)`,
+              [
+                documentId,
+                fileId,
+                uploadFolderId || null,
+                docNumber,
+                revision,
+                driveLink,
+                requesterEmail || "legal_user",
+              ]
+            );
+          }
+        } catch (dfErr: any) {
+          if (dfErr?.code !== "42P01") {
+            console.warn(
+              `[document-files] register failed for ${docNumber}:`,
+              dfErr?.message || dfErr
+            );
+            syncWarnings.push({
+              step: "document_files",
+              error: String(dfErr?.message || dfErr),
+            });
+          }
         }
       }
 
@@ -17285,6 +17436,48 @@ ${details}
     } catch (error) {
       console.error("Error in /api/documents/generate:", error);
       res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // Phase 3 (§7): Drive 実在・権限の巡回検査。document_files の is_current 行を
+  //   未検査 → 検査が古い順に最大 limit 件取り、files.get で実在確認して
+  //   verify_status / verified_at を更新する。定期実行(Cloud Scheduler 等)や
+  //   手動キックを想定。DB 未登録ファイルの検出は Drive 全走査が必要なため対象外
+  //   (スコープ drive.file の制約もあり、台帳起点の欠損検出に限定)。
+  app.post("/api/drive/verify-files", express.json(), async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(Number(req.body?.limit) || 50, 1), 200);
+      const rows = await query(
+        `SELECT id, drive_file_id FROM document_files
+          WHERE is_current
+          ORDER BY verified_at NULLS FIRST, id
+          LIMIT $1`,
+        [limit]
+      );
+      const summary: Record<string, number> = { ok: 0, missing: 0, forbidden: 0, error: 0 };
+      const problems: Array<{ id: number; drive_file_id: string; status: string }> = [];
+      for (const r of rows.rows) {
+        const st = await googleDriveService.statFile(String(r.drive_file_id));
+        summary[st.status] = (summary[st.status] || 0) + 1;
+        await query(
+          `UPDATE document_files
+              SET verify_status = $1, verified_at = now(),
+                  size_bytes = COALESCE($2, size_bytes)
+            WHERE id = $3`,
+          [st.status, st.size ?? null, r.id]
+        );
+        if (st.status !== "ok") {
+          problems.push({ id: Number(r.id), drive_file_id: String(r.drive_file_id), status: st.status });
+        }
+      }
+      res.json({ ok: true, checked: rows.rows.length, summary, problems });
+    } catch (e: any) {
+      // 0127 未適用環境
+      if (e?.code === "42P01") {
+        return res.status(400).json({ ok: false, error: "document_files 未作成(migration 0127 未適用)" });
+      }
+      console.error("[drive/verify-files] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
 
