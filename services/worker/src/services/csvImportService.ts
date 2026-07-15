@@ -315,12 +315,48 @@ export class CsvImportService {
           vendorIdForBulk = vr.rows[0]?.id ? Number(vr.rows[0].id) : null;
         }
         await query(
-          `INSERT INTO contract_capabilities
-             (legal_request_id, vendor_id, contract_title, amount_ex_tax, due_date,
-              backlog_issue_key, record_type, contract_category, contract_type,
-              document_number)
-           VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
-                   'purchase_order', $7)`,
+          `INSERT INTO documents (
+             legal_request_id,
+             vendor_id,
+             contract_title,
+             amount_ex_tax,
+             due_date,
+             backlog_issue_key,
+             record_type,
+             contract_category,
+             contract_type,
+             document_number,
+             template_type,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             'purchase_order',
+             'service',
+             'purchase_order',
+             $7,
+             COALESCE('purchase_order', ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             legal_request_id = COALESCE(EXCLUDED.legal_request_id, documents.legal_request_id),
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             amount_ex_tax = COALESCE(EXCLUDED.amount_ex_tax, documents.amount_ex_tax),
+             due_date = COALESCE(EXCLUDED.due_date, documents.due_date),
+             backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, documents.backlog_issue_key),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             updated_at = now()`,
           [
             reqResult.rows[0].id,
             vendorIdForBulk,
@@ -603,11 +639,65 @@ export class CsvImportService {
 
         // 3. Insert into contract_capabilities
         await query(
-          `INSERT INTO contract_capabilities (
-            vendor_id, record_type, contract_category, contract_type, contract_title, 
-            document_number, contract_status, effective_date, expiration_date, auto_renewal, 
-            original_work, product_name, territory, language, document_url
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          `INSERT INTO documents (
+             vendor_id,
+             record_type,
+             contract_category,
+             contract_type,
+             contract_title,
+             document_number,
+             contract_status,
+             effective_date,
+             expiration_date,
+             auto_renewal,
+             original_work,
+             product_name,
+             territory,
+             language,
+             document_url,
+             template_type,
+             drive_link,
+             revision,
+             is_primary,
+             lifecycle_status
+           ) VALUES (
+             $1,
+             $2,
+             $3,
+             $4,
+             $5,
+             $6,
+             $7,
+             $8,
+             $9,
+             $10,
+             $11,
+             $12,
+             $13,
+             $14,
+             $15,
+             COALESCE($4, ''),
+             COALESCE($15, ''),
+             NULL,
+             NULL,
+             NULL
+           )
+           ON CONFLICT (document_number) DO UPDATE SET
+             vendor_id = COALESCE(EXCLUDED.vendor_id, documents.vendor_id),
+             record_type = COALESCE(EXCLUDED.record_type, documents.record_type),
+             contract_category = COALESCE(EXCLUDED.contract_category, documents.contract_category),
+             contract_type = COALESCE(EXCLUDED.contract_type, documents.contract_type),
+             contract_title = COALESCE(EXCLUDED.contract_title, documents.contract_title),
+             contract_status = COALESCE(EXCLUDED.contract_status, documents.contract_status),
+             effective_date = COALESCE(EXCLUDED.effective_date, documents.effective_date),
+             expiration_date = COALESCE(EXCLUDED.expiration_date, documents.expiration_date),
+             auto_renewal = COALESCE(EXCLUDED.auto_renewal, documents.auto_renewal),
+             original_work = COALESCE(EXCLUDED.original_work, documents.original_work),
+             product_name = COALESCE(EXCLUDED.product_name, documents.product_name),
+             territory = COALESCE(EXCLUDED.territory, documents.territory),
+             language = COALESCE(EXCLUDED.language, documents.language),
+             document_url = COALESCE(EXCLUDED.document_url, documents.document_url),
+             updated_at = now()`,
           [
             vendorId, record_type, contract_category, contract_type, contract_title,
             document_number, contract_status, effective_date, expiration_date, auto_renewal,
