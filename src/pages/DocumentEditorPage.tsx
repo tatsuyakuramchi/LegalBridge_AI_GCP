@@ -1735,6 +1735,36 @@ export function DocumentEditorPage() {
     }
   }
 
+  // LB-F10 (§5.5.11): 外部連携(Backlog / Drive)の実疎通状態。
+  //   固定文言(旧 Live syncing)ではなく worker の /api/integrations/status
+  //   (60秒キャッシュ)を初回マウント時と5分間隔で取得してフッターに表示する。
+  const [integrations, setIntegrations] = React.useState<{
+    backlog: boolean | null
+    drive: boolean | null
+  } | null>(null)
+  React.useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      try {
+        const res = await fetch("/api/integrations/status")
+        const json = await res.json().catch(() => null)
+        if (cancelled || !json?.ok) return
+        setIntegrations({
+          backlog: json.backlog?.ok ?? null,
+          drive: json.drive?.ok ?? null,
+        })
+      } catch {
+        /* 取得失敗は不明表示のまま(致命的でない) */
+      }
+    }
+    void check()
+    const timer = window.setInterval(check, 5 * 60 * 1000)
+    return () => {
+      cancelled = true
+      window.clearInterval(timer)
+    }
+  }, [])
+
   // LB-F09 (§5.5.9): 主ボタンは技術用語(Finalize & Sync)ではなくテンプレートに
   //   応じた業務語彙で表示する。
   const generateLabel = React.useMemo(() => {
@@ -2698,6 +2728,40 @@ export function DocumentEditorPage() {
                   {directionApplicable && !selectedDirection && (
                     <span className="text-[11px] font-mono text-destructive/80">
                       請求の向き(上部②′)が未選択
+                    </span>
+                  )}
+                  {/* LB-F10 (§5.5.11): 外部連携の実疎通状態(●=接続 / ●=障害 / ●=不明) */}
+                  {integrations && (
+                    <span className="flex items-center gap-2.5 text-[11px] font-mono text-muted-foreground">
+                      {(
+                        [
+                          ["Backlog", integrations.backlog],
+                          ["Drive", integrations.drive],
+                        ] as const
+                      ).map(([label, ok]) => (
+                        <span
+                          key={label}
+                          className="inline-flex items-center gap-1"
+                          title={
+                            ok === true
+                              ? `${label} 接続済み`
+                              : ok === false
+                                ? `${label} 接続障害(下書き保存は可能。生成/同期は失敗する可能性)`
+                                : `${label} 状態不明(未設定)`
+                          }
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              ok === true
+                                ? "bg-emerald-500"
+                                : ok === false
+                                  ? "bg-destructive"
+                                  : "bg-muted-foreground/40"
+                            }`}
+                          />
+                          {label}
+                        </span>
+                      ))}
                     </span>
                   )}
                 </div>
