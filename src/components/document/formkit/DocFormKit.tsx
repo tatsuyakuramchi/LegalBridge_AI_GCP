@@ -63,7 +63,12 @@ export interface FkSectionProps {
 export const FkSection: React.FC<FkSectionProps> = (props) => {
   const accent = props.accent || "sky";
   return (
-    <div className={`rounded-xl border border-border border-t-[3px] ${ACCENT_TOP[accent]} bg-card p-5 space-y-4`}>
+    <div
+      // LB-F12: 左セクションナビの走査対象(FormSection と同じ属性)。
+      data-form-section=""
+      data-section-title={props.title}
+      className={`rounded-xl border border-border border-t-[3px] ${ACCENT_TOP[accent]} bg-card p-5 space-y-4 scroll-mt-4`}
+    >
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h4 className={`font-mono text-[13px] font-bold ${ACCENT_TEXT[accent]}`}>{props.title}</h4>

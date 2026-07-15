@@ -158,7 +158,12 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
         }
         if (sec.collapsible) {
           return (
-            <details key={sec.title || i} className="rounded-xl border border-border border-t-[3px] border-t-border bg-card overflow-hidden">
+            <details
+              key={sec.title || i}
+              data-form-section=""
+              data-section-title={`${sec.title || `セクション ${i + 1}`}（任意）`}
+              className="rounded-xl border border-border border-t-[3px] border-t-border bg-card overflow-hidden scroll-mt-4"
+            >
               <summary className="cursor-pointer select-none px-5 py-3 font-mono text-[12px] font-bold text-muted-foreground hover:text-foreground">
                 ▶ {sec.title || `セクション ${i + 1}`}（任意）
               </summary>
