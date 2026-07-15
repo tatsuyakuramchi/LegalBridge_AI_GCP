@@ -21,6 +21,8 @@ import {
   Plus,
   ClipboardList,
   Hash,
+  FolderKanban,
+  ArrowUpRight,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -128,6 +130,18 @@ export function DocumentEditorPage() {
   //   請求の向きが存在しないため UI 非表示・未選択でも生成可にする。
   const directionMode = resolveDirectionMode(selectedTemplate)
   const directionApplicable = directionMode !== "not_applicable"
+  // LB-F01/F02 (§5.5.1): Matter 起点で作成するときの案件コンテキスト。
+  //   Matter 詳細の「文書作成」から /documents/new?matter_id=<id> で遷移すると
+  //   案件・代表課題・取引先を自動設定し、生成 API へ matterId を明示的に渡す
+  //   (documents.matter_id の確定 = LB-02)。バナーで「どの案件の一工程か」を常時表示。
+  const [matterContext, setMatterContext] = React.useState<{
+    id: number
+    matter_code?: string | null
+    title?: string | null
+    counterparty?: string | null
+    vendor_id?: number | null
+    primary_issue_key?: string | null
+  } | null>(null)
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   // Phase 23.2: 旧 Split preview (画面を半分にして並べる) は狭幅で厳しいため
   //   廃止し、別タブでプレビューを開く方式に一本化。
@@ -302,6 +316,10 @@ export function DocumentEditorPage() {
   //   searchParams から template を削除するため、初期値を保持しておく。
   const initialTemplateParamRef = React.useRef(searchParams.get("template"))
   const initialPrefillRef = React.useRef(searchParams.get("prefill") === "1")
+  // LB-F01/F02: Matter 起点のディープリンク(/documents/new?matter_id=123&issue_key=ARC-456)。
+  //   後段の effect が searchParams からクエリを削除するため初期値を ref へ退避する。
+  const initialMatterIdRef = React.useRef(searchParams.get("matter_id"))
+  const initialIssueKeyRef = React.useRef(searchParams.get("issue_key"))
   React.useEffect(() => {
     const targetId = fromPendingId || reopenId
     if (!targetId) return
@@ -450,6 +468,89 @@ export function DocumentEditorPage() {
     setSearchParams(sp, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam, parentPoParam])
+
+  // LB-F01/F02 (§5.5.1): Matter 詳細の「文書作成」からの直接遷移。
+  //   /documents/new?matter_id=<id>[&issue_key=<key>]
+  //   案件を取得して Matter コンテキスト(案件・代表課題・取引先)を自動設定する。
+  //   Backlog 課題は「作成対象を選ぶ主キー」ではなく Matter 内の依頼原票として扱う。
+  //   Matter 起点は明示的な新規作成の意図なので、
+  //     - skipRestore=true: 前セッションの入力・下書きを引き継がない(上書き事故なし)
+  //     - 閲覧モード(isReadOnly)にはしない: そのまま入力を始められる
+  //     - activeVendor 等の前セッション選択はリセットし、Matter の取引先で再解決する
+  const didMatterInitRef = React.useRef(false)
+  React.useEffect(() => {
+    if (didMatterInitRef.current) return
+    const midRaw = initialMatterIdRef.current
+    if (!midRaw) return
+    didMatterInitRef.current = true
+    // URL からクエリを消す(リロード時に二重初期化しない)。
+    const sp = searchParams
+    sp.delete("matter_id")
+    sp.delete("issue_key")
+    setSearchParams(sp, { replace: true })
+    const mid = Number(midRaw)
+    if (!Number.isFinite(mid) || mid <= 0) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/matters/${mid}`)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok || json?.ok === false || !json?.matter) {
+          throw new Error(json?.error || `HTTP ${res.status}`)
+        }
+        if (cancelled) return
+        const m = json.matter
+        setMatterContext({
+          id: Number(m.id),
+          matter_code: m.matter_code ?? null,
+          title: m.title ?? null,
+          counterparty: m.counterparty ?? null,
+          vendor_id: m.vendor_id != null ? Number(m.vendor_id) : null,
+          primary_issue_key: m.primary_issue_key ?? null,
+        })
+        // 前文書のセッション状態(取引先/担当者/方向/前文書バナー)をリセットし、
+        // Matter コンテキストから再解決させる(reopen 経路と同じ扱い)。
+        setActiveVendor(null)
+        setSelectedStaff(null)
+        setSelectedDirection("")
+        setPreviousDocument(null)
+        setIsReadOnly(false)
+        // 代表課題(またはクエリ指定の課題)を依頼原票として自動選択し、
+        // form-context(取引先・件名・条件明細)をプリフィルする。
+        const issueKey = initialIssueKeyRef.current || m.primary_issue_key || ""
+        if (issueKey) {
+          setSelectedIssue(issueKey)
+          void syncFromDatabase(issueKey, { skipRestore: true })
+        }
+        showNotification(
+          `案件「${m.matter_code || `#${m.id}`}${m.title ? ` ${m.title}` : ""}」のコンテキストで作成します。`,
+          "info"
+        )
+      } catch (e: any) {
+        showNotification(
+          `案件コンテキストの取得に失敗しました: ${e?.message || e}`,
+          "error"
+        )
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // LB-F02: Matter の取引先(vendor_id)から activeVendor を自動解決する。
+  //   vendors は非同期ロードのため、揃ったタイミングで解決する。
+  //   ユーザーが既に取引先を選んでいる場合は上書きしない。
+  React.useEffect(() => {
+    if (!matterContext?.vendor_id || activeVendor) return
+    if (!Array.isArray(vendors) || vendors.length === 0) return
+    const v = vendors.find(
+      (x: any) => Number(x.id) === Number(matterContext.vendor_id)
+    )
+    if (v) setActiveVendor(v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matterContext?.vendor_id, vendors, activeVendor])
 
   // マテリアル登録フォーム(/master/materials)由来の prefill。
   //   ?prefill_material=1 で来たとき、sessionStorage('lb_material_prefill') に退避された
@@ -1241,6 +1342,9 @@ export function DocumentEditorPage() {
           templateType: selectedTemplate,
           formData: formDataWithPurpose,
           requesterEmail: selectedStaff?.email || "web-user",
+          // LB-02/LB-F02: Matter 起点で作成している場合は matter_id を明示的に渡す。
+          //   worker が documents.matter_id を確定する(autolink トリガより優先)。
+          matterId: matterContext?.id,
           // Phase 15/16: 既存 doc の更新時は同じ document_number を渡す
           // (PDF 未作成キュー由来 or 再編集 reopen 由来の両方)。
           //   さらに「初回保存で採番済みの下書き番号」(__draft_doc_number) も
@@ -1347,6 +1451,8 @@ export function DocumentEditorPage() {
               issueKey: selectedIssue || "MANUAL-" + Date.now(),
               templateType: "notice_consent_personal_info_freelance",
               requesterEmail: selectedStaff?.email || "web-user",
+              // LB-02/LB-F02: 同意書も本文書と同じ案件へ紐付ける。
+              matterId: matterContext?.id,
               formData: {
                 CONTRACT_NAME:
                   templateMetadata[selectedTemplate]?.label || selectedTemplate,
@@ -1552,6 +1658,41 @@ export function DocumentEditorPage() {
   return (
     <div className="px-6 py-6 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-12 gap-5">
+        {/* ─── LB-F01/F02: Matter コンテキストバナー(§5.5.2 の第一歩) ─────────
+            Matter 起点で作成中は「どの案件の一工程か」を常時表示し、案件へ
+            1クリックで戻れるようにする。取引先・依頼原票は自動設定済み。 */}
+        {matterContext && (
+          <div className="col-span-12">
+            <div className="flex items-center gap-x-3 gap-y-1 flex-wrap rounded-md border border-sky-600/40 bg-sky-500/10 px-3 py-2 text-[12px] font-mono">
+              <FolderKanban className="h-3.5 w-3.5 shrink-0 text-sky-700" />
+              <span className="font-bold text-sky-800">
+                案件 {matterContext.matter_code || `#${matterContext.id}`}
+              </span>
+              {matterContext.title && (
+                <span className="truncate max-w-[32ch]" title={matterContext.title}>
+                  {matterContext.title}
+                </span>
+              )}
+              {matterContext.counterparty && (
+                <span className="text-muted-foreground">
+                  相手方: {matterContext.counterparty}
+                </span>
+              )}
+              <span className="text-muted-foreground hidden sm:inline">
+                — この案件に紐づけて文書を作成します
+              </span>
+              <button
+                type="button"
+                className="ml-auto inline-flex items-center gap-1 shrink-0 text-sky-700 hover:underline"
+                onClick={() => navigate(`/matters/${matterContext.id}`)}
+                title="案件詳細へ戻る"
+              >
+                案件へ戻る <ArrowUpRight className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ─── Phase 23.2: 上部 Setup Bar (4 スロット) ───────────────
             動線を「左→右上→右下」から「上→下」に直すため、入力前の
             必須選択 (課題 / テンプレ / 担当者 / 取引先) を画面上部に

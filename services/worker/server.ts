@@ -15532,6 +15532,62 @@ ${details}
       // 「文書作成に失敗しました」と出るのに DB には実体がある、という
       // 紛らわしい状態を引き起こしていた。
       const syncWarnings: Array<{ step: string; error: string }> = [];
+
+      // LB-02 (§9 Phase 1): 文書生成時の Matter 紐付けを明示化する。
+      //   - リクエスト body の matterId が指定されていれば documents.matter_id を
+      //     明示設定する(存在検証あり)。autolink トリガ(0106)は matter_id が NULL の
+      //     行にしか働かないため、Matter 起点(LB-F01/F02)で渡された明示コンテキストが
+      //     常に優先される。
+      //   - 指定 Matter が存在しない場合は致命エラーにせず warnings に積む(発行は成功)。
+      //   - 明示指定なしの場合は従来どおりトリガの issue_key → matter_issues 解決に
+      //     委ねる。それでも未解決ならレスポンス直前の matter 解決ブロックで
+      //     warnings に積む(解決不能時の扱い: NULL のまま保存し、後から案件ページの
+      //     「文書を紐付け」で解決できる)。
+      const requestedMatterId = Number((req.body as any)?.matterId);
+      if (documentId && Number.isFinite(requestedMatterId) && requestedMatterId > 0) {
+        try {
+          const mchk = await query(`SELECT id FROM matters WHERE id = $1`, [
+            requestedMatterId,
+          ]);
+          if (mchk.rows[0]) {
+            await query(`UPDATE documents SET matter_id = $1 WHERE id = $2`, [
+              requestedMatterId,
+              documentId,
+            ]);
+            // 実在する Backlog 課題キー付きなら matter_issues にも束ねて、以後の
+            // 同課題の文書が autolink トリガで同じ案件に紐づくようにする。
+            if (issueKey && !isManualIssue) {
+              await query(
+                `INSERT INTO matter_issues (matter_id, backlog_issue_key, relation)
+                 VALUES ($1, $2, 'related')
+                 ON CONFLICT (matter_id, backlog_issue_key) DO NOTHING`,
+                [requestedMatterId, issueKey]
+              );
+            }
+            console.log(
+              `🔗 [matter-link] ${docNumber}: matter_id=${requestedMatterId} を明示設定`
+            );
+          } else {
+            console.warn(
+              `[matter-link] matter ${requestedMatterId} not found (doc=${docNumber})`
+            );
+            syncWarnings.push({
+              step: "matter_link",
+              error: `指定された案件(matter id=${requestedMatterId})が存在しないため紐付けをスキップしました`,
+            });
+          }
+        } catch (mlErr: any) {
+          console.warn(
+            `[matter-link] failed for ${docNumber}:`,
+            mlErr?.message || mlErr
+          );
+          syncWarnings.push({
+            step: "matter_link",
+            error: String(mlErr?.message || mlErr),
+          });
+        }
+      }
+
       try {
       if (documentId && Array.isArray(formData?.ringi_numbers)) {
         const numbers: string[] = (formData.ringi_numbers as any[])
@@ -17192,6 +17248,17 @@ ${details}
         }
       } catch (matErr) {
         console.warn("[generate] matter resolve skipped (non-fatal):", matErr);
+      }
+      // LB-02: Matter 未解決は正常系(案件に属さない単発文書等)として発行は成功と
+      //   しつつ、warnings で「未紐付けで保存された」ことを明示的に返す。
+      //   documents.matter_id は NULL のまま保存され、後から案件詳細の
+      //   「文書を紐付け」や課題の束ね(matter_issues)で解決できる。
+      if (documentId && matterId == null) {
+        syncWarnings.push({
+          step: "matter_link",
+          error:
+            "文書は案件(Matter)未紐付けで保存されました(matterId 未指定かつ issue_key から解決不能)。案件ページから手動で紐付けできます。",
+        });
       }
 
       // Phase 9g: documentNumber も返してフロントのサクセス画面で

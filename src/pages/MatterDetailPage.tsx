@@ -541,12 +541,16 @@ export function MatterDetailPage() {
               </NativeSelect>
               <Button
                 size="sm"
-                onClick={() =>
-                  primaryKey
-                    ? navigate(`/issues/${encodeURIComponent(primaryKey)}`)
-                    : push("代表課題が未設定です。編集から設定してください", "error")
-                }
-                title="代表課題の課題詳細から文書を作成"
+                onClick={() => {
+                  // LB-F01 (§5.5.1): 課題詳細を経由せず Document Editor へ直接遷移する。
+                  //   matter_id + 代表課題をクエリで渡し、エディタ側が案件コンテキスト
+                  //   (案件・依頼原票・取引先)を自動設定する(LB-F02)。
+                  //   代表課題が未設定でも案件コンテキストだけで作成を開始できる。
+                  const params = new URLSearchParams({ matter_id: String(m.id) })
+                  if (primaryKey) params.set("issue_key", primaryKey)
+                  navigate(`/documents/new?${params.toString()}`)
+                }}
+                title="この案件のコンテキストで文書を作成"
               >
                 <FilePlus className="h-3.5 w-3.5 mr-1" /> 文書作成
               </Button>

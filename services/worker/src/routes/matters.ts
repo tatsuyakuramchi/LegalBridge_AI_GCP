@@ -3,6 +3,7 @@
  *   設計/スキーマ: migrations/0102_matter_management.sql
  *
  *   GET    /api/matters                      … 一覧（matter_overview_v + フィルタ status/q）
+ *   GET    /api/matters/issue-links          … 課題キー→案件の対応表（matter_issues 全体, LB-03）
  *   POST   /api/matters                      … 案件作成（matter_code 自動採番 MTR-YYYY-NNNNN）
  *   GET    /api/matters/:id                  … 詳細（案件 + 課題 + 文書 + 条件 + 送信履歴）
  *   PATCH  /api/matters/:id                  … 案件更新（title/status/vendor_id/counterparty/remarks/primary_issue_key）
@@ -69,6 +70,32 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
       res.json({ ok: true, matters: r.rows });
     } catch (e: any) {
       console.error("[matters] list failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // ── 課題→案件リンク一覧（LB-03） ────────────────────────────────────────────
+  //   Requests 画面等の「この依頼は案件化済みか」判定を、matters.primary_issue_key
+  //   だけでなく matter_issues 全体(primary/duplicate/partial/related)へ拡張する
+  //   ための軽量マップ。同一課題が複数案件に束ねられている場合は primary を優先し、
+  //   次に更新が新しい案件を返す。
+  //   ※ ルート登録順に依存: /api/matters/:id より先に登録すること
+  //     (後だと "issue-links" が :id にマッチして 500 になる)。
+  app.get("/api/matters/issue-links", async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT DISTINCT ON (mi.backlog_issue_key)
+                mi.backlog_issue_key, mi.relation,
+                m.id AS matter_id, m.matter_code, m.title
+           FROM matter_issues mi
+           JOIN matters m ON m.id = mi.matter_id
+          ORDER BY mi.backlog_issue_key,
+                   (mi.relation = 'primary') DESC,
+                   m.updated_at DESC`
+      );
+      res.json({ ok: true, links: r.rows });
+    } catch (e: any) {
+      console.error("[matters] issue-links failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
