@@ -47,17 +47,39 @@ export function RequestsPage() {
   //   ステータスチップで明示選択したときは、その絞り込みを優先して表示する。
   const [hideDone, setHideDone] = React.useState(true)
 
-  // 依頼 → 案件の紐づけ状況。案件一覧(GET /api/matters)を1回読み、
-  //   primary_issue_key で「この依頼が主要課題の案件」を引けるマップにする。
-  //   これにより案件化済みの依頼カードは「案件を開く」ピルを表示できる。
+  // 依頼 → 案件の紐づけ状況。
+  //   LB-03: 判定を matters.primary_issue_key(代表課題のみ)から matter_issues 全体
+  //   (primary/duplicate/partial/related)へ拡張する。重複課題や関連課題として
+  //   束ねられた依頼も「案件を開く」ピルを表示できる。
+  //   GET /api/matters/issue-links が未デプロイの環境では従来の
+  //   GET /api/matters(primary のみ)へフォールバックする。
   const [matterByIssue, setMatterByIssue] = React.useState<Map<string, LinkedMatter>>(new Map())
   const refreshMatters = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/matters")
-      const json = await res.json()
-      const rows: any[] = Array.isArray(json)
-        ? json
-        : json?.matters || json?.rows || json?.items || json?.data || []
+      const res = await fetch("/api/matters/issue-links")
+      if (res.ok) {
+        const json = await res.json()
+        const links: any[] = Array.isArray(json?.links) ? json.links : []
+        if (json?.ok !== false) {
+          const map = new Map<string, LinkedMatter>()
+          for (const l of links) {
+            if (!l?.backlog_issue_key) continue
+            map.set(String(l.backlog_issue_key), {
+              id: Number(l.matter_id),
+              matter_code: l.matter_code ?? null,
+              title: l.title ?? null,
+            })
+          }
+          setMatterByIssue(map)
+          return
+        }
+      }
+      // フォールバック: 旧 API(代表課題のみ)
+      const resOld = await fetch("/api/matters")
+      const jsonOld = await resOld.json()
+      const rows: any[] = Array.isArray(jsonOld)
+        ? jsonOld
+        : jsonOld?.matters || jsonOld?.rows || jsonOld?.items || jsonOld?.data || []
       const map = new Map<string, LinkedMatter>()
       for (const m of rows) {
         if (m?.primary_issue_key) {

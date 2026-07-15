@@ -21,6 +21,8 @@ import {
   Plus,
   ClipboardList,
   Hash,
+  FolderKanban,
+  ArrowUpRight,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -30,7 +32,6 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
-import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
   SheetContent,
@@ -128,6 +129,23 @@ export function DocumentEditorPage() {
   //   請求の向きが存在しないため UI 非表示・未選択でも生成可にする。
   const directionMode = resolveDirectionMode(selectedTemplate)
   const directionApplicable = directionMode !== "not_applicable"
+  // LB-F01/F02 (§5.5.1): Matter 起点で作成するときの案件コンテキスト。
+  //   Matter 詳細の「文書作成」から /documents/new?matter_id=<id> で遷移すると
+  //   案件・代表課題・取引先を自動設定し、生成 API へ matterId を明示的に渡す
+  //   (documents.matter_id の確定 = LB-02)。バナーで「どの案件の一工程か」を常時表示。
+  const [matterContext, setMatterContext] = React.useState<{
+    id: number
+    matter_code?: string | null
+    title?: string | null
+    counterparty?: string | null
+    vendor_id?: number | null
+    primary_issue_key?: string | null
+  } | null>(null)
+  // LB-F06 (§5.5.2): 上部バーは読み取り3ブロック(Matter・依頼 / 作成文書 / 当事者・担当)を
+  //   基本とし、「変更」を押したときだけ従来の選択グリッド(課題/テンプレ/向き/担当/取引先)を
+  //   開く。新規で何も選択していない間は開いたまま、Matter起点・既存文書ロード時は
+  //   コンテキストが揃っているので自動で畳む。
+  const [setupBarOpen, setSetupBarOpen] = React.useState(true)
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   // Phase 23.2: 旧 Split preview (画面を半分にして並べる) は狭幅で厳しいため
   //   廃止し、別タブでプレビューを開く方式に一本化。
@@ -302,6 +320,10 @@ export function DocumentEditorPage() {
   //   searchParams から template を削除するため、初期値を保持しておく。
   const initialTemplateParamRef = React.useRef(searchParams.get("template"))
   const initialPrefillRef = React.useRef(searchParams.get("prefill") === "1")
+  // LB-F01/F02: Matter 起点のディープリンク(/documents/new?matter_id=123&issue_key=ARC-456)。
+  //   後段の effect が searchParams からクエリを削除するため初期値を ref へ退避する。
+  const initialMatterIdRef = React.useRef(searchParams.get("matter_id"))
+  const initialIssueKeyRef = React.useRef(searchParams.get("issue_key"))
   React.useEffect(() => {
     const targetId = fromPendingId || reopenId
     if (!targetId) return
@@ -378,6 +400,9 @@ export function DocumentEditorPage() {
         setSelectedDirection("")
         setPreviousDocument(null)
         setIsReadOnly(false)
+        // LB-F06: 既存文書のロードで課題・テンプレ・取引先は確定済みのため、
+        //   上部の選択グリッドは畳んで読み取り表示にする。
+        setSetupBarOpen(false)
         const verb = fromPendingId ? "PDF 未作成キューから" : "既存文書を再編集モードで"
         showNotification(
           `「${data.document_number}」を${verb}読み込みました。`,
@@ -450,6 +475,92 @@ export function DocumentEditorPage() {
     setSearchParams(sp, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam, parentPoParam])
+
+  // LB-F01/F02 (§5.5.1): Matter 詳細の「文書作成」からの直接遷移。
+  //   /documents/new?matter_id=<id>[&issue_key=<key>]
+  //   案件を取得して Matter コンテキスト(案件・代表課題・取引先)を自動設定する。
+  //   Backlog 課題は「作成対象を選ぶ主キー」ではなく Matter 内の依頼原票として扱う。
+  //   Matter 起点は明示的な新規作成の意図なので、
+  //     - skipRestore=true: 前セッションの入力・下書きを引き継がない(上書き事故なし)
+  //     - 閲覧モード(isReadOnly)にはしない: そのまま入力を始められる
+  //     - activeVendor 等の前セッション選択はリセットし、Matter の取引先で再解決する
+  const didMatterInitRef = React.useRef(false)
+  React.useEffect(() => {
+    if (didMatterInitRef.current) return
+    const midRaw = initialMatterIdRef.current
+    if (!midRaw) return
+    didMatterInitRef.current = true
+    // URL からクエリを消す(リロード時に二重初期化しない)。
+    const sp = searchParams
+    sp.delete("matter_id")
+    sp.delete("issue_key")
+    setSearchParams(sp, { replace: true })
+    const mid = Number(midRaw)
+    if (!Number.isFinite(mid) || mid <= 0) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/matters/${mid}`)
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok || json?.ok === false || !json?.matter) {
+          throw new Error(json?.error || `HTTP ${res.status}`)
+        }
+        if (cancelled) return
+        const m = json.matter
+        setMatterContext({
+          id: Number(m.id),
+          matter_code: m.matter_code ?? null,
+          title: m.title ?? null,
+          counterparty: m.counterparty ?? null,
+          vendor_id: m.vendor_id != null ? Number(m.vendor_id) : null,
+          primary_issue_key: m.primary_issue_key ?? null,
+        })
+        // 前文書のセッション状態(取引先/担当者/方向/前文書バナー)をリセットし、
+        // Matter コンテキストから再解決させる(reopen 経路と同じ扱い)。
+        setActiveVendor(null)
+        setSelectedStaff(null)
+        setSelectedDirection("")
+        setPreviousDocument(null)
+        setIsReadOnly(false)
+        // 代表課題(またはクエリ指定の課題)を依頼原票として自動選択し、
+        // form-context(取引先・件名・条件明細)をプリフィルする。
+        const issueKey = initialIssueKeyRef.current || m.primary_issue_key || ""
+        if (issueKey) {
+          setSelectedIssue(issueKey)
+          void syncFromDatabase(issueKey, { skipRestore: true })
+        }
+        // LB-F06: Matter 起点はコンテキストが揃っているので選択グリッドは畳んで
+        //   読み取り表示にする(必要なら「変更」で開く)。
+        setSetupBarOpen(false)
+        showNotification(
+          `案件「${m.matter_code || `#${m.id}`}${m.title ? ` ${m.title}` : ""}」のコンテキストで作成します。`,
+          "info"
+        )
+      } catch (e: any) {
+        showNotification(
+          `案件コンテキストの取得に失敗しました: ${e?.message || e}`,
+          "error"
+        )
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // LB-F02: Matter の取引先(vendor_id)から activeVendor を自動解決する。
+  //   vendors は非同期ロードのため、揃ったタイミングで解決する。
+  //   ユーザーが既に取引先を選んでいる場合は上書きしない。
+  React.useEffect(() => {
+    if (!matterContext?.vendor_id || activeVendor) return
+    if (!Array.isArray(vendors) || vendors.length === 0) return
+    const v = vendors.find(
+      (x: any) => Number(x.id) === Number(matterContext.vendor_id)
+    )
+    if (v) setActiveVendor(v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matterContext?.vendor_id, vendors, activeVendor])
 
   // マテリアル登録フォーム(/master/materials)由来の prefill。
   //   ?prefill_material=1 で来たとき、sessionStorage('lb_material_prefill') に退避された
@@ -1241,6 +1352,9 @@ export function DocumentEditorPage() {
           templateType: selectedTemplate,
           formData: formDataWithPurpose,
           requesterEmail: selectedStaff?.email || "web-user",
+          // LB-02/LB-F02: Matter 起点で作成している場合は matter_id を明示的に渡す。
+          //   worker が documents.matter_id を確定する(autolink トリガより優先)。
+          matterId: matterContext?.id,
           // Phase 15/16: 既存 doc の更新時は同じ document_number を渡す
           // (PDF 未作成キュー由来 or 再編集 reopen 由来の両方)。
           //   さらに「初回保存で採番済みの下書き番号」(__draft_doc_number) も
@@ -1347,6 +1461,8 @@ export function DocumentEditorPage() {
               issueKey: selectedIssue || "MANUAL-" + Date.now(),
               templateType: "notice_consent_personal_info_freelance",
               requesterEmail: selectedStaff?.email || "web-user",
+              // LB-02/LB-F02: 同意書も本文書と同じ案件へ紐付ける。
+              matterId: matterContext?.id,
               formData: {
                 CONTRACT_NAME:
                   templateMetadata[selectedTemplate]?.label || selectedTemplate,
@@ -1537,6 +1653,43 @@ export function DocumentEditorPage() {
     }
   }
 
+  // LB-F09 (§5.5.9): 主ボタンは技術用語(Finalize & Sync)ではなくテンプレートに
+  //   応じた業務語彙で表示する。
+  const generateLabel = React.useMemo(() => {
+    const t = selectedTemplate || ""
+    if (!t) return "文書を作成"
+    if (t.includes("purchase_order")) return "発注書を作成"
+    if (t.startsWith("inspection_certificate")) return "検収書を確定"
+    if (t === "royalty_statement") return "利用許諾料計算書を作成"
+    if (t === "legal_response") return "回答書を作成"
+    if (t === "notice_consent_personal_info_freelance") return "同意書を作成"
+    if (t === "maintenance_spec") return "仕様書を作成"
+    if (t === "nda" || t.includes("master") || t.includes("license") || t.includes("terms"))
+      return "契約書を作成"
+    return "文書を作成"
+  }, [selectedTemplate])
+
+  // LB-F10 (§5.5.11) の一部: 固定文言(Draft valid / Live syncing)をやめ、
+  //   実際の必須項目充足数をフッターに表示する。判定は handleGenerate の
+  //   プレ検証と同一ロジック(required=true + service_master の個人事業主例外)。
+  const missingRequiredCount = React.useMemo(() => {
+    const meta = templateMetadata[selectedTemplate]
+    if (!meta?.vars) return 0
+    let n = 0
+    for (const [id, mv] of Object.entries<any>(meta.vars)) {
+      if (mv?.required !== true) continue
+      if (
+        selectedTemplate === "service_master" &&
+        id === "VENDOR_REP" &&
+        (formData as any)?.VENDOR_IS_CORPORATION === "個人"
+      )
+        continue
+      const v = (formData as any)?.[id]
+      if (v === undefined || v === null || (typeof v === "string" && v.trim() === "")) n++
+    }
+    return n
+  }, [selectedTemplate, formData, templateMetadata])
+
   // ---- Filters --------------------------------------------------------
   const filteredTemplates = templateList.filter((t) => {
     const label = templateMetadata[t]?.label || t
@@ -1552,14 +1705,120 @@ export function DocumentEditorPage() {
   return (
     <div className="px-6 py-6 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-12 gap-5">
-        {/* ─── Phase 23.2: 上部 Setup Bar (4 スロット) ───────────────
-            動線を「左→右上→右下」から「上→下」に直すため、入力前の
-            必須選択 (課題 / テンプレ / 担当者 / 取引先) を画面上部に
-            水平 4 列で配置する。lg 未満は 2 列、sm 未満は 1 列に折る。 */}
+        {/* ─── LB-F06 (§5.5.2): 上部 Matter コンテキスト ───────────────
+            読み取り3ブロック(Matter・依頼 / 作成文書 / 当事者・担当)を基本とし、
+            「変更」を押したときだけ従来の選択グリッド(①課題/②テンプレ/②′向き/
+            ③担当者/④取引先 — 旧 Phase 23.2 Setup Bar)を開く。
+            Matter 起点(LB-F01/F02)・既存文書ロード時はコンテキストが揃っている
+            ため自動で畳む。 */}
         <div className="col-span-12">
           <Card className="rounded-md">
-            <CardContent className="px-4 py-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <CardContent className="px-4 py-3 space-y-3">
+              {/* 読み取りコンテキスト行 */}
+              <div className="flex flex-wrap items-start gap-x-8 gap-y-2">
+                {/* ブロック1: Matter・依頼 */}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                    Matter・依頼
+                  </p>
+                  <div className="flex items-center gap-2 mt-1 min-w-0 text-[12px] font-mono">
+                    {matterContext ? (
+                      <>
+                        <FolderKanban className="h-3.5 w-3.5 shrink-0 text-sky-700" />
+                        <span className="font-bold text-sky-800 shrink-0">
+                          {matterContext.matter_code || `#${matterContext.id}`}
+                        </span>
+                        {matterContext.title && (
+                          <span className="truncate max-w-[26ch]" title={matterContext.title}>
+                            {matterContext.title}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted-foreground">案件未紐付け</span>
+                    )}
+                  </div>
+                  <p
+                    className="text-[11px] font-mono text-muted-foreground mt-0.5 truncate max-w-[40ch]"
+                    title={issueSummary?.summary || undefined}
+                  >
+                    Request: {selectedIssue || "未選択"}
+                    {issueSummary?.summary ? ` ${issueSummary.summary}` : ""}
+                  </p>
+                </div>
+
+                {/* ブロック2: 作成文書 */}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                    作成文書
+                  </p>
+                  <p className="text-[12px] font-mono font-bold mt-1 truncate max-w-[26ch]">
+                    {selectedTemplate
+                      ? templateMetadata[selectedTemplate]?.label || selectedTemplate
+                      : "未選択"}
+                  </p>
+                  <p className="text-[11px] font-mono mt-0.5">
+                    <span className="text-muted-foreground">請求の向き: </span>
+                    {!selectedTemplate ? (
+                      "—"
+                    ) : !directionApplicable ? (
+                      "対象外(非金銭)"
+                    ) : selectedDirection === "in" ? (
+                      "当社が払う"
+                    ) : selectedDirection === "out" ? (
+                      "当社が受け取る"
+                    ) : (
+                      <span className="text-destructive font-bold">未選択</span>
+                    )}
+                  </p>
+                </div>
+
+                {/* ブロック3: 当事者・担当 */}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                    当事者・担当
+                  </p>
+                  <p className="text-[12px] font-mono mt-1 truncate max-w-[24ch]">
+                    <span className="text-muted-foreground">取引先: </span>
+                    {activeVendor?.vendor_name || matterContext?.counterparty || "未選択"}
+                  </p>
+                  <p className="text-[11px] font-mono mt-0.5 truncate max-w-[24ch]">
+                    <span className="text-muted-foreground">担当: </span>
+                    {selectedStaff?.staff_name || "未設定"}
+                  </p>
+                </div>
+
+                {/* 右端: 案件へ戻る / 変更トグル */}
+                <div className="ml-auto flex items-center gap-3 shrink-0">
+                  {matterContext && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 text-[12px] font-mono text-sky-700 hover:underline"
+                      onClick={() => navigate(`/matters/${matterContext.id}`)}
+                      title="案件詳細へ戻る"
+                    >
+                      案件へ戻る <ArrowUpRight className="h-3 w-3" />
+                    </button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setSetupBarOpen((v) => !v)}
+                    title={
+                      setupBarOpen
+                        ? "選択グリッドを閉じて読み取り表示にします"
+                        : "課題・テンプレート・請求の向き・担当者・取引先を変更します"
+                    }
+                  >
+                    {setupBarOpen ? "選択を閉じる" : "変更"}
+                  </Button>
+                </div>
+              </div>
+
+              {/* 選択グリッド(「変更」時のみ表示)。旧・上部 Setup Bar (Phase 23.2) の
+                  4スロット。lg 未満は 2 列、sm 未満は 1 列に折る。 */}
+              {setupBarOpen && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 border-t border-dashed border-border/70 pt-3">
                 {/* ① Backlog 課題 */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -1766,6 +2025,7 @@ export function DocumentEditorPage() {
                     )}
                 </div>
               </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -1856,17 +2116,7 @@ export function DocumentEditorPage() {
                   </span>
                 )}
                 </div>
-                {/* 明示的な「保存」: 下書きをサーバ保存し、初回はここで採番する。 */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExplicitSave}
-                  disabled={isSavingDraft || !selectedIssue || !selectedTemplate}
-                  title="下書きを保存します。初めての保存時にこのタイミングで採番されます。"
-                >
-                  {isSavingDraft ? <Loader2 className="animate-spin" /> : <History />}
-                  保存
-                </Button>
+                {/* 下書き保存は下部アクションバーの主操作へ一本化(§5.5.9)。 */}
                 {/* 過去文書/下書きを番号で呼び出す。 */}
                 <Button
                   variant="outline"
@@ -1877,21 +2127,9 @@ export function DocumentEditorPage() {
                   <Search />
                   番号で呼び出す
                 </Button>
-                {/* Phase 23.2: Split preview 廃止 → 別タブで開く方式に。 */}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePreview}
-                  disabled={isPreviewing}
-                  title="プレビューを別タブで開きます"
-                >
-                  {isPreviewing ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Eye />
-                  )}
-                  プレビュー
-                </Button>
+                {/* LB-F09 (§5.5.9): プレビューの上下重複を解消(下部アクションバーへ一本化)。
+                    ラインID読込・フォーム全消去は例外・管理操作としてフッターの
+                    「その他の操作」へ移動(§5.5.10)。 */}
                 {selectedTemplate === "purchase_order" && (
                   <Button
                     variant="outline"
@@ -1903,17 +2141,6 @@ export function DocumentEditorPage() {
                     条件明細
                   </Button>
                 )}
-                {selectedTemplate === "purchase_order" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={loadLineItemsById}
-                    title="条件明細コード(line_code)や明細行ID/capability ID を指定して明細を読み込みます。課題×種別で引けないときに使えます。"
-                  >
-                    <Hash />
-                    ラインID
-                  </Button>
-                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -1922,14 +2149,6 @@ export function DocumentEditorPage() {
                 >
                   <Database />
                   Backlog Sync
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => setFormData({ サブライセンシー一覧: [] })}
-                  aria-label="Reset form"
-                >
-                  <RotateCcw />
                 </Button>
               </div>
             </div>
@@ -2169,183 +2388,235 @@ export function DocumentEditorPage() {
               {/* Phase 23.2: Split preview ペインは廃止 (別タブで開く方式に統一)。 */}
             </div>
 
-            {/* Footer */}
-            <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-4 px-5 py-3 border-t border-border bg-muted/40">
-              <div className="flex items-center gap-5">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                  <div className="leading-none">
-                    <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em]">
-                      Draft valid
-                    </p>
-                    <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                      Ready for sync
-                    </p>
-                  </div>
-                </div>
-                <Separator orientation="vertical" className="h-6" />
-                <div className="flex items-center gap-2">
-                  <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
-                  <div className="leading-none">
-                    <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em]">
-                      Live syncing
-                    </p>
-                    <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                      Backlog API
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
-                {/* Phase 23.2: Footer のプレビューも別タブで開く */}
-                <Button
-                  variant="outline"
-                  onClick={handlePreview}
-                  disabled={isPreviewing}
-                  title="プレビューを別タブで開きます"
-                >
-                  {isPreviewing ? (
-                    <Loader2 className="animate-spin" />
+            {/* ─── 固定アクションバー (LB-F09, §5.5.9) ───────────────────────
+                主操作は「下書き保存 / プレビュー / <テンプレ別>を作成」の3つに限定。
+                状態表示は固定文言(Draft valid / Live syncing)をやめ、実際の
+                必須項目充足・最終保存時刻に連動させる(§5.5.11 / LB-F10 の一部)。
+                例外・管理操作(DB登録のみ / 単独契約 / ラインID読込 / 全消去)は
+                下の「その他の操作」へ隔離する(LB-F05, §5.5.10)。 */}
+            <div className="border-t border-border bg-muted/40">
+              <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-4 px-5 py-3">
+                {/* 実状態: 必須項目の充足 / 最終保存 */}
+                <div className="flex items-center gap-4 min-w-0">
+                  {!selectedTemplate ? (
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      テンプレート未選択
+                    </span>
+                  ) : missingRequiredCount > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-amber-700">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      必須項目 {missingRequiredCount} 件未入力
+                    </span>
                   ) : (
-                    <Eye />
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      必須項目 入力済み
+                    </span>
                   )}
-                  プレビュー (別タブ)
-                </Button>
-                {selectedTemplate.startsWith("inspection_certificate") && (
-                  <Button
-                    variant="outline"
-                    onClick={handleExportExcel}
-                    disabled={isGenerating}
-                  >
-                    <Download />
-                    Export Excel
-                  </Button>
-                )}
-                {/* Phase 23.1: 再編集モード (= reopen 経由) のときだけ
-                    「内部修正 / 再発行」の保存方針を選ばせる。
-                    - 内部修正: 既存 row 上書き、Drive PDF も同 URL のまま差し替え
-                    - 再発行:   revision +1 で新 row、過去版は履歴に。PDF に「修正版 Rev. N」 */}
-                {formData?.__reopen_doc_number && (
-                  <div
-                    role="radiogroup"
-                    aria-label="保存方針"
-                    className="flex items-center gap-2 text-[11px] font-mono border border-input rounded-sm px-2 py-1 bg-muted/30"
-                  >
-                    <label className="flex items-center gap-1 cursor-pointer">
+                  {lastAutoSave && (
+                    <span className="text-[11px] font-mono text-muted-foreground">
+                      最終保存 {lastAutoSave}
+                    </span>
+                  )}
+                  {directionApplicable && !selectedDirection && (
+                    <span className="text-[11px] font-mono text-destructive/80">
+                      請求の向き(上部②′)が未選択
+                    </span>
+                  )}
+                </div>
+
+                {/* 主操作 + 文脈オプション */}
+                <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
+                  {/* Phase 23.1: 再編集(reopen)時のみ、主操作の保存方針を選ばせる。
+                      - 内部修正: 既存 row 上書き、Drive PDF も同 URL のまま差し替え
+                      - 再発行:   revision +1 で新 row、過去版は履歴に */}
+                  {formData?.__reopen_doc_number && (
+                    <div
+                      role="radiogroup"
+                      aria-label="保存方針"
+                      className="flex items-center gap-2 text-[11px] font-mono border border-input rounded-sm px-2 py-1 bg-muted/30"
+                    >
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="saveMode"
+                          value="internal"
+                          checked={saveMode === "internal"}
+                          onChange={() => setSaveMode("internal")}
+                          className="cursor-pointer"
+                        />
+                        <span>内部修正</span>
+                      </label>
+                      <label className="flex items-center gap-1 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="saveMode"
+                          value="reissue"
+                          checked={saveMode === "reissue"}
+                          onChange={() => setSaveMode("reissue")}
+                          className="cursor-pointer"
+                        />
+                        <span>
+                          再発行
+                          <span className="text-muted-foreground/70 ml-1">
+                            (外部要請)
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                  )}
+                  {consentInfo?.is_individual && (
+                    <label
+                      className="flex items-center gap-1.5 cursor-pointer text-[12px] mr-2"
+                      title={
+                        consentInfo.pii_consent_obtained
+                          ? `この個人取引先は同意取得済${consentInfo.pii_consent_date ? ` (${consentInfo.pii_consent_date})` : ""}`
+                          : "個人情報取得同意書を本文書と同時に作成します"
+                      }
+                    >
                       <input
-                        type="radio"
-                        name="saveMode"
-                        value="internal"
-                        checked={saveMode === "internal"}
-                        onChange={() => setSaveMode("internal")}
-                        className="cursor-pointer"
-                      />
-                      <span>内部修正</span>
-                    </label>
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="saveMode"
-                        value="reissue"
-                        checked={saveMode === "reissue"}
-                        onChange={() => setSaveMode("reissue")}
+                        type="checkbox"
+                        checked={createConsent}
+                        onChange={(e) => setCreateConsent(e.target.checked)}
                         className="cursor-pointer"
                       />
                       <span>
-                        再発行
-                        <span className="text-muted-foreground/70 ml-1">
-                          (外部要請)
-                        </span>
+                        個人情報取得同意書も作成
+                        {consentInfo.pii_consent_obtained && (
+                          <span className="text-emerald-600 ml-1">(同意取得済)</span>
+                        )}
                       </span>
                     </label>
-                  </div>
-                )}
-                {consentInfo?.is_individual && (
-                  <label
-                    className="flex items-center gap-1.5 cursor-pointer text-[12px] mr-2"
+                  )}
+                  {selectedTemplate.startsWith("inspection_certificate") && (
+                    <Button
+                      variant="outline"
+                      onClick={handleExportExcel}
+                      disabled={isGenerating}
+                    >
+                      <Download />
+                      Export Excel
+                    </Button>
+                  )}
+                  {/* 主操作① 下書き保存(初回保存で採番) */}
+                  <Button
+                    variant="outline"
+                    onClick={handleExplicitSave}
+                    disabled={isSavingDraft || !selectedIssue || !selectedTemplate}
+                    title="下書きを保存します。初めての保存時にこのタイミングで採番されます。"
+                  >
+                    {isSavingDraft ? <Loader2 className="animate-spin" /> : <History />}
+                    下書き保存
+                  </Button>
+                  {/* 主操作② プレビュー(別タブ) */}
+                  <Button
+                    variant="outline"
+                    onClick={handlePreview}
+                    disabled={isPreviewing}
+                    title="プレビューを別タブで開きます"
+                  >
+                    {isPreviewing ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Eye />
+                    )}
+                    プレビュー
+                  </Button>
+                  {/* 主操作③ 文書を作成(テンプレ別の業務語彙。旧 Finalize & Sync) */}
+                  <Button
+                    onClick={() => handleGenerate()}
+                    disabled={isGenerating || (directionApplicable && !selectedDirection)}
                     title={
-                      consentInfo.pii_consent_obtained
-                        ? `この個人取引先は同意取得済${consentInfo.pii_consent_date ? ` (${consentInfo.pii_consent_date})` : ""}`
-                        : "個人情報取得同意書を本文書と同時に作成します"
+                      directionApplicable && !selectedDirection
+                        ? "請求の向きを選択すると生成できます"
+                        : "PDF を発行して Drive へ保存し、DB(documents/条件明細)へ登録します"
                     }
+                  >
+                    {isGenerating && generateMode !== "dbOnly" ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Download />
+                    )}
+                    {generateLabel}
+                  </Button>
+                </div>
+              </div>
+
+              {/* その他の操作(例外・管理, LB-F05 §5.5.10)。通常の作成ボタンと視覚的に分離。 */}
+              <details className="border-t border-dashed border-border/70 px-5 py-2">
+                <summary className="cursor-pointer select-none text-[11px] font-mono text-muted-foreground hover:text-foreground">
+                  その他の操作（例外・管理: PDFを作成せずDB登録 / 単独契約 / 明細のラインID読込 / フォーム全消去）
+                </summary>
+                <div className="flex flex-wrap items-center gap-2 py-2.5">
+                  {/* DB登録のみ: 文書(PDF)を発行せず documents/条件明細へ登録する。
+                      未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。 */}
+                  <label
+                    className="flex items-center gap-1.5 cursor-pointer text-[12px] whitespace-nowrap"
+                    title="単独契約 (親の基本契約を持たない契約) 専用テンプレは無いため、発注書 / 個別利用許諾条件書などのフォームで代用登録するときに ON にすると、レコード区分が「単独契約」で保存されます (DB登録のみ時のみ有効)。"
                   >
                     <input
                       type="checkbox"
-                      checked={createConsent}
-                      onChange={(e) => setCreateConsent(e.target.checked)}
+                      checked={dbOnlyStandalone}
+                      onChange={(e) => setDbOnlyStandalone(e.target.checked)}
                       className="cursor-pointer"
                     />
-                    <span>
-                      個人情報取得同意書も作成
-                      {consentInfo.pii_consent_obtained && (
-                        <span className="text-emerald-600 ml-1">(同意取得済)</span>
-                      )}
-                    </span>
+                    <span>単独契約として登録</span>
                   </label>
-                )}
-                {/* DB登録のみ: 文書(PDF)を発行せず documents/条件明細へ登録する。
-                    マスター登録と同じ「登録だけ」を通常フォームから行うモード。
-                    未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。
-                    ファイルリンク: 既存の締結済み PDF 等の URL を任意で添付。
-                    指定すると drive_link として保存され一覧から開ける。 */}
-                <label
-                  className="flex items-center gap-1.5 cursor-pointer text-[12px] whitespace-nowrap"
-                  title="単独契約 (親の基本契約を持たない契約) 専用テンプレは無いため、発注書 / 個別利用許諾条件書などのフォームで代用登録するときに ON にすると、レコード区分が「単独契約」で保存されます (DB登録のみ時のみ有効)。"
-                >
-                  <input
-                    type="checkbox"
-                    checked={dbOnlyStandalone}
-                    onChange={(e) => setDbOnlyStandalone(e.target.checked)}
-                    className="cursor-pointer"
+                  <Input
+                    value={dbOnlyFileLink}
+                    onChange={(e) => setDbOnlyFileLink(e.target.value)}
+                    placeholder="ファイルリンク (DB登録のみ・任意)"
+                    title="DB登録のみで保存するとき、既存の締結済みPDF等のURLを文書リンクとして登録できます (http(s)://…)。空欄ならPDF未作成キューに入ります。"
+                    className="w-56 font-mono text-[11px]"
                   />
-                  <span>単独契約として登録</span>
-                </label>
-                <Input
-                  value={dbOnlyFileLink}
-                  onChange={(e) => setDbOnlyFileLink(e.target.value)}
-                  placeholder="ファイルリンク (DB登録のみ・任意)"
-                  title="DB登録のみで保存するとき、既存の締結済みPDF等のURLを文書リンクとして登録できます (http(s)://…)。空欄ならPDF未作成キューに入ります。"
-                  className="w-56 font-mono text-[11px]"
-                />
-                <Button
-                  variant="outline"
-                  onClick={() => handleGenerate({ dbOnly: true })}
-                  disabled={isGenerating || (directionApplicable && !selectedDirection)}
-                  title={
-                    directionApplicable && !selectedDirection
-                      ? "請求の向きを選択すると登録できます"
-                      : "文書(PDF)を発行せずにDBへ登録のみ行います。後から「PDF未作成」キューで同じ番号のまま発行できます。"
-                  }
-                >
-                  {isGenerating && generateMode === "dbOnly" ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Database />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleGenerate({ dbOnly: true })}
+                    disabled={isGenerating || (directionApplicable && !selectedDirection)}
+                    title={
+                      directionApplicable && !selectedDirection
+                        ? "請求の向きを選択すると登録できます"
+                        : "文書(PDF)を発行せずにDBへ登録のみ行います。後から「PDF未作成」キューで同じ番号のまま発行できます。"
+                    }
+                  >
+                    {isGenerating && generateMode === "dbOnly" ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Database />
+                    )}
+                    DB登録のみ
+                  </Button>
+                  {selectedTemplate === "purchase_order" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={loadLineItemsById}
+                      title="条件明細コード(line_code)や明細行ID/capability ID を指定して明細を読み込みます。課題×種別で引けないときに使えます。"
+                    >
+                      <Hash />
+                      ラインIDで明細読込
+                    </Button>
                   )}
-                  DB登録のみ
-                </Button>
-                <Button
-                  onClick={() => handleGenerate()}
-                  disabled={isGenerating || (directionApplicable && !selectedDirection)}
-                  title={
-                    directionApplicable && !selectedDirection
-                      ? "請求の向きを選択すると生成できます"
-                      : undefined
-                  }
-                >
-                  {isGenerating && generateMode !== "dbOnly" ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <Download />
-                  )}
-                  Finalize & Sync
-                </Button>
-              </div>
-              {directionApplicable && !selectedDirection && !isGenerating && (
-                <p className="mt-2 text-[11px] font-mono text-destructive/80">
-                  ※「請求の向き（②′・上部）」が未選択のため「Finalize &amp; Sync」は無効です。請求の向きを選択すると有効になります。
-                </p>
-              )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "フォームの入力内容をすべて消去します(保存済みの下書き・文書は消えません)。よろしいですか？"
+                        )
+                      ) {
+                        setFormData({ サブライセンシー一覧: [] })
+                      }
+                    }}
+                    title="フォームの入力内容をすべて消去します(保存済みデータには影響しません)"
+                  >
+                    <RotateCcw />
+                    フォーム全消去
+                  </Button>
+                </div>
+              </details>
             </div>
           </Card>
         </section>
