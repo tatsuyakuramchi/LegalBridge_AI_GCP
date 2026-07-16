@@ -42,14 +42,20 @@ const EXTRA_CSS = `<style>
 export function attachmentUploadPage(
   role: Role = "viewer",
   deptCode: string | null = null,
-  initialIssue: string = ""
+  initialIssue: string = "",
+  uploaderEmail: string = "",
+  // 署名リンク (Slack 経由) で入場した場合の認可クエリ (u/exp/sig/token)。
+  // ページ内の API 呼び出しにそのまま引き継ぐ。
+  authQs: string = ""
 ): string {
+  const emailEsc = String(uploaderEmail).replace(/&/g, "&amp;").replace(/</g, "&lt;");
   const body = `
   <div class="aup-note">
     📎 Slack の <b>/法務依頼</b> で起票した課題に資料 (レビューしてほしい契約書ドラフト、
     参考資料など) を格納するページです。ファイルは法務の共有 Drive に
     「<b>課題番号_あなたのアカウント_元ファイル名</b>」の名前で保管され、
     Backlog 課題にも記録が残ります。課題番号は依頼送信後に Slack の DM で届きます。
+    ${emailEsc ? `<br>👤 アップロード者: <b>${emailEsc}</b> として記録されます。` : ""}
   </div>
 
   <div class="aup-card">
@@ -89,6 +95,8 @@ export function attachmentUploadPage(
     // クエリ由来なので課題キーとして妥当な文字だけ通す (script 片の混入防止)。
     String(initialIssue || "").trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "")
   )};
+  // 署名リンク経由の認可クエリ。API 呼び出しに引き継ぐ (IAP 経由なら空)。
+  var AUTH_QS = ${JSON.stringify(String(authQs || ""))};
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -130,7 +138,7 @@ export function attachmentUploadPage(
     if (!q) return;
     var wrap = document.getElementById("aup-results");
     wrap.innerHTML = '<div class="aup-empty">検索中…</div>';
-    fetch("/api/attachment-upload/issues?q=" + encodeURIComponent(q), { credentials: "same-origin" })
+    fetch("/api/attachment-upload/issues?q=" + encodeURIComponent(q) + (AUTH_QS ? "&" + AUTH_QS : ""), { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok) throw new Error(d.error || "search failed");
@@ -166,7 +174,7 @@ export function attachmentUploadPage(
     fd.append("docKind", document.getElementById("aup-kind").value);
     fd.append("originalName", file.name);
     fd.append("file", file);
-    fetch("/api/attachment-upload", { method: "POST", body: fd, credentials: "same-origin" })
+    fetch("/api/attachment-upload" + (AUTH_QS ? "?" + AUTH_QS : ""), { method: "POST", body: fd, credentials: "same-origin" })
       .then(function (r) { return r.json().then(function (d) { return { s: r.status, d: d }; }); })
       .then(function (x) {
         if (!x.d.ok) throw new Error(x.d.error || ("HTTP " + x.s));

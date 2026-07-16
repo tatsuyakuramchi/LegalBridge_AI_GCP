@@ -4704,9 +4704,11 @@ ${details}
 
         // 従来 GAS が送っていた速報 DM 相当 (課題番号 + 資料アップロード導線)。
         if (slackWebClient && result?.issueKey) {
+          // upload_page_base は署名クエリ (u/exp/sig) 付きで来ることがあるため
+          // 連結子は '?' / '&' を出し分ける。
           const uploadBase = String(input.upload_page_base || "").replace(/\/+$/, "");
           const uploadUrl = uploadBase
-            ? `${uploadBase}?issue=${encodeURIComponent(result.issueKey)}`
+            ? `${uploadBase}${uploadBase.includes("?") ? "&" : "?"}issue=${encodeURIComponent(result.issueKey)}`
             : "";
           try {
             await slackWebClient.chat.postMessage({

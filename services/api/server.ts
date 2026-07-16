@@ -4270,19 +4270,39 @@ async function startServer() {
   //   依頼者 (IAP 認証済みの全メンバー) が Slack /法務依頼 の課題番号を指定して
   //   資料を格納する。Drive への書込は worker /api/attachments/by-issue へ
   //   portal-secret 付きで中継し、IAP のメールをアップロード者として引き渡す。
+  // 認可は /search/vendor と同じ「署名URL or IAP」方式。Slack の DM /
+  // モーダルからのリンクは IAP を経由しない run.app 直 URL のため、
+  // requireIapUser だけだと 401 になる (2026-07-16 事業部報告)。署名リンクは
+  // `u=<依頼者メール>` を resourceId に束縛して発行する (slackGateway 参照)
+  // ので、署名検証を通った u はアップロード者として信頼できる。
+  const attachmentUploadResource = (req: express.Request) => {
+    const u = String(req.query.u || "").trim().toLowerCase();
+    return u ? `upload:${u}` : "upload";
+  };
+  const attachmentUploadAuthQs = (req: express.Request): string => {
+    const qs: string[] = [];
+    for (const k of ["u", "exp", "sig", "token"]) {
+      if (req.query[k]) qs.push(`${k}=${encodeURIComponent(String(req.query[k]))}`);
+    }
+    return qs.join("&");
+  };
   app.get(
     "/attachments/upload",
-    requireIapUser({ renderErrorPage }),
+    requireSignedUrlOrIap({ resourceId: attachmentUploadResource, renderErrorPage }),
     attachAppRole(),
-    requireScreen({ key: "attachment-upload", renderErrorPage }),
     async (req, res) => {
       try {
         const deptCode = await resolveDepartmentCode(req);
+        const uploaderEmail =
+          String((req as any).user?.email || "") ||
+          String(req.query.u || "").trim().toLowerCase();
         res.type("html").send(
           attachmentUploadPage(
             (req as any).userRole as Role,
             deptCode,
-            String(req.query.issue || "")
+            String(req.query.issue || ""),
+            uploaderEmail,
+            attachmentUploadAuthQs(req)
           )
         );
       } catch (error) {
@@ -4296,7 +4316,7 @@ async function startServer() {
   // 添付一覧はこの EP からは返さない (全メンバーが検索できるため)。
   app.get(
     "/api/attachment-upload/issues",
-    requireIapUser({ renderErrorPage }),
+    requireSignedUrlOrIap({ resourceId: attachmentUploadResource, renderErrorPage }),
     async (req, res) => {
       try {
         const q = String(req.query.q || "").trim();
@@ -4329,10 +4349,13 @@ async function startServer() {
   // でなく IAP 認証結果から取ってヘッダで渡す。
   app.post(
     "/api/attachment-upload",
-    requireIapUser({ renderErrorPage }),
+    requireSignedUrlOrIap({ resourceId: attachmentUploadResource, renderErrorPage }),
     async (req, res) => {
       try {
-        const email = String((req as any).user?.email || "");
+        // IAP 経由なら IAP のメール、署名リンク経由なら署名に束縛された u。
+        const email =
+          String((req as any).user?.email || "") ||
+          String(req.query.u || "").trim().toLowerCase();
         const base = DOCUMENT_WORKER_URL.replace(/\/+$/, "");
         const headers: Record<string, string> = {
           "content-type": String(
