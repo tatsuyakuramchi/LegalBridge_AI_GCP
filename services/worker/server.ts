@@ -1703,6 +1703,35 @@ async function startServer() {
     | { type: "created" }
     | { type: "status_changed"; from?: string | null; to: string };
 
+  /**
+   * 申請者(本人)のメールを解決する。Drive 閲覧権限を「申請者本人のみ」に
+   * 付与する用途 (方針: 申請者限定)。
+   *   1. staff マスタの email (slack_user_id 紐付け)
+   *   2. 無ければ Slack プロフィール (users.info の profile.email)
+   * どちらも取れなければ "" を返す (呼び出し側で warn + 付与スキップ)。
+   *
+   * Slack から取るには bot に users:read.email スコープが必要。スコープが
+   * 無い/エラーのときは staff マスタのみで解決する。
+   */
+  async function resolveRequesterEmail(
+    staffEmail: string | null | undefined,
+    slackUserId: string
+  ): Promise<string> {
+    const fromStaff = String(staffEmail || "").trim();
+    if (fromStaff) return fromStaff;
+    if (!slackWebClient || !slackUserId) return "";
+    try {
+      const info: any = await slackWebClient.users.info({ user: slackUserId });
+      const email = String(info?.user?.profile?.email || "").trim();
+      return email;
+    } catch (e: any) {
+      console.warn(
+        `[notify] Slack users.info email lookup failed for ${slackUserId}: ${e?.data?.error || e?.message || e}`
+      );
+      return "";
+    }
+  }
+
   async function notifyIssueEvent(
     issueKey: string,
     event: IssueNotifyEvent
@@ -1796,20 +1825,26 @@ async function startServer() {
     // (共有ドライブ非メンバーだと「アクセス権をリクエスト」になるため)。
     // 付与失敗は warn ログのみで通知自体は続行する。
     if (event.type === "status_changed" && ctx.latest_drive_link) {
-      const staffEmail = String(ctx.staff_email || "").trim();
-      if (staffEmail) {
+      // 申請者本人に Drive 閲覧権限を付与してからリンクを添える。メールは
+      // staff マスタ → Slack プロフィールの順で解決 (staff.email 未登録でも
+      // 申請者本人なら開けるようにする)。付与失敗は warn のみで通知は続行。
+      const requesterEmail = await resolveRequesterEmail(
+        ctx.staff_email,
+        slackUserId
+      );
+      if (requesterEmail) {
         const grant = await googleDriveService.grantViewPermission(
           ctx.latest_drive_link,
-          staffEmail
+          requesterEmail
         );
         if (!grant.ok) {
           console.warn(
-            `[notify] drive view-permission grant failed (${issueKey} → ${staffEmail}): ${grant.error}`
+            `[notify] drive view-permission grant failed (${issueKey} → ${requesterEmail}): ${grant.error}`
           );
         }
       } else {
         console.warn(
-          `[notify] staff.email not set for ${slackUserId} (${issueKey}); ` +
+          `[notify] requester email unresolved for ${slackUserId} (${issueKey}); ` +
             `drive link may not be viewable by the requester`
         );
       }
@@ -4645,8 +4680,30 @@ ${details}
         const result = await processLegalRequestSubmission(input);
 
         // Step 3: 完了 DM (従来は GAS が同期結果を DM していたが、非同期化に
-        // 伴い worker から送る)。
+        // 伴い worker から送る)。ドキュメントリンクを載せる前に、申請者本人へ
+        // Drive 閲覧権限を付与する (共有ドライブ非メンバーだと開けないため)。
         if (slackWebClient && input.slack_user_id) {
+          if (result?.driveLink) {
+            const requesterEmail = await resolveRequesterEmail(
+              null,
+              String(input.slack_user_id)
+            );
+            if (requesterEmail) {
+              const grant = await googleDriveService.grantViewPermission(
+                result.driveLink,
+                requesterEmail
+              );
+              if (!grant.ok) {
+                console.warn(
+                  `[link-trigger] drive grant failed (${childKey} → ${requesterEmail}): ${grant.error}`
+                );
+              }
+            } else {
+              console.warn(
+                `[link-trigger] requester email unresolved for ${input.slack_user_id}; drive link may not be viewable`
+              );
+            }
+          }
           try {
             await slackWebClient.chat.postMessage({
               channel: String(input.slack_user_id),
