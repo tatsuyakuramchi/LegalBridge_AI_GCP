@@ -818,31 +818,47 @@ export function registerWorkModelRoutes(
       const cid = Number(req.params.cid);
       if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
+      // Phase 4: 直書き化。cfc_upd トリガ(0101)の意味論を移植:
+      //   - payment_scheme = cl_scheme(calc_method, rate_pct)、royalty 以外は
+      //     rate/mg/ag を NULL、amount_ex_tax は royalty/subscription なら NULL・
+      //     それ以外 COALESCE(unit_amount, mg, 0)。
+      //   - region_language_label はトリガの SET 対象外(休眠)だったが、ビュー定義上
+      //     cl.condition_name の別名のため condition_name($22) がそのまま正。
+      //   - condition_kind / basis / advance_amount / forecast_amount はビューの
+      //     NULL 計算列(トリガ無視)のため削除。condition_kind は直後の実列 UPDATE
+      //     (0114/0116)が従来どおり担う。
+      //   - 応答の形(旧 RETURNING * = ビュー行)は互換のためビュー再読取で維持。
       const r = await query(
-        `UPDATE capability_financial_conditions SET
-            source_work_id = $2, region_language_label = $3, calc_method = $4,
-            rate_pct = $5, base_price_label = $6, calc_period = $7,
-            calc_period_kind = $8, calc_period_close_month = $9, currency = $10,
-            formula_text = $11, payment_terms = $12, mg_amount = $13, ag_amount = $14,
-            condition_no = COALESCE($15, condition_no), source_material_id = $16,
-            condition_kind = COALESCE($17, condition_kind),
-            counterparty_vendor_id = $18, basis = $19, unit_price = $20, cycle = $21,
-            billing_day = $22, term_start = $23, term_end = $24,
-            advance_amount = $25, forecast_amount = $26,
-            condition_name = $27, calc_type = $28, fixed_kind = $29,
-            subscription_cycle = $30, unit_amount = $31, guarantee_type = $32,
+        `UPDATE condition_lines SET
+            line_no = COALESCE($14, line_no),
+            payment_scheme = cl_scheme($3::text, $4::numeric),
+            condition_name = $22,
+            rate_pct  = CASE WHEN cl_scheme($3::text, $4::numeric) = 'royalty' THEN $4::numeric END,
+            mg_amount = CASE WHEN cl_scheme($3::text, $4::numeric) = 'royalty' THEN $12::numeric END,
+            ag_amount = CASE WHEN cl_scheme($3::text, $4::numeric) = 'royalty' THEN $13::numeric END,
+            currency = COALESCE($9, 'JPY'),
+            base_price_label = $5, formula_text = $10, payment_terms = $11,
+            calc_period = $6, calc_period_kind = $7, calc_period_close_month = $8,
+            counterparty_vendor_id = $16,
+            source_work_id = COALESCE($2, source_work_id, cl_resolve_work($15)),
+            source_material_id = $15,
+            unit_price = $17, cycle = $18, billing_day = $19,
+            term_start = $20, term_end = $21,
+            calc_type = $23, fixed_kind = $24, subscription_cycle = $25,
+            unit_amount = $26, guarantee_type = $27,
+            amount_ex_tax = CASE WHEN cl_scheme($3::text, $4::numeric) IN ('royalty','subscription')
+                                 THEN NULL ELSE COALESCE($26::numeric, $12::numeric, 0) END,
             updated_at = now()
-          WHERE id = $1 RETURNING *`,
+          WHERE id = $1 AND legacy_role = 'cfc' RETURNING id`,
         [
-          cid, b.source_work_id ?? null, b.region_language_label ?? null,
+          cid, b.source_work_id ?? null,
           b.calc_method ?? "ROYALTY", b.rate_pct ?? null, b.base_price_label ?? null,
           b.calc_period ?? null, b.calc_period_kind ?? null, b.calc_period_close_month ?? null,
           b.currency ?? "JPY", b.formula_text ?? null, b.payment_terms ?? null,
           Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
-          b.condition_no ?? null, b.source_material_id ?? null, b.condition_kind ?? null,
-          b.counterparty_vendor_id ?? null, b.basis ?? null, b.unit_price ?? null,
+          b.condition_no ?? null, b.source_material_id ?? null,
+          b.counterparty_vendor_id ?? null, b.unit_price ?? null,
           b.cycle ?? null, b.billing_day ?? null, b.term_start ?? null, b.term_end ?? null,
-          b.advance_amount ?? null, b.forecast_amount ?? null,
           // 0045: 金銭条件の柔軟化フィールド
           b.condition_name ?? null, b.calc_type ?? null, b.fixed_kind ?? null,
           b.subscription_cycle ?? null,
@@ -851,7 +867,12 @@ export function registerWorkModelRoutes(
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
-      const row = r.rows[0];
+      // 応答互換: 旧実装はビュー行(RETURNING *)を返していたため同じ形で再読取。
+      const rr = await query(
+        `SELECT * FROM capability_financial_conditions WHERE id = $1`,
+        [cid]
+      );
+      const row = rr.rows[0];
       // 0114/0116: parent_license_condition_id・condition_kind は cfc ビューに無い(実体は
       //   condition_lines)。cfc.id = condition_lines.id で直接更新(parent は null で解除可、
       //   condition_kind は未指定なら現状維持)。
@@ -874,7 +895,7 @@ export function registerWorkModelRoutes(
       const cid = Number(req.params.cid);
       if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(
-        `DELETE FROM capability_financial_conditions WHERE id = $1`,
+        `DELETE FROM condition_lines WHERE id = $1 AND legacy_role = 'cfc'`,
         [cid]
       );
       res.json({ ok: true, deleted: r.rowCount || 0 });
@@ -1659,7 +1680,7 @@ export function registerWorkModelRoutes(
         );
         if (others.rows.length === 0) {
           await query(
-            `DELETE FROM capability_financial_conditions WHERE id = $1`,
+            `DELETE FROM condition_lines WHERE id = $1 AND legacy_role = 'cfc'`,
             [cl.source_condition_id]
           );
         }
@@ -2217,7 +2238,7 @@ export function registerWorkModelRoutes(
       const label = [territory, language].filter(Boolean).join("・") || null;
       if (scid != null) {
         await query(
-          `UPDATE capability_financial_conditions SET region_territory = $2, region_language = $3, region_language_label = $4 WHERE id = $1`,
+          `UPDATE condition_lines SET region_territory = $2, region_language = $3, condition_name = COALESCE($4, condition_name), updated_at = now() WHERE id = $1 AND legacy_role = 'cfc'`,
           [scid, territory, language, label]
         );
       } else if (territory || language) {
@@ -2282,7 +2303,7 @@ export function registerWorkModelRoutes(
         let scid: number | null = clid != null ? (existingMap.get(clid) ?? null) : null;
         if (territory || language) {
           if (scid != null) {
-            await query(`UPDATE capability_financial_conditions SET region_territory = $2, region_language = $3, region_language_label = $4 WHERE id = $1`, [scid, territory, language, label]);
+            await query(`UPDATE condition_lines SET region_territory = $2, region_language = $3, condition_name = COALESCE($4, condition_name), updated_at = now() WHERE id = $1 AND legacy_role = 'cfc'`, [scid, territory, language, label]);
           } else {
             // 採番は condition_lines 全体(=line_no)の MAX+1 で行う。cfc ビュー
             //   (legacy_role='cfc' のみ)の MAX で採番すると、地域ホルダ行と本体行が
@@ -2331,7 +2352,7 @@ export function registerWorkModelRoutes(
         );
         if (cap.rows[0]?.source_system === "master_register") {
           await query(`DELETE FROM condition_lines WHERE id = $1`, [eid]);
-          if (escid != null) await query(`DELETE FROM capability_financial_conditions WHERE id = $1`, [escid]);
+          if (escid != null) await query(`DELETE FROM condition_lines WHERE id = $1 AND legacy_role = 'cfc'`, [escid]);
         } else {
           await query(`UPDATE condition_lines SET source_material_id = NULL, updated_at = now() WHERE id = $1`, [eid]);
         }

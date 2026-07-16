@@ -361,7 +361,7 @@ async function upsertContract(
     const lines = Array.isArray(p.line_items) ? p.line_items : [];
     if (lines.length > 0) {
       await client.query(
-        `DELETE FROM capability_line_items WHERE capability_id = $1`,
+        `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'cli'`,
         [capabilityId]
       );
       let totalExTax = 0;
@@ -453,7 +453,7 @@ async function upsertContract(
     // 4. expenses 一括 upsert (expense_name は事前バリデーション済)
     if (expenses.length > 0) {
       await client.query(
-        `DELETE FROM capability_expenses WHERE capability_id = $1`,
+        `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'expense'`,
         [capabilityId]
       );
       for (const e of expenses) {
@@ -478,7 +478,7 @@ async function upsertContract(
     // 5. other_fees 一括 upsert (fee_name は事前バリデーション済)
     if (fees.length > 0) {
       await client.query(
-        `DELETE FROM capability_other_fees WHERE capability_id = $1`,
+        `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'other_fee'`,
         [capabilityId]
       );
       for (const f of fees) {
@@ -981,15 +981,15 @@ async function mergePurchaseOrders(
 
     // 4. target の子テーブルを全削除して結合済みを再INSERT
     await client.query(
-      `DELETE FROM capability_line_items WHERE capability_id = $1`,
+      `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'cli'`,
       [targetCap]
     );
     await client.query(
-      `DELETE FROM capability_expenses WHERE capability_id = $1`,
+      `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'expense'`,
       [targetCap]
     );
     await client.query(
-      `DELETE FROM capability_other_fees WHERE capability_id = $1`,
+      `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'other_fee'`,
       [targetCap]
     );
 

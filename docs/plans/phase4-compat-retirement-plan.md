@@ -44,18 +44,19 @@ INSERT/UPDATE/DELETE すべて INSTEAD OF トリガ(`cfc_*` / `cli_*` / `exp_*` 
 | Phase 4 第1弾(2026-07-15) | **75** | cc UPDATE/DELETE **27箇所を documents 直書き化**(純リネーム)。<br>付随して「cc↔documents の版同期 UPDATE」(1:1ビュー化後は自己代入の無駄撃ち)2箇所を撤去 |
 | Phase 4 第2弾(2026-07-15) | **57** | cc INSERT **18箇所を documents 直書き化**。cc_compat_ins の意味論を各サイトへ移植:<br>① template_type=COALESCE(contract_type,'') / drive_link=COALESCE(document_url,'') を明示付与<br>② revision / is_primary / lifecycle_status を NULL 明示(documents の列デフォルト 0/TRUE/'final' がトリガ経路の NULL 挿入と食い違うため)<br>③ document_number 提供時は ON CONFLICT (document_number) DO UPDATE SET 提供列=COALESCE(EXCLUDED.列, documents.列), updated_at=now()<br>→ **contract_capabilities への書込みはゼロ達成**(tg_cc_ins は撤去可能状態。G2 は capability_* 完了後に一括で) |
 
-### 残り 57 箇所の内訳（次スライスの対象）
+| Phase 4 第3弾(2026-07-15) | **18** | capability_* の DELETE 25箇所 / UPDATE 14箇所を condition_lines 直書き化。<br>変換ルール: WHERE へ legacy_role 条件付与(cfc/cli/expense/other_fee)、view line_no のオフセット逆変換(cli:+1000/fee:+2000/exp:+3000)、flow_direction(in/out)→direction(payable/receivable)、cfc の大型更新は cl_scheme()/cl_resolve_work() で cfc_upd の CASE 意味論を再現(応答形はビュー再読取で互換維持)。<br>**判明した休眠バグの修復を含む**: cli_upd トリガが status_flags / is_inbound を SET 対象にしておらず、検収済フラグ(inspection_issued)や状態フラグ保存がビュー経由では永続化されていなかった → 直書きで本来の意図どおり保存される。また view の NULL 計算列(last_alert_at / alert_count / source_ip_id / basis / advance・forecast_amount 等)への書込みは実体列が無く元々無効のため削除(コメントで明記) |
 
-| 操作 | 件数 | 変換難度 |
+### 残り 18 箇所の内訳（第4弾 = 最終スライス）
+
+| 操作 | 件数 | 変換方針 |
 |---|---|---|
-| capability_line_items (INS 4 / UPD 8 / DEL 6) | 18 | 中〜高: cli_* トリガ移植(line_no+1000 / scheme / direction / cl_next_code) |
-| capability_financial_conditions (INS 6 / UPD 6 / DEL 7) | 19 | 中〜高: cfc_* トリガ移植(scheme別の rate/mg/ag/amount CASE) |
-| capability_expenses (INS 4 / DEL 6) | 10 | 中: exp_* トリガ移植(line_no+3000 / legacy_role='expense') |
-| capability_other_fees (INS 4 / DEL 6) | 10 | 中: fee_* トリガ移植(line_no+2000 / legacy_role='other_fee') |
+| INSERT INTO capability_financial_conditions | 6 | cfc_ins 移植: cl_scheme/cl_dir/cl_next_code + ON CONFLICT(document_id,line_no) |
+| INSERT INTO capability_line_items | 4 | cli_ins 移植(line_no+1000 / scheme / direction) |
+| INSERT INTO capability_expenses | 4 | exp_ins 移植(line_no+3000 / legacy_role='expense') |
+| INSERT INTO capability_other_fees | 4 | fee_ins 移植(line_no+2000 / legacy_role='other_fee') |
 
-DELETE 系(計 19)は `cl_view_del`(単純に condition_lines を id で DELETE)のため
-`DELETE FROM condition_lines WHERE id = …` への置換で足りるが、WHERE 句が
-view 列(capability_id 等)を参照する場合は legacy_role 条件の付与が必要。
+いずれも既存の直書きヘルパ `services/worker/src/lib/conditionWrite.ts` への集約を軸に、
+トリガの採番(cl_next_code)・既存コード温存(document_id×line_no 一致時)を再現する。
 
 読取り(FROM/JOIN)は **309 箇所**(Phase 7 対象。書込みゼロ達成後に着手)。
 

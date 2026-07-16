@@ -477,18 +477,22 @@ export async function initDb() {
           WHERE cc.id <> w.winner_id;
        SELECT COUNT(*) INTO loser_count FROM _cc_losers;
        IF loser_count > 0 THEN
-         UPDATE capability_financial_conditions cfc
-            SET capability_id = l.winner_id
+         UPDATE condition_lines cfc
+            SET capability_id = l.winner_id,
+                document_id   = l.winner_id
            FROM _cc_losers l
           WHERE cfc.capability_id = l.loser_id
+            AND cfc.legacy_role = 'cfc'
             AND NOT EXISTS (
-              SELECT 1 FROM capability_financial_conditions w
+              SELECT 1 FROM condition_lines w
                WHERE w.capability_id = l.winner_id
-                 AND w.condition_no = cfc.condition_no
+                 AND w.legacy_role = 'cfc'
+                 AND w.line_no = cfc.line_no
             );
-         DELETE FROM capability_financial_conditions cfc
+         DELETE FROM condition_lines cfc
           USING _cc_losers l
-          WHERE cfc.capability_id = l.loser_id;
+          WHERE cfc.capability_id = l.loser_id
+            AND cfc.legacy_role = 'cfc';
          DELETE FROM documents cc
           USING _cc_losers l
           WHERE cc.id = l.loser_id;
