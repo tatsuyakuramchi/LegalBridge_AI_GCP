@@ -496,9 +496,15 @@ export function registerWorkModelRoutes(
             ORDER BY li.line_no, li.id`,
           [id]
         ),
+        // Phase 5 第4弾: royalty_statements(trg_sync_royalty_statements 供給のミラー)ではなく
+        // 正本 royalty_calculations を documents.contract_id 経由で直読み(応答キーは互換維持)。
         query(
-          `SELECT id, period, gross_royalty_ex_tax, mg_amount, mg_remaining, actual_royalty_ex_tax
-             FROM royalty_statements WHERE contract_id = $1 ORDER BY period`,
+          `SELECT rc.id, rc.period, rc.gross_royalty_ex_tax, rc.mg_amount,
+                  rc.mg_remaining, rc.actual_royalty_ex_tax
+             FROM royalty_calculations rc
+             JOIN documents d ON d.id = rc.capability_id
+            WHERE d.contract_id = $1
+            ORDER BY rc.period, rc.id`,
           [id]
         ),
       ]);
