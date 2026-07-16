@@ -5771,12 +5771,36 @@ ${details}
         const fileName = `${issueKey}_${accountPart}_${safeName}`;
 
         const stream = Readable.from(req.file.buffer);
-        const driveLink = await googleDriveService.uploadFile(
-          stream,
-          fileName,
-          req.file.mimetype,
-          ATTACHMENT_UPLOAD_FOLDER_ID
-        );
+        let driveLink = "";
+        try {
+          driveLink = await googleDriveService.uploadFile(
+            stream,
+            fileName,
+            req.file.mimetype,
+            ATTACHMENT_UPLOAD_FOLDER_ID
+          );
+        } catch (driveErr: any) {
+          // 権限/フォルダ切り分け用に、実際に使われた SA と対象フォルダを
+          // エラーメッセージへ含めて返す (ページの「失敗:」にそのまま出る)。
+          let saEmail = "";
+          try {
+            saEmail = await googleDriveService.getServiceAccountEmail();
+          } catch {
+            /* noop */
+          }
+          console.error(
+            `[attachments/by-issue] Drive upload failed (sa=${saEmail}, folder=${ATTACHMENT_UPLOAD_FOLDER_ID}):`,
+            driveErr
+          );
+          return res.status(502).json({
+            ok: false,
+            error:
+              "Drive アップロード失敗" +
+              (saEmail ? ` (SA: ${saEmail}` : " (SA: 不明") +
+              `, folder: ${ATTACHMENT_UPLOAD_FOLDER_ID}): ` +
+              String(driveErr?.message || driveErr).slice(0, 300),
+          });
+        }
         if (!driveLink) {
           return res.status(502).json({
             ok: false,

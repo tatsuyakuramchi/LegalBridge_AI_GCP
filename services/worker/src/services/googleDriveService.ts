@@ -5,6 +5,7 @@ import { renderHtmlToPdf, type RenderPdfOptions } from "./pdfRenderer.ts";
 
 export class GoogleDriveService {
   private drive;
+  private auth: InstanceType<typeof google.auth.GoogleAuth>;
 
   constructor() {
     // Authentication priority:
@@ -30,13 +31,29 @@ export class GoogleDriveService {
           `is set but the file is missing on disk. Falling back to ADC.`
       );
     }
+    this.auth = new google.auth.GoogleAuth({
+      ...(keyFileUsable ? { keyFile } : {}),
+      scopes: ["https://www.googleapis.com/auth/drive.file"],
+    });
     this.drive = google.drive({
       version: "v3",
-      auth: new google.auth.GoogleAuth({
-        ...(keyFileUsable ? { keyFile } : {}),
-        scopes: ["https://www.googleapis.com/auth/drive.file"],
-      })
+      auth: this.auth,
     });
+  }
+
+  /**
+   * Drive API を実際に呼んでいるサービスアカウントのメールアドレス。
+   * 鍵ファイル (GOOGLE_SERVICE_ACCOUNT_KEY_PATH) 利用時はその SA、
+   * ADC フォールバック時は Cloud Run のランタイム SA になる。
+   * 「フォルダに権限を付けたのにアップロードが失敗する」系の切り分け用。
+   */
+  async getServiceAccountEmail(): Promise<string> {
+    try {
+      const creds = await this.auth.getCredentials();
+      return String((creds as any)?.client_email || "");
+    } catch {
+      return "";
+    }
   }
 
   async uploadHtml(html: string, fileName: string, folderId?: string): Promise<string> {
