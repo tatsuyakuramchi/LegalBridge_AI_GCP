@@ -1922,6 +1922,49 @@ async function startServer() {
     }
   );
 
+  // POST /api/intake/create — Slack /法務依頼 新規起票の非同期受付 (GAS 用)
+  //
+  // GAS は Slack view_submission の3秒制限内に受付完了ビューを返す必要が
+  // あるが、Backlog 起票 (REST 数回) + 文書生成は間に合わない。かといって
+  // worker (min-instances=0) を GAS から直接叩くとコールドスタートで3秒を
+  // 食い潰すため、常時起動 (min-instances=1) の search-api がここで受けて
+  // worker /api/intake/create-run へ fire-and-forget で中継する。
+  app.post(
+    "/api/intake/create",
+    requirePortalSecret,
+    express.json({ limit: "1mb" }),
+    async (req, res) => {
+      try {
+        const input = req.body || {};
+        if (!input.slack_user_id || !input.request_type) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "slack_user_id / request_type required" });
+        }
+        const base = DOCUMENT_WORKER_URL.replace(/\/+$/, "");
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+        };
+        if (process.env.LB_PORTAL_SECRET) {
+          headers["x-lb-portal-secret"] = process.env.LB_PORTAL_SECRET;
+        }
+        // res 送出前に送信を開始する (Cloud Run は応答後 CPU を絞るため)。
+        // worker のコールドスタートや文書生成は待たない。
+        fetch(`${base}/api/intake/create-run`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(input),
+        }).catch((e) =>
+          console.error("[intake/create] worker dispatch failed:", e)
+        );
+        res.status(202).json({ ok: true, accepted: true });
+      } catch (error: any) {
+        console.error("POST /api/intake/create failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
   // -------------------------------------------------------------------
   // /api/backlog/* — read-only Backlog REST API passthrough
   // -------------------------------------------------------------------

@@ -543,6 +543,43 @@ function handleInteractivity_(payload) {
       // type=1 webhook will hand off to Cloud Run which writes to
       // the DB, renders the document, uploads to Drive, and posts
       // the 🆕 受付完了 通知 via notifyIssueEvent.
+      // Phase 30: 起票〜文書生成を worker へ非同期委譲する。
+      // createBacklogIssue_ (Backlog REST 最大3回) + DM を doPost 内で同期
+      // 実行すると、Backlog のレイテンシ (通常 1〜2 秒、スパイク時 2〜4 秒+)
+      // で Slack の 3 秒制限を超え、受付完了ビューの応答が捨てられて
+      // 「画面が変わらない」状態になるため。中継は常時起動の search-api
+      // (/api/intake/create → worker /api/intake/create-run)。
+      // 課題番号の発行は非同期になるので、番号は worker からの DM で届く。
+      submission.line_items_text = formatLineItemsText_(submission);
+      submission.backlog_issue_type_name =
+        REQUEST_TYPE_TO_BACKLOG_TYPE[submission.request_type] || '法務相談';
+      submission.upload_page_base = buildAttachmentUploadUrl_('');
+      if (submission.multi_contract) submission.skip_pdf = true;
+
+      var dispatched = false;
+      try {
+        var disp = callLegalBridgeApi_('/api/intake/create', 'post', submission);
+        dispatched = !!(disp && (disp.accepted || disp.ok));
+      } catch (dispErr) {
+        console.warn('intake/create dispatch failed, falling back to sync:', dispErr);
+      }
+      if (dispatched) {
+        return jsonResponse_({
+          response_action: 'update',
+          view: getSubmissionCompleteView_({
+            heading: '依頼を受け付けました',
+            requestType: submission.request_type,
+            summary: submission.summary,
+            noteLines: [
+              '課題番号を発行しています。発行され次第 DM でお知らせします' +
+                ' (資料アップロードページへのリンクも届きます)。',
+            ],
+          }),
+        });
+      }
+
+      // フォールバック: search-api 不通時は従来どおり同期起票する
+      // (3 秒を超える可能性はあるが、起票自体は確実に成立させる)。
       const created = createBacklogIssue_(submission);
       if (created && created.__error) {
         notifyUserOfError_(submission.slack_user_id, created.__error);
