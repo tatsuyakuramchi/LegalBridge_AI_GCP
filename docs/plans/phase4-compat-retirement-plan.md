@@ -69,7 +69,7 @@ INSERT/UPDATE/DELETE すべて INSTEAD OF トリガ(`cfc_*` / `cli_*` / `exp_*` 
 | G2: INSTEAD OF トリガ撤去 | G1 達成後、cc_compat_ins / cfc_* / cli_* / exp_* / fee_* を DROP | migration |
 | G3: 読取りゼロ | reads=0(SELECT を documents / condition_lines 直読みへ) | CI |
 | G4: VIEW 撤去 | G3 達成 + 本番クエリログで一定期間アクセスなし | migration + pg_stat |
-| G5: 二重書込み解消 | `trg_sync_*`(contracts/cft/cli/payments/royalty_statements)を新旧照合のうえ DROP | Phase 5 と連動 |
+| G5: 二重書込み解消 | `trg_sync_*`(contracts/cft/cli/payments/royalty_statements)を新旧照合のうえ DROP | **達成(2026-07-16, migration 0130)**。contracts/cft/cli 系は 0101 の DROP CASCADE で消滅済みと判明(孤児関数のみ 0130 で DROP)。payments/royalty_statements 系は読み手を正本へ切替のうえ 0130 で DROP。詳細は phase5-contract-finance-plan.md |
 
 ## 4. 注意事項・要決定
 
