@@ -29,8 +29,11 @@ RUN npm install tsx
 # Static assets + thin server. We deliberately do NOT copy src/,
 # templates/, or lib/ — none of them are needed at runtime now that
 # the API routes live in services/api and services/worker.
+# Exception (Phase 6): apiRoutingRules.ts is the single source of the
+# /api/* read/write dispatch rules, shared by the BFF proxy in server.ts.
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./
+COPY --from=builder /app/src/lib/apiRoutingRules.ts ./src/lib/apiRoutingRules.ts
 
 ENV NODE_ENV=production
 ENV PORT=8080
