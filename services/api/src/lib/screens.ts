@@ -39,6 +39,7 @@ export type ScreenKey =
   | "receivable-map"
   | "payment-exports"
   | "payment-contracts"
+  | "attachment-upload"
   | "guides"
   | "guide-portal"
   | "admin";
@@ -90,6 +91,9 @@ export const SCREENS: Screen[] = [
   // (依頼者の staff.department_code) の契約のみ、admin は全件。起票などの
   // 手続きは Slack /法務依頼 側 — このページは検索と情報 DL に特化する。
   { key: "payment-contracts", path: "/payments/contracts", label: "支払対象契約検索", icon: "📑", section: "browse", minRole: "viewer", nav: true },
+  // 法務依頼 資料アップロード: Slack /法務依頼 の課題番号を指定して、レビュー
+  // 対象文書などの資料を法務共有 Drive へ格納する (書込は worker へ S2S 中継)。
+  { key: "attachment-upload", path: "/attachments/upload", label: "法務依頼 資料アップロード", icon: "📎", section: "browse", minRole: "viewer", nav: true },
   // 条件明細(閲覧専用)。FIN 部署の viewer のみサイドバー表示・閲覧可(admin は console 側)。
   { key: "conditions-fin",   path: "/view/conditions",   label: "条件明細",         icon: "🧾", section: "browse", minRole: "viewer", departments: ["FIN"], nav: true },
   { key: "ringi",            path: "/search/ringi",      label: "稟議番号検索",     icon: "📋", section: "browse", minRole: "viewer", nav: false },
