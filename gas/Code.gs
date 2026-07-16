@@ -503,11 +503,16 @@ function handleInteractivity_(payload) {
         // Backlog API 成功直後の速報 DM (1〜2 秒)。webhook 到着までの
         // 沈黙 (5〜10 秒) を埋めるための即時フィードバック。
         // Phase 19 の本通知 (notifyIssueEvent) はこの後 worker から来る。
+        var attachUploadUrl = buildAttachmentUploadUrl_(created.issueKey);
         slackPost_('chat.postMessage', {
           channel: submission.slack_user_id,
           text:
             '✅ Backlog 課題を作成しました: *' + created.issueKey + '*\n' +
-            'まもなく詳細な受付通知をお送りします。',
+            'まもなく詳細な受付通知をお送りします。' +
+            (attachUploadUrl
+              ? '\n📎 レビュー対象文書・参考資料の添付は <' + attachUploadUrl +
+                '|資料アップロードページ> からお願いします (課題番号は入力済みで開きます)。'
+              : ''),
         });
       }
       return jsonResponse_({ response_action: 'clear' });
@@ -2055,6 +2060,20 @@ function buildPaymentContractsUrl_() {
   return base ? base + '/payments/contracts' : '';
 }
 
+/**
+ * search-api の「法務依頼 資料アップロード」ページ URL。
+ * IAP 保護 (要ログイン) のページなので署名や token は付けない。
+ * 課題番号を渡すと入力欄にプリフィルされる (起票後の速報 DM 用)。
+ *
+ * @param {string} [issueKey] Backlog 課題キー (例: LEGAL-123)。省略可。
+ */
+function buildAttachmentUploadUrl_(issueKey) {
+  var base = (getApiConfig_().baseUrl || '').replace(/\/+$/, '');
+  if (!base) return '';
+  var url = base + '/attachments/upload';
+  return issueKey ? url + '?issue=' + encodeURIComponent(issueKey) : url;
+}
+
 // -----------------------------------------------------------------------
 //  Phase 27: 複数明細フォーム (発注書・個別利用許諾条件・検収書・計算書)
 //
@@ -2348,8 +2367,10 @@ function getLegalRequestModal_(selectedType, opts) {
   // (template selection, Backlog issue type, DB writes) stays unchanged.
   const REQUEST_GROUPS = [
     {
-      label: '法務相談',
-      options: [{ value: 'legal_consult', text: '法務相談' }],
+      // 表示名は「法務レビュー」へ変更 (2026-07)。value と Backlog 課題タイプ名
+      // (REQUEST_TYPE_TO_BACKLOG_TYPE の '法務相談') は互換のため据え置き。
+      label: '法務レビュー',
+      options: [{ value: 'legal_consult', text: '法務レビュー' }],
     },
     {
       label: '文書作成',
@@ -2379,7 +2400,7 @@ function getLegalRequestModal_(selectedType, opts) {
   ];
 
   // Lookup so we can build the `initial_option` for the select.
-  let initialLabel = '法務相談';
+  let initialLabel = '法務レビュー';
   REQUEST_GROUPS.forEach(function (g) {
     g.options.forEach(function (o) {
       if (o.value === selectedType) initialLabel = o.text;
@@ -2529,6 +2550,29 @@ function getLegalRequestModal_(selectedType, opts) {
     ],
   };
 
+  // 法務レビュー (legal_consult): レビュー対象文書は Slack 添付ではなく
+  // 資料アップロードページ経由で格納してもらう。その導線をフォーム上部に出す。
+  var reviewUploadBlocks = [];
+  if (selectedType === 'legal_consult') {
+    var uploadPageUrl = buildAttachmentUploadUrl_('');
+    reviewUploadBlocks.push({
+      type: 'context',
+      block_id: 'review_upload_help_block',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text:
+            '📎 *レビューしてほしい文書の添付方法*: ' +
+            (uploadPageUrl
+              ? '<' + uploadPageUrl + '|資料アップロードページ>'
+              : '資料アップロードページ') +
+            ' からアップロードしてください。依頼の送信後に届く DM のリンクからも開けます' +
+            '(課題番号は DM でお知らせします)。',
+        },
+      ],
+    });
+  }
+
   // Phase 22.2 V2: 検収書 / 利用許諾料計算書 のときは候補 select を表示
   // (発注書完了で自動作成された納品報告子課題等への紐付け用)
   var candidateBlocks = [];
@@ -2623,15 +2667,32 @@ function getLegalRequestModal_(selectedType, opts) {
       },
     ];
   } else {
+    // 取引先入力は全種別で任意 (2026-07)。未登録の新規取引先は詳細欄に
+    // 記載してもらい、法務側で登録・補完する運用。
     counterpartyBlocks = [
       { type: 'divider' },
       {
         type: 'section',
-        text: { type: 'mrkdwn', text: '*取引先情報 (Counterparty Info)*' },
+        text: { type: 'mrkdwn', text: '*取引先情報 (Counterparty Info)* — 入力は任意' },
+      },
+      {
+        type: 'context',
+        block_id: 'counterparty_help_block',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text:
+              (vendorSearchUrl
+                ? '🔎 既存の取引先は <' + vendorSearchUrl + '|取引先マスタを検索> で名称・コードを確認できます。'
+                : '🔎 既存の取引先は法務検索ポータル (取引先マスタ) で確認できます。') +
+              ' *新規 (未登録) の取引先の場合は、下の「相談・依頼詳細」に名称・所在地などを記載してください。*',
+          },
+        ],
       },
       {
         type: 'input',
         block_id: 'counterparty_block',
+        optional: true,
         label: { type: 'plain_text', text: '相手方名称' },
         element: {
           type: 'plain_text_input',
@@ -2642,6 +2703,7 @@ function getLegalRequestModal_(selectedType, opts) {
       {
         type: 'input',
         block_id: 'entity_type_block',
+        optional: true,
         label: { type: 'plain_text', text: '区分' },
         element: {
           type: 'radio_buttons',
@@ -2656,6 +2718,7 @@ function getLegalRequestModal_(selectedType, opts) {
       {
         type: 'input',
         block_id: 'entity_id_block',
+        optional: true,
         label: { type: 'plain_text', text: '法人番号 / 社内個人コード' },
         element: {
           type: 'plain_text_input',
@@ -2667,7 +2730,7 @@ function getLegalRequestModal_(selectedType, opts) {
     ];
   }
 
-  const blocks = baseBlocks.concat(candidateBlocks).concat([
+  const blocks = baseBlocks.concat(reviewUploadBlocks).concat(candidateBlocks).concat([
     {
       type: 'input',
       block_id: 'summary_block',

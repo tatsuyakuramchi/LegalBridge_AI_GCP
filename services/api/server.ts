@@ -308,6 +308,9 @@ import { paymentExportPage } from "./src/views/paymentExportHtml.ts";
 // 支払対象契約検索 (Phase 28): 発注書・単独契約書・利用許諾条件書の
 // 部署スコープ付き read-only 検索ページ。
 import { paymentContractsPage } from "./src/views/paymentContractsHtml.ts";
+// 法務依頼 資料アップロード: 課題番号を指定して資料を worker 経由で
+// 法務共有 Drive へ格納する (依頼者向け・書込は worker へ S2S 中継)。
+import { attachmentUploadPage } from "./src/views/attachmentUploadHtml.ts";
 import {
   listPaymentDocuments,
   buildExportBundle,
@@ -4193,6 +4196,102 @@ async function startServer() {
       } catch (error) {
         console.error("/payments/contracts failed:", error);
         res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // ── 法務依頼 資料アップロード ──────────────────────────────────────────────
+  //   依頼者 (IAP 認証済みの全メンバー) が Slack /法務依頼 の課題番号を指定して
+  //   資料を格納する。Drive への書込は worker /api/attachments/by-issue へ
+  //   portal-secret 付きで中継し、IAP のメールをアップロード者として引き渡す。
+  app.get(
+    "/attachments/upload",
+    requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "attachment-upload", renderErrorPage }),
+    async (req, res) => {
+      try {
+        const deptCode = await resolveDepartmentCode(req);
+        res.type("html").send(
+          attachmentUploadPage(
+            (req as any).userRole as Role,
+            deptCode,
+            String(req.query.issue || "")
+          )
+        );
+      } catch (error) {
+        console.error("/attachments/upload failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // 課題検索 (選択リスト用)。露出は最小フィールドに絞る — 依頼詳細や
+  // 添付一覧はこの EP からは返さない (全メンバーが検索できるため)。
+  app.get(
+    "/api/attachment-upload/issues",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const q = String(req.query.q || "").trim();
+        if (!q) return res.json({ ok: true, rows: [] });
+        const like = `%${q}%`;
+        const r = await query(
+          `SELECT lr.backlog_issue_key AS issue_key,
+                  lr.summary,
+                  lr.counterparty,
+                  lr.created_at
+             FROM legal_requests lr
+            WHERE lr.merged_into_issue_key IS NULL
+              AND (lr.backlog_issue_key ILIKE $1
+                   OR lr.summary ILIKE $1
+                   OR lr.counterparty ILIKE $1)
+            ORDER BY lr.created_at DESC
+            LIMIT 20`,
+          [like]
+        );
+        res.json({ ok: true, rows: r.rows });
+      } catch (error: any) {
+        console.error("GET /api/attachment-upload/issues failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // multipart はここでは解釈せず、リクエストストリームごと worker へ転送する
+  // (search-api に multer を足さない)。アップロード者メールはブラウザ入力
+  // でなく IAP 認証結果から取ってヘッダで渡す。
+  app.post(
+    "/api/attachment-upload",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const email = String((req as any).user?.email || "");
+        const base = DOCUMENT_WORKER_URL.replace(/\/+$/, "");
+        const headers: Record<string, string> = {
+          "content-type": String(
+            req.headers["content-type"] || "application/octet-stream"
+          ),
+          "x-lb-uploader-email": email,
+        };
+        if (process.env.LB_PORTAL_SECRET) {
+          headers["x-lb-portal-secret"] = process.env.LB_PORTAL_SECRET;
+        }
+        const upstream = await fetch(`${base}/api/attachments/by-issue`, {
+          method: "POST",
+          headers,
+          body: req as any,
+          // Node fetch でリクエストボディをストリームで送るのに必須。
+          duplex: "half",
+        } as any);
+        const text = await upstream.text();
+        res
+          .status(upstream.status)
+          .type(upstream.headers.get("content-type") || "application/json")
+          .send(text);
+      } catch (error: any) {
+        console.error("POST /api/attachment-upload failed:", error);
+        res.status(502).json({ ok: false, error: String(error?.message || error) });
       }
     }
   );

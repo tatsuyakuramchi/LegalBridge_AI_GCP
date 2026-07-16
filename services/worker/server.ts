@@ -5507,6 +5507,146 @@ ${details}
     }
   );
 
+  // ── 課題番号ベースの資料アップロード (法務依頼 資料格納ページ用) ─────────────
+  //   search-api の /attachments/upload ページから S2S (portal-secret) で中継される。
+  //   依頼者は Backlog 課題番号で対象を指定するため、matter が未作成でも受け付けて
+  //   documents.issue_key に課題番号を残す (matter_id NULL なら autolink トリガ /
+  //   後続の案件同期が紐付ける)。Drive 上のファイル名は
+  //   「課題番号_Googleアカウント_元ファイル名」に揃え、誰が何の課題に入れたかを
+  //   ファイル名だけで追えるようにする。
+  app.post(
+    "/api/attachments/by-issue",
+    requirePortalSecret,
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        const issueKey = String(req.body.issueKey || "").trim().toUpperCase();
+        if (!issueKey || !/^[A-Z0-9_]+-\d+$/.test(issueKey)) {
+          return res.status(400).json({ ok: false, error: "課題番号が不正です" });
+        }
+        if (!req.file) {
+          return res.status(400).json({ ok: false, error: "ファイルが指定されていません" });
+        }
+        // アップロード者は search-api が IAP から取ったメールをヘッダで渡す
+        // (ブラウザ入力は信用しない)。
+        const uploaderEmail = String(
+          req.headers["x-lb-uploader-email"] || ""
+        ).trim();
+        const kind = String(req.body.docKind || "").trim();
+        const templateType = ATTACHMENT_KINDS[kind] ? kind : "reference";
+
+        // 課題の実在確認 — 誤入力の番号に添付が積まれるのを防ぐ。
+        const lr = await query(
+          `SELECT backlog_issue_key, summary FROM legal_requests WHERE backlog_issue_key = $1`,
+          [issueKey]
+        );
+        if (!lr.rows[0]) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "この課題番号の依頼が見つかりません: " + issueKey });
+        }
+
+        // 案件解決: 代表課題 → matter_issues の順。無ければ NULL で登録し
+        // autolink / 案件同期に委ねる。
+        let matterId: number | null = null;
+        const m1 = await query(
+          `SELECT id FROM matters WHERE primary_issue_key = $1 LIMIT 1`,
+          [issueKey]
+        );
+        if (m1.rows[0]) {
+          matterId = Number(m1.rows[0].id);
+        } else {
+          const m2 = await query(
+            `SELECT matter_id FROM matter_issues WHERE backlog_issue_key = $1 LIMIT 1`,
+            [issueKey]
+          );
+          if (m2.rows[0]) matterId = Number(m2.rows[0].matter_id);
+        }
+
+        // multer の originalname は非 ASCII で化けることがあるため、FE が
+        // File.name を通常フィールド (originalName) で併送してきたら優先する。
+        const rawName =
+          String(req.body.originalName || "").trim() || req.file.originalname;
+        const safeName = String(rawName).replace(/[\r\n]/g, "_");
+        const accountPart = (uploaderEmail || "unknown").replace(/[\r\n\\/]/g, "_");
+        const fileName = `${issueKey}_${accountPart}_${safeName}`;
+
+        const stream = Readable.from(req.file.buffer);
+        const driveLink = await googleDriveService.uploadFile(
+          stream,
+          fileName,
+          req.file.mimetype
+        );
+        if (!driveLink) {
+          return res.status(502).json({
+            ok: false,
+            error: "Drive へのアップロードに失敗しました (リンク未取得)",
+          });
+        }
+
+        // ATT-YYYY-NNNNN 採番 (matters 添付と同じ document_sequences を使用)。
+        const year = new Date().getFullYear();
+        const seq = await query(
+          `INSERT INTO document_sequences (kind, year, current_value) VALUES ('attachment', $1, 1)
+             ON CONFLICT (kind, year) DO UPDATE SET current_value = document_sequences.current_value + 1
+           RETURNING current_value`,
+          [year]
+        );
+        const docNumber = `ATT-${year}-${String(
+          Number(seq.rows[0].current_value)
+        ).padStart(5, "0")}`;
+
+        const ins = await query(
+          `INSERT INTO documents
+             (document_number, issue_key, template_type, form_data, drive_link,
+              matter_id, is_primary, lifecycle_status, contract_title, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,FALSE,'final',$7,$8)
+           RETURNING id, document_number, template_type, drive_link, matter_id, contract_title, created_at`,
+          [
+            docNumber,
+            issueKey,
+            templateType,
+            JSON.stringify({
+              title: safeName,
+              original_file_name: rawName,
+              source_mime_type: req.file.mimetype,
+              kind: templateType,
+              uploaded_by: uploaderEmail,
+              uploaded_via: "attachment-upload-page",
+            }),
+            driveLink,
+            matterId,
+            safeName,
+            uploaderEmail || null,
+          ]
+        );
+        if (matterId) {
+          await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [matterId]);
+        }
+
+        // 法務側への気づき導線: Backlog 課題にコメントを1本残す (失敗しても
+        // アップロード自体は成功扱い)。
+        try {
+          await backlogService.addComment(
+            issueKey,
+            `📎 資料アップロードページから資料が格納されました。\n` +
+              `- ファイル: ${safeName} (${ATTACHMENT_KINDS[templateType]})\n` +
+              `- 登録番号: ${docNumber}\n` +
+              `- アップロード: ${uploaderEmail || "(不明)"}\n` +
+              `- Drive: ${driveLink}`
+          );
+        } catch (commentErr) {
+          console.warn("[attachments/by-issue] Backlog comment failed:", commentErr);
+        }
+
+        res.json({ ok: true, document: ins.rows[0] });
+      } catch (error) {
+        console.error("[attachments/by-issue] upload failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
   app.post("/api/master/staff", express.json(), async (req, res) => {
     // Phase 22.21.120: 編集時は body.id を尊重して UPDATE。新規時は slack_user_id
     //   での upsert。slack_user_id が空のまま新規登録すると UNIQUE/NOT NULL で
