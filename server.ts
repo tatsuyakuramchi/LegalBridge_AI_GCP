@@ -22,13 +22,22 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { request as httpsRequest } from "node:https";
+import { request as httpRequest } from "node:http";
+import { resolveApiTarget } from "./src/lib/apiRoutingRules.ts";
 
 dotenv.config();
 
 const SEARCH_API_URL =
+  process.env.API_READ_URL ||
   "https://legalbridge-search-api-988056987352.asia-northeast1.run.app";
 const DOCUMENT_WORKER_URL =
+  process.env.API_WRITE_URL ||
   "https://legalbridge-document-worker-988056987352.asia-northeast1.run.app";
+
+// C1 フラグのサーバ側等価物(既定 ON = 現行バンドルの VITE_API_READS_TO_WORKER=1 と同じ)。
+const READS_TO_WORKER =
+  String(process.env.API_READS_TO_WORKER ?? "1") === "1";
 
 // 統合 Phase 2: admin-ui を「管理者(app_role=admin)専用エディタ」にするための
 //   IAP 身元ゲート。admin-ui を IAP 配下に置くと x-goog-authenticated-user-email
@@ -112,25 +121,95 @@ async function startServer() {
     });
   });
 
-  // Any other /api/* hit means a stale client tab is still using the
-  // old bundle (its apiRouter wasn't loaded yet). Return 410 with a
-  // pointer to the new services so the failure is observable and the
-  // user can refresh.
-  app.all("/api/*", (req, res) => {
-    console.warn(
-      `⚠️ Stale client hit deprecated /api/* on admin-ui: ${req.method} ${req.url}`
+  // ── Phase 6: 同一オリジン BFF プロキシ ────────────────────────────
+  // ブラウザは相対 /api/* を叩く(バンドルは VITE_API_SAME_ORIGIN=1 で
+  // monkey-patch 休眠)。ここで src/lib/apiRoutingRules.ts の規則により
+  // search-api(read) / document-worker(write) へストリーミング転送する。
+  // 共有シークレット(LB_PORTAL_SECRET)はサーバ側 env のみが持ち、
+  // JS バンドルへの焼き込みは廃止(Phase 22 の VITE_API_PORTAL_SECRET)。
+  // multipart / CSV / PDF もそのまま pipe する(body parser は挟まない)。
+  const HOP_BY_HOP = new Set([
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+  ]);
+  // ENFORCE_ROLE=true のとき、/api プロキシも HTML と同様に admin 限定にする
+  // (60 秒キャッシュ)。OFF(既定)は従来どおり素通し(=旧バンドル内シークレットと同等)。
+  const roleCache = new Map<string, { role: "admin" | "viewer"; exp: number }>();
+  const resolveRoleCached = async (email: string): Promise<"admin" | "viewer"> => {
+    const hit = roleCache.get(email);
+    if (hit && hit.exp > Date.now()) return hit.role;
+    const role = await resolveRole(email);
+    roleCache.set(email, { role, exp: Date.now() + 60_000 });
+    return role;
+  };
+  app.all("/api/*", async (req, res) => {
+    if (ENFORCE_ROLE) {
+      const email = iapEmail(req);
+      if (!email) {
+        return res.status(401).json({ ok: false, error: "unauthorized (no identity)" });
+      }
+      const role = await resolveRoleCached(email);
+      if (role !== "admin") {
+        return res.status(403).json({ ok: false, error: "forbidden (admin only)" });
+      }
+    }
+    let base: string;
+    try {
+      const target = resolveApiTarget(req.method, req.originalUrl, READS_TO_WORKER);
+      base = target === "read" ? SEARCH_API_URL : DOCUMENT_WORKER_URL;
+    } catch (err) {
+      console.error("[api-proxy] target resolution failed:", err);
+      return res.status(502).json({ ok: false, error: "proxy target resolution failed" });
+    }
+    const url = new URL(base.replace(/\/+$/, "") + req.originalUrl);
+
+    const headers: Record<string, any> = {};
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (v == null) continue;
+      const lk = k.toLowerCase();
+      if (HOP_BY_HOP.has(lk) || lk === "host") continue;
+      headers[k] = v;
+    }
+    // 内部認証: サーバ側 env の共有シークレットを付与(クライアント指定は上書き)。
+    // search-api の requireIapUser が portal_secret fallback として受け入れる。
+    if (process.env.LB_PORTAL_SECRET) {
+      headers["x-lb-portal-secret"] = process.env.LB_PORTAL_SECRET;
+    } else {
+      delete headers["x-lb-portal-secret"];
+    }
+    headers["host"] = url.host;
+
+    const requestFn = url.protocol === "http:" ? httpRequest : httpsRequest;
+    const upstream = requestFn(
+      url,
+      { method: req.method, headers },
+      (up) => {
+        res.status(up.statusCode || 502);
+        for (const [k, v] of Object.entries(up.headers)) {
+          if (v == null || HOP_BY_HOP.has(k.toLowerCase())) continue;
+          res.setHeader(k, v as any);
+        }
+        up.pipe(res);
+      }
     );
-    res.status(410).json({
-      ok: false,
-      error:
-        "This endpoint moved in Phase 2. Hard-refresh the Admin UI " +
-        "(Ctrl/Cmd+Shift+R) to pick up the apiRouter that dispatches to " +
-        "legalbridge-search-api / legalbridge-document-worker.",
-      newServices: {
-        reads: SEARCH_API_URL,
-        writes: DOCUMENT_WORKER_URL,
-      },
+    // Cloud Run の admin-ui timeout(300s)より僅かに短く上流を打ち切る。
+    upstream.setTimeout(290_000, () => upstream.destroy(new Error("upstream timeout")));
+    upstream.on("error", (err) => {
+      console.error(`[api-proxy] ${req.method} ${req.originalUrl} → ${url.host} failed:`, err);
+      if (!res.headersSent) {
+        res.status(502).json({ ok: false, error: "upstream request failed" });
+      } else {
+        res.end();
+      }
     });
+    req.pipe(upstream);
+    req.on("aborted", () => upstream.destroy());
   });
 
   // 統合 Phase 2: React Topbar が実ユーザー(email/role)を表示するための
