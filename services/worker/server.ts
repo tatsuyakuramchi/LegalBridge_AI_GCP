@@ -141,6 +141,14 @@ interface LegalRequestSubmission {
   // しないため、これを子課題コメントに書いて全入力を Backlog に残す。
   line_items_text?: string;
   target_doc_number?: string;
+  target_contract_title?: string;
+  // Phase 30: GAS 側の REQUEST_TYPE_TO_BACKLOG_TYPE の課題タイプ名。
+  // 指定時は worker 内の request_type → タイプ名マップより優先する
+  // (両者のマップの食い違いで課題タイプが変わるのを防ぐ)。
+  backlog_issue_type_name?: string;
+  // 資料アップロードページの base URL (GAS buildAttachmentUploadUrl_('') 由来)。
+  // create-run の完了 DM で ?issue= 付きリンクを作るのに使う。
+  upload_page_base?: string;
 }
 
 const ISSUE_TYPE_TO_REQUEST_TYPE: Record<string, string> = {
@@ -2365,11 +2373,17 @@ async function startServer() {
 
     const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
 
+    // Phase 28/30: 検収書・計算書は対象契約番号で起票される (GAS が番号検証
+    // 済み)。GAS 直接起票時の description と同じ形式で1行残す。
+    const targetDocLine = input.target_doc_number
+      ? "対象契約番号: " + String(input.target_doc_number) +
+        (input.target_contract_title ? ` (${input.target_contract_title})` : "") + "\n"
+      : "";
     const backlogDescription = `
 依頼タイプ: ${requestType}
 希望納期: ${deadline}
 依頼者: <@${user}>
-
+${targetDocLine}
 【相手方情報】
 名称: ${counterparty}
 区分: ${entityType === "corporate" ? "法人" : "個人"}
@@ -2401,6 +2415,12 @@ ${details}
           targetTypeName = "契約審査";
         else if (requestType === "delivery_inspec") targetTypeName = "納品・検収";
         else if (requestType === "license_calc") targetTypeName = "利用許諾計算";
+
+        // Phase 30: GAS からタイプ名の指定があれば優先する (GAS の
+        // REQUEST_TYPE_TO_BACKLOG_TYPE が本番 Backlog 設定の正)。
+        if (input.backlog_issue_type_name) {
+          targetTypeName = String(input.backlog_issue_type_name);
+        }
 
         const matchedType = types.find((t: any) => t.name === targetTypeName);
         issueTypeId = matchedType ? matchedType.id : types[0].id;
@@ -4647,6 +4667,73 @@ ${details}
               text:
                 "⚠️ 既存課題 (" + childKey + ") への紐付け処理でエラーが発生しました。" +
                 "法務担当までご連絡ください。\n> " + String(e?.message || e),
+            });
+          } catch (_e) {
+            /* noop */
+          }
+        }
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
+  // Phase 30: 新規起票の実処理 (search-api /api/intake/create からの中継専用)。
+  //
+  // 従来は GAS が view_submission の同期処理内で createBacklogIssue_ (Backlog
+  // REST 最大3回) + 速報 DM をこなしてから応答しており、Slack の3秒制限を
+  // 超えると受付完了ビューの応答が捨てられて「画面が変わらない」状態に
+  // なっていた。起票〜文書生成〜通知をここに切り出し、GAS は search-api の
+  // 202 を受けて即座に受付完了ビューを返す。
+  //
+  // 起票後に届く Backlog webhook (type=1) は legal_requests 行の存在で
+  // 「処理済み」と判定されるため二重処理にはならない (webhook ハンドラ参照)。
+  app.post(
+    "/api/intake/create-run",
+    requirePortalSecret,
+    express.json(),
+    async (req, res) => {
+      const input = req.body || {};
+      const userId = String(input.slack_user_id || "");
+      if (!userId || !input.request_type) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "slack_user_id / request_type required" });
+      }
+      try {
+        const result = await processLegalRequestSubmission(input);
+
+        // 従来 GAS が送っていた速報 DM 相当 (課題番号 + 資料アップロード導線)。
+        if (slackWebClient && result?.issueKey) {
+          const uploadBase = String(input.upload_page_base || "").replace(/\/+$/, "");
+          const uploadUrl = uploadBase
+            ? `${uploadBase}?issue=${encodeURIComponent(result.issueKey)}`
+            : "";
+          try {
+            await slackWebClient.chat.postMessage({
+              channel: userId,
+              text:
+                "✅ Backlog 課題を作成しました: *" + result.issueKey + "*\n" +
+                (result.docNumber ? "*文書番号:* " + result.docNumber + "\n" : "") +
+                (uploadUrl
+                  ? "📎 レビュー対象文書・参考資料の添付は <" + uploadUrl +
+                    "|資料アップロードページ> からお願いします (課題番号は入力済みで開きます)。"
+                  : ""),
+            });
+          } catch (e) {
+            console.warn("[intake/create-run] DM failed:", e);
+          }
+        }
+        res.json({ ok: true, ...result });
+      } catch (e: any) {
+        console.error("/api/intake/create-run failed:", e);
+        if (slackWebClient && userId) {
+          try {
+            await slackWebClient.chat.postMessage({
+              channel: userId,
+              text:
+                "⚠️ 法務依頼の起票処理でエラーが発生しました。お手数ですが" +
+                "再度お試しいただくか、法務担当までご連絡ください。\n> " +
+                String(e?.message || e),
             });
           } catch (_e) {
             /* noop */
