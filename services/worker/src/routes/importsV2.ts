@@ -904,9 +904,10 @@ function csvTemplate(recordType: RecordType): string {
  *   1. target の業務明細/経費/その他手数料を全削除し、target+source 全件を結合して
  *      line_no=1.. で target capability に再INSERT(import と同じ DELETE+INSERT 方式)。
  *   2. target.amount_* を再計算、documents.form_data(line_items/expenses)も更新。
- *   3. v3 ミラー(contract_line_items)を target 分だけ作り直し。
- *   4. source の contract_capabilities / contracts / documents / external_assets を削除
+ *   3. source の contract_capabilities / contracts / documents / external_assets を削除
  *      (capability/contract の子テーブルは ON DELETE CASCADE)。
+ *      ※ v3 ミラー(contract_line_items)の再構築は Phase 5 第3弾で廃止(読み手が
+ *        condition_lines 直読みへ切替済みのため。正本は condition_lines)。
  */
 async function mergePurchaseOrders(
   deps: ImportsV2Deps,
@@ -1222,33 +1223,9 @@ async function mergePurchaseOrders(
       JSON.stringify(newFd),
     ]);
 
-    // 7. v3 ミラー(contract_line_items)を target 分だけ作り直し
-    const hasMirror =
-      (await client.query(`SELECT 1 FROM contracts WHERE id = $1`, [targetCap]))
-        .rows.length > 0;
-    if (hasMirror) {
-      await client.query(
-        `DELETE FROM contract_line_items WHERE contract_id = $1`,
-        [targetCap]
-      );
-      await client.query(
-        `INSERT INTO contract_line_items (
-           id, contract_id, line_no, category, item_name, spec, calc_method,
-           payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
-           delivery_date, payment_date, cycle, billing_day, term_start, term_end,
-           created_at, updated_at
-         )
-         SELECT id, capability_id, line_no, category, item_name, spec, calc_method,
-                payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
-                delivery_date, payment_date, cycle, billing_day, term_start, term_end,
-                created_at, updated_at
-           FROM capability_line_items WHERE capability_id = $1
-         ON CONFLICT (id) DO NOTHING`,
-        [targetCap]
-      );
-    }
-
-    // 8. source を削除(子テーブルは ON DELETE CASCADE)
+    // 7. source を削除(子テーブルは ON DELETE CASCADE)
+    //    ※ v3 ミラー(contract_line_items)の再構築は Phase 5 第3弾で廃止
+    //      (読み手は condition_lines 直読みへ切替済み。正本は condition_lines)。
     const sourceCaps = sourceRows.map((r) => r.cap_id);
     // 削除前に source 文書が指す家族契約を控える(文書削除後の契約掃除候補)
     const srcContractIds = (

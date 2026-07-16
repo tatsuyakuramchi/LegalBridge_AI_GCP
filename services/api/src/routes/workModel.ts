@@ -439,7 +439,10 @@ export function registerWorkModelRoutes(
         `SELECT c.id, c.document_number, c.contract_level, c.contract_category, c.contract_type,
                 c.contract_title, c.lifecycle_stage, c.effective_date, c.expiration_date,
                 v.vendor_name AS primary_vendor,
-                COALESCE((SELECT COUNT(*) FROM contract_financial_terms t WHERE t.contract_id = c.id), 0) AS term_count
+                COALESCE((SELECT COUNT(*)
+                            FROM condition_lines cl
+                            JOIN documents d ON d.id = cl.document_id
+                           WHERE d.contract_id = c.id AND cl.legacy_role = 'cfc'), 0) AS term_count
            FROM contracts c
            LEFT JOIN vendors v ON v.id = c.primary_vendor_id
           ORDER BY c.id DESC`
@@ -474,8 +477,25 @@ export function registerWorkModelRoutes(
             WHERE cp.contract_id = $1 ORDER BY cp.sort_order, cp.id`,
           [id]
         ),
-        query(`SELECT * FROM contract_financial_terms WHERE contract_id = $1 ORDER BY condition_no`, [id]),
-        query(`SELECT * FROM contract_line_items WHERE contract_id = $1 ORDER BY line_no`, [id]),
+        // Phase 5 第3弾: v3 ミラー(contract_financial_terms / contract_line_items)は
+        // 0101 以降更新が止まった残骸のため、正本 condition_lines(互換view の形)を
+        // documents.contract_id 経由で読む。応答形の互換のため contract_id を別名付与。
+        query(
+          `SELECT f.*, d.contract_id
+             FROM capability_financial_conditions f
+             JOIN documents d ON d.id = f.capability_id
+            WHERE d.contract_id = $1
+            ORDER BY f.condition_no, f.id`,
+          [id]
+        ),
+        query(
+          `SELECT li.*, d.contract_id
+             FROM capability_line_items li
+             JOIN documents d ON d.id = li.capability_id
+            WHERE d.contract_id = $1
+            ORDER BY li.line_no, li.id`,
+          [id]
+        ),
         query(
           `SELECT id, period, gross_royalty_ex_tax, mg_amount, mg_remaining, actual_royalty_ex_tax
              FROM royalty_statements WHERE contract_id = $1 ORDER BY period`,
