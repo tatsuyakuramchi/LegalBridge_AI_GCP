@@ -372,13 +372,29 @@ async function upsertContract(
           Number(l.amount_ex_tax) || (qty && unit ? Math.round(qty * unit) : 0);
         totalExTax += amount;
         await client.query(
-          `INSERT INTO capability_line_items (
-             capability_id, line_no, category, item_name, spec, calc_method,
-             payment_method, payment_terms,
-             quantity, unit_price, amount_ex_tax,
-             delivery_date, payment_date,
-             cycle, billing_day, term_start, term_end
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          `INSERT INTO condition_lines (
+             document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+             status_flags, is_inbound, is_addon, transaction_kind, category, condition_name, spec,
+             payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
+             delivery_date, payment_date, cycle, billing_day, term_start, term_end,
+             rate_pct, deliverable_ownership, source_work_id, updated_at
+           ) VALUES (
+             $1, $1, 1000 + $2, 'cli',
+             COALESCE((SELECT line_code FROM condition_lines
+                        WHERE document_id = $1 AND line_no = 1000 + $2), cl_next_code()),
+             cl_dir($1),
+             CASE WHEN upper(coalesce($6, '')) = 'SUBSCRIPTION' THEN 'subscription' ELSE 'lump_sum' END,
+             '{}'::jsonb, false, false, 'service',
+             COALESCE($3, 'line_item'), $4, $5, $7, $8, $9, $10, COALESCE($11, 0),
+             $12, $13, $14, $15, $16, $17, NULL, NULL, NULL, now()
+           )
+           ON CONFLICT (document_id, line_no) DO UPDATE SET
+             legacy_role='cli', direction=EXCLUDED.direction, payment_scheme=EXCLUDED.payment_scheme, transaction_kind='service',
+             category=EXCLUDED.category, condition_name=EXCLUDED.condition_name, spec=EXCLUDED.spec, payment_method=EXCLUDED.payment_method,
+             payment_terms=EXCLUDED.payment_terms, quantity=EXCLUDED.quantity, unit_price=EXCLUDED.unit_price,
+             amount_ex_tax=EXCLUDED.amount_ex_tax, delivery_date=EXCLUDED.delivery_date, payment_date=EXCLUDED.payment_date,
+             cycle=EXCLUDED.cycle, billing_day=EXCLUDED.billing_day, term_start=EXCLUDED.term_start, term_end=EXCLUDED.term_end,
+             deliverable_ownership=EXCLUDED.deliverable_ownership, source_work_id=EXCLUDED.source_work_id, updated_at=now()`,
           [
             capabilityId,
             Number(l.line_no) || 1,
@@ -423,16 +439,40 @@ async function upsertContract(
       ? p.financial_conditions
       : [];
     for (const c of conds) {
+      // Phase 4: cfc_ins トリガ(0101)の意味論で condition_lines へ直書き。
+      //   region_language_label はトリガ無視のため除去。
       await client.query(
-        `INSERT INTO capability_financial_conditions (
-           capability_id, condition_no, region_language_label, calc_method,
-           rate_pct, base_price_label, calc_period, calc_period_kind, calc_period_close_month,
-           currency, formula_text, payment_terms, mg_amount, ag_amount
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        `INSERT INTO condition_lines (
+           document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+           status_flags, is_inbound, is_addon, transaction_kind, condition_name,
+           rate_pct, mg_amount, ag_amount, currency, base_price_label, formula_text, payment_terms,
+           calc_period, calc_period_kind, calc_period_close_month, amount_ex_tax, updated_at
+         ) VALUES (
+           $1, $1, $2, 'cfc',
+           COALESCE((SELECT line_code FROM condition_lines
+                      WHERE document_id = $1 AND line_no = $2), cl_next_code()),
+           cl_dir($1), cl_scheme($3::text, $4::numeric),
+           '{}'::jsonb, false, false, 'license', NULL,
+           CASE WHEN cl_scheme($3::text, $4::numeric) = 'royalty' THEN $4::numeric END,
+           CASE WHEN cl_scheme($3::text, $4::numeric) = 'royalty' THEN $12::numeric END,
+           CASE WHEN cl_scheme($3::text, $4::numeric) = 'royalty' THEN $13::numeric END,
+           COALESCE($9, 'JPY'), $5, $10, $11,
+           $6, $7, $8,
+           CASE WHEN cl_scheme($3::text, $4::numeric) IN ('royalty','subscription')
+                THEN NULL ELSE COALESCE($12::numeric, 0) END,
+           now()
+         )
+         ON CONFLICT (document_id, line_no) DO UPDATE SET
+           legacy_role='cfc', direction=EXCLUDED.direction, payment_scheme=EXCLUDED.payment_scheme,
+           transaction_kind='license', condition_name=EXCLUDED.condition_name, rate_pct=EXCLUDED.rate_pct,
+           mg_amount=EXCLUDED.mg_amount, ag_amount=EXCLUDED.ag_amount, currency=EXCLUDED.currency,
+           base_price_label=EXCLUDED.base_price_label, formula_text=EXCLUDED.formula_text,
+           payment_terms=EXCLUDED.payment_terms, calc_period=EXCLUDED.calc_period,
+           calc_period_kind=EXCLUDED.calc_period_kind, calc_period_close_month=EXCLUDED.calc_period_close_month,
+           amount_ex_tax=EXCLUDED.amount_ex_tax, updated_at=now()`,
         [
           capabilityId,
           Number(c.condition_no) || 1,
-          c.region_language_label || null,
           c.calc_method || null,
           c.rate_pct == null ? null : Number(c.rate_pct),
           c.base_price_label || null,
@@ -458,10 +498,23 @@ async function upsertContract(
       );
       for (const e of expenses) {
         await client.query(
-          `INSERT INTO capability_expenses (
-             capability_id, line_no, expense_name, spec, spent_date,
-             amount_inc_tax, remarks
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          `INSERT INTO condition_lines (
+             document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+             status_flags, is_inbound, is_addon, transaction_kind, category, condition_name, spec,
+             payment_date, amount_ex_tax, notes, updated_at
+           ) VALUES (
+             $1, $1, 3000 + $2, 'expense',
+             COALESCE((SELECT line_code FROM condition_lines
+                        WHERE document_id = $1 AND line_no = 3000 + $2), cl_next_code()),
+             cl_dir($1), 'lump_sum',
+             '{}', false, false, 'service', 'expense', $3, $4, $5, COALESCE($6, 0), $7,
+             CURRENT_TIMESTAMP
+           )
+           ON CONFLICT (document_id, line_no) DO UPDATE SET
+             legacy_role = 'expense', category = 'expense',
+             condition_name = EXCLUDED.condition_name, spec = EXCLUDED.spec,
+             payment_date = EXCLUDED.payment_date, amount_ex_tax = EXCLUDED.amount_ex_tax,
+             notes = EXCLUDED.notes, updated_at = now()`,
           [
             capabilityId,
             Number(e.line_no) || 1,
@@ -483,9 +536,22 @@ async function upsertContract(
       );
       for (const f of fees) {
         await client.query(
-          `INSERT INTO capability_other_fees (
-             capability_id, line_no, fee_name, amount, remarks
-           ) VALUES ($1,$2,$3,$4,$5)`,
+          `INSERT INTO condition_lines (
+             document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+             status_flags, is_inbound, is_addon, transaction_kind, category, condition_name,
+             amount_ex_tax, notes, updated_at
+           ) VALUES (
+             $1, $1, 2000 + $2, 'other_fee',
+             COALESCE((SELECT line_code FROM condition_lines
+                        WHERE document_id = $1 AND line_no = 2000 + $2), cl_next_code()),
+             cl_dir($1), 'lump_sum',
+             '{}', false, false, 'service', 'other_fee', $3, COALESCE($4, 0), $5,
+             CURRENT_TIMESTAMP
+           )
+           ON CONFLICT (document_id, line_no) DO UPDATE SET
+             legacy_role = 'other_fee', category = 'other_fee',
+             condition_name = EXCLUDED.condition_name,
+             amount_ex_tax = EXCLUDED.amount_ex_tax, notes = EXCLUDED.notes, updated_at = now()`,
           [
             capabilityId,
             Number(f.line_no) || 1,
@@ -1001,11 +1067,29 @@ async function mergePurchaseOrders(
       const amount = Number(l.amount_ex_tax) || 0;
       totalExTax += amount;
       await client.query(
-        `INSERT INTO capability_line_items (
-           capability_id, line_no, category, item_name, spec, calc_method,
-           payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
-           delivery_date, payment_date, cycle, billing_day, term_start, term_end
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        `INSERT INTO condition_lines (
+             document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+             status_flags, is_inbound, is_addon, transaction_kind, category, condition_name, spec,
+             payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
+             delivery_date, payment_date, cycle, billing_day, term_start, term_end,
+             rate_pct, deliverable_ownership, source_work_id, updated_at
+           ) VALUES (
+             $1, $1, 1000 + $2, 'cli',
+             COALESCE((SELECT line_code FROM condition_lines
+                        WHERE document_id = $1 AND line_no = 1000 + $2), cl_next_code()),
+             cl_dir($1),
+             CASE WHEN upper(coalesce($6, '')) = 'SUBSCRIPTION' THEN 'subscription' ELSE 'lump_sum' END,
+             '{}'::jsonb, false, false, 'service',
+             COALESCE($3, 'line_item'), $4, $5, $7, $8, $9, $10, COALESCE($11, 0),
+             $12, $13, $14, $15, $16, $17, NULL, NULL, NULL, now()
+           )
+           ON CONFLICT (document_id, line_no) DO UPDATE SET
+             legacy_role='cli', direction=EXCLUDED.direction, payment_scheme=EXCLUDED.payment_scheme, transaction_kind='service',
+             category=EXCLUDED.category, condition_name=EXCLUDED.condition_name, spec=EXCLUDED.spec, payment_method=EXCLUDED.payment_method,
+             payment_terms=EXCLUDED.payment_terms, quantity=EXCLUDED.quantity, unit_price=EXCLUDED.unit_price,
+             amount_ex_tax=EXCLUDED.amount_ex_tax, delivery_date=EXCLUDED.delivery_date, payment_date=EXCLUDED.payment_date,
+             cycle=EXCLUDED.cycle, billing_day=EXCLUDED.billing_day, term_start=EXCLUDED.term_start, term_end=EXCLUDED.term_end,
+             deliverable_ownership=EXCLUDED.deliverable_ownership, source_work_id=EXCLUDED.source_work_id, updated_at=now()`,
         [
           targetCap,
           lineNo,
@@ -1051,10 +1135,23 @@ async function mergePurchaseOrders(
       const e = expRows[i];
       const lineNo = i + 1;
       await client.query(
-        `INSERT INTO capability_expenses (
-           capability_id, line_no, expense_name, spec, spent_date,
-           amount_inc_tax, remarks
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        `INSERT INTO condition_lines (
+             document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+             status_flags, is_inbound, is_addon, transaction_kind, category, condition_name, spec,
+             payment_date, amount_ex_tax, notes, updated_at
+           ) VALUES (
+             $1, $1, 3000 + $2, 'expense',
+             COALESCE((SELECT line_code FROM condition_lines
+                        WHERE document_id = $1 AND line_no = 3000 + $2), cl_next_code()),
+             cl_dir($1), 'lump_sum',
+             '{}', false, false, 'service', 'expense', $3, $4, $5, COALESCE($6, 0), $7,
+             CURRENT_TIMESTAMP
+           )
+           ON CONFLICT (document_id, line_no) DO UPDATE SET
+             legacy_role = 'expense', category = 'expense',
+             condition_name = EXCLUDED.condition_name, spec = EXCLUDED.spec,
+             payment_date = EXCLUDED.payment_date, amount_ex_tax = EXCLUDED.amount_ex_tax,
+             notes = EXCLUDED.notes, updated_at = now()`,
         [
           targetCap,
           lineNo,
@@ -1078,9 +1175,22 @@ async function mergePurchaseOrders(
     for (let i = 0; i < feeRows.length; i++) {
       const f = feeRows[i];
       await client.query(
-        `INSERT INTO capability_other_fees (
-           capability_id, line_no, fee_name, amount, remarks
-         ) VALUES ($1,$2,$3,$4,$5)`,
+        `INSERT INTO condition_lines (
+             document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+             status_flags, is_inbound, is_addon, transaction_kind, category, condition_name,
+             amount_ex_tax, notes, updated_at
+           ) VALUES (
+             $1, $1, 2000 + $2, 'other_fee',
+             COALESCE((SELECT line_code FROM condition_lines
+                        WHERE document_id = $1 AND line_no = 2000 + $2), cl_next_code()),
+             cl_dir($1), 'lump_sum',
+             '{}', false, false, 'service', 'other_fee', $3, COALESCE($4, 0), $5,
+             CURRENT_TIMESTAMP
+           )
+           ON CONFLICT (document_id, line_no) DO UPDATE SET
+             legacy_role = 'other_fee', category = 'other_fee',
+             condition_name = EXCLUDED.condition_name,
+             amount_ex_tax = EXCLUDED.amount_ex_tax, notes = EXCLUDED.notes, updated_at = now()`,
         [targetCap, i + 1, f.fee_name, f.amount, f.remarks]
       );
     }

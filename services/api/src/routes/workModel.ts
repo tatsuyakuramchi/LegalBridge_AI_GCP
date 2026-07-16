@@ -765,30 +765,46 @@ export function registerWorkModelRoutes(
         const wk = await query(`SELECT kind FROM works WHERE id = $1`, [id]);
         condKind = wk.rows[0]?.kind === "licensed_in" ? "license_in" : "sublicense_out";
       }
+      // Phase 4: cfc_ins トリガ(0101)の意味論で condition_lines へ直書き。
+      //   契約レス条件(capability=NULL)。region_language_label / condition_kind /
+      //   basis / advance・forecast_amount はトリガ無視のため除去
+      //   (condition_kind は直後の実列 UPDATE(0114/0116)が従来どおり担う)。
+      //   応答の形(旧 RETURNING * = ビュー行)はビュー再読取で互換維持。
       const r = await query(
-        `INSERT INTO capability_financial_conditions (
-           work_id, capability_id, source_work_id, source_material_id, condition_no,
-           region_language_label, calc_method, rate_pct, base_price_label,
-           calc_period, calc_period_kind, calc_period_close_month, currency,
-           formula_text, payment_terms, mg_amount, ag_amount, condition_kind,
-           counterparty_vendor_id, basis, unit_price, cycle, billing_day,
-           term_start, term_end, advance_amount, forecast_amount,
-           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type
-         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-           $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
-         RETURNING *`,
+        `INSERT INTO condition_lines (
+           document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+           status_flags, is_inbound, is_addon, transaction_kind, condition_name,
+           rate_pct, mg_amount, ag_amount, currency, base_price_label, formula_text, payment_terms,
+           calc_period, calc_period_kind, calc_period_close_month, counterparty_vendor_id,
+           source_work_id, source_material_id, unit_price, cycle, billing_day, term_start, term_end,
+           calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
+           amount_ex_tax, updated_at
+         ) VALUES (
+           NULL, NULL, $4, 'cfc', cl_next_code(), 'payable', cl_scheme($5::text, $6::numeric),
+           '{}'::jsonb, false, false, 'license', $22,
+           CASE WHEN cl_scheme($5::text, $6::numeric) = 'royalty' THEN $6::numeric END,
+           CASE WHEN cl_scheme($5::text, $6::numeric) = 'royalty' THEN $14::numeric END,
+           CASE WHEN cl_scheme($5::text, $6::numeric) = 'royalty' THEN $15::numeric END,
+           COALESCE($11, 'JPY'), $7, $12, $13,
+           $8, $9, $10, $16,
+           COALESCE($2, $1, cl_resolve_work($3)), $3, $17, $18, $19, $20, $21,
+           $23, $24, $25, $26, $27,
+           CASE WHEN cl_scheme($5::text, $6::numeric) IN ('royalty','subscription')
+                THEN NULL ELSE COALESCE($26::numeric, $14::numeric, 0) END,
+           now()
+         )
+         RETURNING id`,
         [
           id, b.source_work_id ?? null, b.source_material_id ?? null, condNo,
-          b.region_language_label ?? null, b.calc_method ?? "ROYALTY",
+          b.calc_method ?? "ROYALTY",
           b.rate_pct ?? null, b.base_price_label ?? null,
           b.calc_period ?? null, b.calc_period_kind ?? null,
           b.calc_period_close_month ?? null, b.currency ?? "JPY",
           b.formula_text ?? null, b.payment_terms ?? null,
-          Number(b.mg_amount) || 0, Number(b.ag_amount) || 0, condKind,
-          b.counterparty_vendor_id ?? null, b.basis ?? null,
+          Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
+          b.counterparty_vendor_id ?? null,
           b.unit_price ?? null, b.cycle ?? null, b.billing_day ?? null,
           b.term_start ?? null, b.term_end ?? null,
-          b.advance_amount ?? null, b.forecast_amount ?? null,
           // 0045: 金銭条件の柔軟化フィールド
           b.condition_name ?? null, b.calc_type ?? null, b.fixed_kind ?? null,
           b.subscription_cycle ?? null,
@@ -796,7 +812,12 @@ export function registerWorkModelRoutes(
           b.guarantee_type ?? null,
         ]
       );
-      const row = r.rows[0];
+      // 応答互換: 旧実装はビュー行(RETURNING *)を返していたため同じ形で再読取。
+      const rRead = await query(
+        `SELECT * FROM capability_financial_conditions WHERE id = $1`,
+        [r.rows[0]?.id]
+      );
+      const row = rRead.rows[0];
       // 0114/0116: parent_license_condition_id・condition_kind は cfc ビューに無い(実体は
       //   condition_lines)。INSTEAD OF INSERT トリガ後、cfc.id = condition_lines.id で直接更新。
       const parentLc = b.parent_license_condition_id != null && b.parent_license_condition_id !== ""
@@ -2160,27 +2181,43 @@ export function registerWorkModelRoutes(
         : scheme === "installment" ? "INSTALLMENT"
         : "FIXED";
       const isRoyaltyLike = scheme === "royalty" || scheme === "subscription";
+      // Phase 4: cfc_ins トリガ(0101)の意味論で condition_lines へ直書き。
+      //   region_language_label はトリガ無視のため除去(condition_name が正)。
+      //   source_work_id はトリガ同様 cl_resolve_work(素材ID) で導出。
       const ins = await query(
-        `INSERT INTO capability_financial_conditions (
-           capability_id, condition_no, condition_name, region_language_label,
-           calc_method, calc_type, rate_pct, mg_amount, ag_amount, unit_amount,
+        `INSERT INTO condition_lines (
+           document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+           status_flags, is_inbound, is_addon, transaction_kind, condition_name,
+           calc_type, rate_pct, mg_amount, ag_amount, unit_amount,
            currency, base_price_label, region_territory, region_language,
-           source_material_id, updated_at
+           source_material_id, source_work_id, amount_ex_tax, updated_at
          )
-         SELECT $1,
-                COALESCE((SELECT MAX(line_no) + 1 FROM condition_lines WHERE capability_id = $1), 1),
-                $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP
-         RETURNING id, condition_no`,
+         SELECT $1, $1, v.ln, 'cfc',
+                COALESCE((SELECT line_code FROM condition_lines
+                           WHERE document_id = $1 AND line_no = v.ln), cl_next_code()),
+                cl_dir($1), cl_scheme($3::text, $5::numeric),
+                '{}'::jsonb, false, false, 'license', $2,
+                $4,
+                CASE WHEN cl_scheme($3::text, $5::numeric) = 'royalty' THEN $5::numeric END,
+                CASE WHEN cl_scheme($3::text, $5::numeric) = 'royalty' THEN $6::numeric END,
+                CASE WHEN cl_scheme($3::text, $5::numeric) = 'royalty' THEN $7::numeric END,
+                $8, COALESCE($9, 'JPY'), $10, $11, $12,
+                $13, cl_resolve_work($13),
+                CASE WHEN cl_scheme($3::text, $5::numeric) IN ('royalty','subscription')
+                     THEN NULL ELSE COALESCE($8::numeric, $6::numeric, 0) END,
+                CURRENT_TIMESTAMP
+           FROM (SELECT COALESCE((SELECT MAX(line_no) + 1 FROM condition_lines
+                                   WHERE capability_id = $1), 1) AS ln) v
+         RETURNING id, line_no AS condition_no`,
         [
           capabilityId,
           b.subject ?? b.condition_name ?? null,
-          regionLabel,
           calcMethod,
           b.calc_type ? String(b.calc_type) : null,
           isRoyaltyLike ? rate : null,
           isRoyaltyLike ? mg : null,
           isRoyaltyLike ? ag : null,
-          isRoyaltyLike ? null : amount, // 固定額は unit_amount へ(cfc_ins が amount_ex_tax を導出)
+          isRoyaltyLike ? null : amount, // 固定額は unit_amount へ(amount_ex_tax を上で導出)
           b.currency ?? "JPY",
           b.base_price_label ?? null,
           territory,
@@ -2242,11 +2279,22 @@ export function registerWorkModelRoutes(
           [scid, territory, language, label]
         );
       } else if (territory || language) {
+        // Phase 4: cfc_ins トリガ(0101)の意味論で condition_lines へ直書き(地域行)。
+        //   ラベルはビュー定義上 condition_name の別名のため condition_name へ保存。
         const cfc = await query(
-          `INSERT INTO capability_financial_conditions
-             (capability_id, condition_no, region_territory, region_language, region_language_label)
-           SELECT $1, COALESCE((SELECT MAX(line_no) + 1 FROM condition_lines WHERE capability_id = $1), 1),
-                  $2, $3, $4 RETURNING id`,
+          `INSERT INTO condition_lines
+             (document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+              status_flags, is_inbound, is_addon, transaction_kind, condition_name,
+              currency, region_territory, region_language, amount_ex_tax, updated_at)
+           SELECT $1, $1, v.ln, 'cfc',
+                  COALESCE((SELECT line_code FROM condition_lines
+                             WHERE document_id = $1 AND line_no = v.ln), cl_next_code()),
+                  cl_dir($1), 'lump_sum',
+                  '{}'::jsonb, false, false, 'license', $4,
+                  'JPY', $2, $3, 0, CURRENT_TIMESTAMP
+             FROM (SELECT COALESCE((SELECT MAX(line_no) + 1 FROM condition_lines
+                                     WHERE capability_id = $1), 1) AS ln) v
+           RETURNING id`,
           [capabilityId, territory, language, label]
         );
         await query(`UPDATE condition_lines SET source_condition_id = $2 WHERE id = $1`, [id, cfc.rows[0].id]);
@@ -2309,7 +2357,23 @@ export function registerWorkModelRoutes(
             //   (legacy_role='cfc' のみ)の MAX で採番すると、地域ホルダ行と本体行が
             //   別系列で番号採番され (capability_id, line_no) UNIQUE 制約に衝突する
             //   (地域付き条件が2件以上で duplicate key)。実体テーブル基準に統一。
-            const cfc = await query(`INSERT INTO capability_financial_conditions (capability_id, condition_no, region_territory, region_language, region_language_label) SELECT $1, COALESCE((SELECT MAX(line_no)+1 FROM condition_lines WHERE capability_id=$1),1), $2,$3,$4 RETURNING id`, [capabilityId, territory, language, label]);
+            // Phase 4: cfc_ins トリガ(0101)の意味論で condition_lines へ直書き(地域行)。
+            const cfc = await query(
+              `INSERT INTO condition_lines
+                 (document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
+                  status_flags, is_inbound, is_addon, transaction_kind, condition_name,
+                  currency, region_territory, region_language, amount_ex_tax, updated_at)
+               SELECT $1, $1, v.ln, 'cfc',
+                      COALESCE((SELECT line_code FROM condition_lines
+                                 WHERE document_id = $1 AND line_no = v.ln), cl_next_code()),
+                      cl_dir($1), 'lump_sum',
+                      '{}'::jsonb, false, false, 'license', $4,
+                      'JPY', $2, $3, 0, CURRENT_TIMESTAMP
+                 FROM (SELECT COALESCE((SELECT MAX(line_no)+1 FROM condition_lines
+                                         WHERE capability_id = $1), 1) AS ln) v
+               RETURNING id`,
+              [capabilityId, territory, language, label]
+            );
             scid = cfc.rows[0].id as number;
           }
         }
