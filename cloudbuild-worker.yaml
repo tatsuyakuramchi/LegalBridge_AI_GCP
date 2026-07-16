@@ -40,6 +40,19 @@ images:
 
 steps:
   # ──────────────────────────────────────────────────────────────────────
+  # ⓪ 互換VIEW書込みゲート (Phase 4 G1 の退行防止 / phase4-compat-retirement-plan.md)
+  #    contract_capabilities / capability_* への INSERT/UPDATE/DELETE が 1 箇所でも
+  #    再発したらビルドを止める。スクリプトは rg 不在環境では grep にフォールバックする。
+  # ──────────────────────────────────────────────────────────────────────
+  - id: gate-compat-writes
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - scripts/audit/compat_view_refs.sh
+      - --gate-writes
+      - "0"
+
+  # ──────────────────────────────────────────────────────────────────────
   # ① DB マイグレーション（worker デプロイの前提。失敗したら以降のステップは走らない）
   #    migrations/ を Cloud Run Job としてビルド→deploy→execute する。
   #    --set-cloudsql-instances を必ず付けるので socket(ENOENT) で落ちない。
