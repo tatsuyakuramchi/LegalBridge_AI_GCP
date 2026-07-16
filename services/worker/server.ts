@@ -136,6 +136,11 @@ interface LegalRequestSubmission {
   // スキップし、admin-ui 検収待ちページの一括作成 (/api/imports/bulk/inspection)
   // で法務が取引先ごとに発行する。
   skip_pdf?: boolean;
+  // 複数明細フォームの内容を GAS 側で表示ラベル込みに整形したテキスト
+  // (formatLineItemsText_)。link-trigger 経路では Backlog 課題を新規作成
+  // しないため、これを子課題コメントに書いて全入力を Backlog に残す。
+  line_items_text?: string;
+  target_doc_number?: string;
 }
 
 const ISSUE_TYPE_TO_REQUEST_TYPE: Record<string, string> = {
@@ -2372,7 +2377,10 @@ async function startServer() {
 
 【詳細】
 ${details}
-    `.trim();
+    `.trim() +
+      // 複数明細フォームの整形済みテキスト (GAS formatLineItemsText_)。
+      // worker 経由で新規課題を作る経路でも明細を description に残す。
+      (input.line_items_text ? "\n\n" + String(input.line_items_text) : "");
 
     let issueTypeId = 1;
     let categoryId: number | undefined = undefined;
@@ -4503,7 +4511,46 @@ ${details}
    *   body: LegalRequestSubmission + existing_issue_key (必須)
    */
   app.post("/api/intake/link-trigger", express.json(), async (req, res) => {
-    try {
+    const input = req.body || {};
+    const childKey = String(input.existing_issue_key || "").trim();
+    if (!childKey) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "existing_issue_key required" });
+    }
+
+    // GAS は Slack view_submission の 3 秒予算内で応答する必要があるため、
+    // 文書生成 (数秒〜十数秒) を待たせず受付だけ即応答する。実処理は自分
+    // 自身の実行用 EP (/api/intake/link-trigger-run) への fire-and-forget
+    // POST に委譲する — Cloud Run はレスポンス後 CPU をスロットリングする
+    // (min-instances=0 / no-cpu-throttling 未設定) ため、応答後の
+    // setImmediate 等では処理が止まりうる。自己リクエストなら受信側が
+    // 通常のリクエストとして full CPU / timeout 600s で実行できる。
+    const selfBase = `${req.protocol}://${req.get("host")}`;
+    const runHeaders: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (process.env.LB_PORTAL_SECRET) {
+      runHeaders["x-lb-portal-secret"] = process.env.LB_PORTAL_SECRET;
+    }
+    // res 送出前に fetch を開始しておく (接続確立まで CPU がある状態で行う)。
+    fetch(`${selfBase}/api/intake/link-trigger-run`, {
+      method: "POST",
+      headers: runHeaders,
+      body: JSON.stringify(input),
+    }).catch((e) => {
+      console.error(`[link-trigger] self-dispatch failed (${childKey}):`, e);
+    });
+
+    res.status(202).json({ ok: true, accepted: true });
+  });
+
+  // link-trigger の実処理 (上の EP からの自己リクエスト専用)。
+  app.post(
+    "/api/intake/link-trigger-run",
+    requirePortalSecret,
+    express.json(),
+    async (req, res) => {
       const input = req.body || {};
       const childKey = String(input.existing_issue_key || "").trim();
       if (!childKey) {
@@ -4511,48 +4558,104 @@ ${details}
           .status(400)
           .json({ ok: false, error: "existing_issue_key required" });
       }
-
-      // Step 1: 子課題が トリガー待ち なら 未対応 に進める
       try {
-        const wfRes = await query(
-          "SELECT current_status_name FROM issue_workflows WHERE backlog_issue_key = $1",
-          [childKey]
-        );
-        const currentStatusName = wfRes.rows[0]?.current_status_name || null;
-        if (currentStatusName === "トリガー待ち") {
-          const statuses = await backlogService.getStatuses();
-          const target = (statuses as any[]).find(
-            (s: any) => s?.name === "未対応"
-          );
-          if (target) {
-            try {
-              await backlogService.updateIssueStatus(childKey, target.id);
-            } catch (e) {
-              console.warn(
-                `[link-trigger] Backlog status update failed (${childKey}):`,
-                e
-              );
-            }
-          }
-          await query(
-            "UPDATE issue_workflows SET current_status_name = '未対応' WHERE backlog_issue_key = $1",
+        // Step 0: フォーム入力の全文 (明細含む) を子課題コメントに残す。
+        // この経路は新規 Backlog 課題を作らない = description が書かれない
+        // ため、ここが唯一の Backlog への入力内容反映になる。
+        const formLines: string[] = [
+          "📝 Slack /法務依頼 フォーム入力内容 (既存課題への紐付け起票)",
+          "依頼タイプ: " + String(input.request_type || ""),
+          "件名: " + String(input.summary || ""),
+          "希望納期: " + String(input.deadline || ""),
+          "依頼者: <@" + String(input.slack_user_id || "") + ">",
+        ];
+        if (input.target_doc_number) {
+          formLines.push("対象契約番号: " + String(input.target_doc_number));
+        }
+        if (input.counterparty) {
+          formLines.push("相手方: " + String(input.counterparty));
+        }
+        if (input.details) {
+          formLines.push("", "【詳細】", String(input.details));
+        }
+        if (input.line_items_text) {
+          formLines.push("", String(input.line_items_text));
+        }
+        try {
+          await backlogService.addComment(childKey, formLines.join("\n"));
+        } catch (e) {
+          console.warn(`[link-trigger] form comment failed (${childKey}):`, e);
+        }
+
+        // Step 1: 子課題が トリガー待ち なら 未対応 に進める
+        try {
+          const wfRes = await query(
+            "SELECT current_status_name FROM issue_workflows WHERE backlog_issue_key = $1",
             [childKey]
           );
+          const currentStatusName = wfRes.rows[0]?.current_status_name || null;
+          if (currentStatusName === "トリガー待ち") {
+            const statuses = await backlogService.getStatuses();
+            const target = (statuses as any[]).find(
+              (s: any) => s?.name === "未対応"
+            );
+            if (target) {
+              try {
+                await backlogService.updateIssueStatus(childKey, target.id);
+              } catch (e) {
+                console.warn(
+                  `[link-trigger] Backlog status update failed (${childKey}):`,
+                  e
+                );
+              }
+            }
+            await query(
+              "UPDATE issue_workflows SET current_status_name = '未対応' WHERE backlog_issue_key = $1",
+              [childKey]
+            );
+          }
+        } catch (e) {
+          console.warn(`[link-trigger] pre-pipeline error:`, e);
         }
-      } catch (e) {
-        console.warn(`[link-trigger] pre-pipeline error:`, e);
-      }
 
-      // Step 2: 通常パイプライン (文書生成 + 通知)
-      const result = await processLegalRequestSubmission(input);
-      res.json({ ok: true, ...result });
-    } catch (e: any) {
-      console.error("/api/intake/link-trigger failed:", e);
-      res
-        .status(500)
-        .json({ ok: false, error: String(e?.message || e) });
+        // Step 2: 通常パイプライン (文書生成 + 通知)
+        const result = await processLegalRequestSubmission(input);
+
+        // Step 3: 完了 DM (従来は GAS が同期結果を DM していたが、非同期化に
+        // 伴い worker から送る)。
+        if (slackWebClient && input.slack_user_id) {
+          try {
+            await slackWebClient.chat.postMessage({
+              channel: String(input.slack_user_id),
+              text:
+                "✅ *既存課題への紐付け起票が完了しました*\n\n" +
+                "*対象課題:* " + childKey + "\n" +
+                (result?.docNumber ? "*文書番号:* " + result.docNumber + "\n" : "") +
+                (result?.driveLink ? "*ドキュメント:* " + result.driveLink + "\n" : ""),
+            });
+          } catch (e) {
+            console.warn(`[link-trigger] completion DM failed:`, e);
+          }
+        }
+        res.json({ ok: true, ...result });
+      } catch (e: any) {
+        console.error("/api/intake/link-trigger-run failed:", e);
+        if (slackWebClient && input.slack_user_id) {
+          try {
+            await slackWebClient.chat.postMessage({
+              channel: String(input.slack_user_id),
+              text:
+                "⚠️ 既存課題 (" + childKey + ") への紐付け処理でエラーが発生しました。" +
+                "法務担当までご連絡ください。\n> " + String(e?.message || e),
+            });
+          } catch (_e) {
+            /* noop */
+          }
+        }
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+      }
     }
-  });
+  );
 
   /**
    * Phase 22.4: 一括納期変更のコアロジック (関数化)。
