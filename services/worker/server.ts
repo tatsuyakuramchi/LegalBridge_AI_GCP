@@ -12956,7 +12956,7 @@ ${details}
       await client.query("BEGIN");
       const docs = (
         await client.query(
-          `SELECT d.id, d.document_number, d.drive_link, cc.id AS cap_id
+          `SELECT d.id, d.document_number, d.drive_link, d.contract_id, cc.id AS cap_id
              FROM documents d
              LEFT JOIN contract_capabilities cc
                ON cc.document_number = d.document_number
@@ -13024,9 +13024,24 @@ ${details}
             `DELETE FROM documents WHERE id = $1`,
             [d.cap_id]
           );
-          await client.query(`DELETE FROM contracts WHERE id = $1`, [d.cap_id]);
         }
         await client.query(`DELETE FROM documents WHERE id = $1`, [d.id]);
+        // ミラー/正本 contracts の掃除。他の版(文書)が参照している家族契約は温存する
+        // (documents.contract_id の FK 違反防止。Phase 5: 1契約:N文書)。
+        {
+          const candidates = [d.cap_id, d.contract_id].filter(
+            (x: any) => x != null
+          );
+          if (candidates.length > 0) {
+            await client.query(
+              `DELETE FROM contracts c
+                WHERE c.id = ANY($1::int[])
+                  AND c.origin = 'workflow'
+                  AND NOT EXISTS (SELECT 1 FROM documents dd WHERE dd.contract_id = c.id)`,
+              [candidates]
+            );
+          }
+        }
         await client.query(
           `DELETE FROM external_assets WHERE asset_number = $1`,
           [d.document_number]
