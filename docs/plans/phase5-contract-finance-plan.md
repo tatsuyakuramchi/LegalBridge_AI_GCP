@@ -69,7 +69,7 @@
 | スライス | 内容 | 状態 |
 |---|---|---|
 | 第1弾 | 本棚卸し + **migration 0128**: `documents.contract_id` 追加(additive)＋バックフィル(§4) | 実装済(本コミット) |
-| 第2弾 | 書込み経路で contract_id を付与(文書生成/インポート/締結登録)。版ファミリのミラー contracts 重複を財務参照(payments/royalty_statements.contract_id)を付け替えたうえで統合・掃除。dataLinkage の孤児判定を contract_id 基準へ | 未着手 |
+| 第2弾 | **migration 0129**: ①`tg_doc_autolink_contract`(documents BEFORE INSERT、0106 autolink と同型)で全書込み経路(30箇所超)の contract_id 付与を DB 側で保証(契約が無い家族は 0128⑤ と同一写像で補完生成。Phase 7 で明示 DTO 化した時点で DROP) ②ミラー重複 contracts を非CASCADE参照(payments/invoices/royalty_statements/alerts/deliverables/self-ref)付替えのうえ削除。<br>TS: bulk-delete / importsV2統合 / dataLinkage prune の `DELETE FROM contracts` を「文書参照が残る契約は温存」ガード付きへ(0128 FK による削除経路の退行防止)。孤児判定を contract_id 基準へ | 実装済(2026-07-16) |
 | 第3弾 | workModel/conditionsService の contract_financial_terms・contract_line_items 読みを condition_lines へ切替 → importsV2 の手動ミラー撤去 | 未着手 |
 | 第4弾 | payments 正本化の照合(royalty_payments vs payments / trg_sync_payments・trg_sync_royalty_statements の新旧照合) → **G5: 生存トリガ2本と孤児 lb_sync_* 関数の DROP** | 未着手 |
 | 第5弾 | invoices / invoice_lines / deliverables の業務投入(請求書受領・成果物検収フローと接続) | 未着手(運用要件待ち) |

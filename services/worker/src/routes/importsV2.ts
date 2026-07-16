@@ -1250,16 +1250,30 @@ async function mergePurchaseOrders(
 
     // 8. source を削除(子テーブルは ON DELETE CASCADE)
     const sourceCaps = sourceRows.map((r) => r.cap_id);
+    // 削除前に source 文書が指す家族契約を控える(文書削除後の契約掃除候補)
+    const srcContractIds = (
+      await client.query(
+        `SELECT DISTINCT contract_id FROM documents
+          WHERE id = ANY($1::int[]) AND contract_id IS NOT NULL`,
+        [sourceCaps]
+      )
+    ).rows.map((r: any) => Number(r.contract_id));
     await client.query(
       `DELETE FROM documents WHERE id = ANY($1::int[])`,
       [sourceCaps]
     );
-    await client.query(`DELETE FROM contracts WHERE id = ANY($1::int[])`, [
-      sourceCaps,
-    ]);
     await client.query(
       `DELETE FROM documents WHERE document_number = ANY($1::text[])`,
       [sources]
+    );
+    // ミラー/正本 contracts の掃除。他の文書が参照している契約は温存する
+    // (documents.contract_id の FK 違反防止。Phase 5: 1契約:N文書)。
+    await client.query(
+      `DELETE FROM contracts c
+        WHERE c.id = ANY($1::int[])
+          AND c.origin = 'workflow'
+          AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.contract_id = c.id)`,
+      [[...sourceCaps, ...srcContractIds]]
     );
     await client.query(
       `DELETE FROM external_assets WHERE asset_number = ANY($1::text[])`,

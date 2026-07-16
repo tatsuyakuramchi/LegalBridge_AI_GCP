@@ -521,22 +521,24 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           `SELECT COUNT(*)::int AS n FROM documents WHERE ${PO_DRIFT_WHERE}`,
           `SELECT document_number FROM documents WHERE ${PO_DRIFT_WHERE} ORDER BY created_at DESC LIMIT 8`
         ),
-        // ② v3 ミラー孤児 (capability が無い workflow 由来の contracts)
+        // ② 契約孤児 (どの文書からも参照されない workflow 由来の contracts)
+        //    Phase 5(0128)以降、文書は documents.contract_id で家族契約を参照する。
+        //    参照ゼロの workflow 契約はミラー残骸または全版削除後の残り。
         //    ※ origin='registered' は作品モデルが直接作る独自契約なので孤児ではない。
         probe(
           {
             key: "orphan_contracts",
-            label: "v3ミラー孤児 (contracts)",
+            label: "契約孤児 (contracts)",
             description:
-              "対応する contract_capabilities が無い workflow 由来の contracts 行(ミラー残骸)。掃除可能。registered(作品モデル登録契約)は対象外。",
+              "どの documents.contract_id からも参照されない workflow 由来の contracts 行(ミラー残骸/全版削除後の残り)。掃除可能。registered(作品モデル登録契約)は対象外。",
             repair_action: "prune_orphan_contracts",
           },
           `SELECT COUNT(*)::int AS n FROM contracts c
             WHERE c.origin = 'workflow'
-              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)`,
+              AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.contract_id = c.id)`,
           `SELECT c.id, c.document_number FROM contracts c
             WHERE c.origin = 'workflow'
-              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)
+              AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.contract_id = c.id)
             ORDER BY c.id DESC LIMIT 8`
         ),
         // ③ 発行済なのに残っている下書き
@@ -704,10 +706,17 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
 
         if (action === "prune_orphan_contracts") {
           // origin='workflow'(ミラー)のみ削除。registered(作品モデル独自契約)は保護。
+          // Phase 5(0128)以降の判定: documents.contract_id からの参照ゼロ = 孤児。
+          // payments 等の非CASCADE参照が残る行は FK 違反で消せないため除外(実データ保護)。
           const r = await query(
             `DELETE FROM contracts c
               WHERE c.origin = 'workflow'
-                AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)`
+                AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.contract_id = c.id)
+                AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.contract_id = c.id)
+                AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.contract_id = c.id)
+                AND NOT EXISTS (SELECT 1 FROM royalty_statements rs WHERE rs.contract_id = c.id)
+                AND NOT EXISTS (SELECT 1 FROM alerts a WHERE a.contract_id = c.id)
+                AND NOT EXISTS (SELECT 1 FROM deliverables dv WHERE dv.contract_id = c.id)`
           );
           return res.json({ ok: true, action, affected: r.rowCount || 0 });
         }
