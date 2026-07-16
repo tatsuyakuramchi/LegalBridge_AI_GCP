@@ -5706,6 +5706,13 @@ ${details}
   //   後続の案件同期が紐付ける)。Drive 上のファイル名は
   //   「課題番号_Googleアカウント_元ファイル名」に揃え、誰が何の課題に入れたかを
   //   ファイル名だけで追えるようにする。
+  // 資料アップロードページの格納先フォルダ (法務共有 Drive)。
+  //   https://drive.google.com/drive/folders/1DuVbWUMxTVcLEp_fRC9zt4A7OcDXIiKD
+  // env ATTACHMENT_UPLOAD_FOLDER_ID で上書き可。SA にこのフォルダへの
+  // 編集権限が必要 (無いと uploadFile が 403/404 で失敗する)。
+  const ATTACHMENT_UPLOAD_FOLDER_ID =
+    process.env.ATTACHMENT_UPLOAD_FOLDER_ID || "1DuVbWUMxTVcLEp_fRC9zt4A7OcDXIiKD";
+
   app.post(
     "/api/attachments/by-issue",
     requirePortalSecret,
@@ -5767,7 +5774,8 @@ ${details}
         const driveLink = await googleDriveService.uploadFile(
           stream,
           fileName,
-          req.file.mimetype
+          req.file.mimetype,
+          ATTACHMENT_UPLOAD_FOLDER_ID
         );
         if (!driveLink) {
           return res.status(502).json({
