@@ -31,9 +31,16 @@ export class GoogleDriveService {
           `is set but the file is missing on disk. Falling back to ADC.`
       );
     }
+    // スコープは drive.file でなく drive (フル) を使う。
+    //   drive.file は「このアプリが作成/オープンしたファイル」しか見えず、
+    //   *共有されただけ* の既存フォルダを files.create の parents に指定すると
+    //   権限があっても 404 (File not found) になる。資料アップロードの格納先
+    //   (法務共有ドライブのフォルダ) は人間が作ったフォルダなのでこれに該当
+    //   した (2026-07-16)。drive スコープでも実際に触れる範囲は SA に共有
+    //   されたアイテムに限られる (Drive の権限モデルはそのまま効く)。
     this.auth = new google.auth.GoogleAuth({
       ...(keyFileUsable ? { keyFile } : {}),
-      scopes: ["https://www.googleapis.com/auth/drive.file"],
+      scopes: ["https://www.googleapis.com/auth/drive"],
     });
     this.drive = google.drive({
       version: "v3",
