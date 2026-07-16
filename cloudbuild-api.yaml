@@ -27,6 +27,16 @@ images:
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
 
 steps:
+  # 互換VIEW書込みゲート (Phase 4 G1 の退行防止 / phase4-compat-retirement-plan.md)。
+  # contract_capabilities / capability_* への INSERT/UPDATE/DELETE が再発したらビルドを止める。
+  - id: gate-compat-writes
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - scripts/audit/compat_view_refs.sh
+      - --gate-writes
+      - "0"
+
   - id: build
     name: gcr.io/cloud-builders/docker
     args:

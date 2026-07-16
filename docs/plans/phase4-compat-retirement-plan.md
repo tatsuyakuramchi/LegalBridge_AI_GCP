@@ -52,8 +52,10 @@ INSERT/UPDATE/DELETE すべて INSTEAD OF トリガ(`cfc_*` / `cli_*` / `exp_*` 
 
 - **G2(トリガ撤去)**: `tg_cc_ins` / `tg_cfc_*` / `tg_cli_*` / `tg_exp_*` / `tg_fee_*` の DROP は
   本スライスのデプロイ後、監査期間(計画 §10 の 6)を置いてから migration で実施。
-- **CI ゲート**: `scripts/audit/compat_view_refs.sh --gate-writes 0` を CI に組み込み、
-  互換VIEWへの書込みの再発を防ぐ。
+- **CI ゲート(済 2026-07-16)**: `scripts/audit/compat_view_refs.sh --gate-writes 0` を
+  cloudbuild-worker.yaml / cloudbuild-api.yaml の先頭ステップ(`gate-compat-writes`)に組み込み済み。
+  書込みが 1 箇所でも再発したらデプロイ前にビルドが止まる。スクリプトは rg 不在環境
+  (Cloud Build の cloud-sdk イメージ等)では GNU grep -E にフォールバックする。
 - **cl_* ヘルパ関数**(cl_dir / cl_scheme / cl_next_code / cl_resolve_work)は直書き SQL が
   参照し続けるため G2 では削除しない(インライン化は Phase 7 で検討)。
 
