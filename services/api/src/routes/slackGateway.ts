@@ -202,10 +202,42 @@ function buildPaymentContractsUrl(selfBase: string): string {
   return selfBase ? `${selfBase}/payments/contracts` : "";
 }
 
-function buildAttachmentUploadUrl(selfBase: string, issueKey?: string): string {
+// DM のリンクは数日後にクリックされることがあるため、取引先検索 (10 分) より
+// 大幅に長い TTL にする。書込専用ページ + 社内 Slack にしか出ないリンクなので許容。
+const UPLOAD_LINK_TTL_SEC = 30 * 24 * 60 * 60;
+
+/**
+ * 資料アップロードページへの署名付き URL。
+ *
+ * IAP を経由しない run.app 直リンクでも開けるよう、/search/vendor と同じ
+ * HMAC 署名方式 (requireSignedUrlOrIap) を使う。uploaderEmail を渡すと
+ * `u=<email>` を resourceId (`upload:<email>`) に束縛して署名するので、
+ * ページ/API 側は署名検証済みの u をアップロード者として信頼できる
+ * (改ざんすると署名不一致で 401)。
+ */
+function buildAttachmentUploadUrl(
+  selfBase: string,
+  issueKey?: string,
+  uploaderEmail?: string
+): string {
   if (!selfBase) return "";
+  const params: string[] = [];
+  if (issueKey) params.push(`issue=${encodeURIComponent(issueKey)}`);
+  const email = String(uploaderEmail || "").trim().toLowerCase();
+  if (hasSigningSecret()) {
+    try {
+      if (email) {
+        params.push(`u=${encodeURIComponent(email)}`);
+        params.push(signLinkQs(`upload:${email}`, UPLOAD_LINK_TTL_SEC));
+      } else {
+        params.push(signLinkQs("upload", UPLOAD_LINK_TTL_SEC));
+      }
+    } catch {
+      /* secret 未設定なら素の URL (IAP 経由でのみ開ける) */
+    }
+  }
   const url = `${selfBase}/attachments/upload`;
-  return issueKey ? `${url}?issue=${encodeURIComponent(issueKey)}` : url;
+  return params.length ? `${url}?${params.join("&")}` : url;
 }
 
 // -----------------------------------------------------------------------
@@ -342,7 +374,7 @@ function formatLineItemsText(submission: any): string {
 
 function getLegalRequestModal(
   selectedType: string,
-  opts: { candidates?: any[]; liCount?: number } = {},
+  opts: { candidates?: any[]; liCount?: number; uploadEmail?: string } = {},
   selfBase = ""
 ): any {
   selectedType = selectedType || "legal_consult";
@@ -517,7 +549,7 @@ function getLegalRequestModal(
   // 法務レビュー: レビュー対象文書は資料アップロードページ経由の導線を出す
   const reviewUploadBlocks: any[] = [];
   if (selectedType === "legal_consult") {
-    const uploadPageUrl = buildAttachmentUploadUrl(selfBase);
+    const uploadPageUrl = buildAttachmentUploadUrl(selfBase, undefined, opts.uploadEmail);
     reviewUploadBlocks.push({
       type: "context",
       block_id: "review_upload_help_block",
@@ -1414,6 +1446,23 @@ export function registerSlackGateway(app: express.Express, deps: SlackGatewayDep
     }
   }
 
+  /** Slack ユーザー → staff メール (アップロードリンクの署名束縛用)。 */
+  async function getStaffEmailBySlackId(slackUserId: string): Promise<string> {
+    if (!slackUserId) return "";
+    try {
+      const r = await query(
+        `SELECT email FROM staff
+          WHERE slack_user_id = $1 AND COALESCE(email, '') <> ''
+          LIMIT 1`,
+        [slackUserId]
+      );
+      return String(r.rows[0]?.email || "").trim().toLowerCase();
+    } catch (e) {
+      console.warn("[slackGateway] getStaffEmailBySlackId failed:", e);
+      return "";
+    }
+  }
+
   async function fetchUserCandidates(slackUserId: string, type: string): Promise<any[]> {
     if (!slackUserId) return [];
     try {
@@ -1522,9 +1571,10 @@ export function registerSlackGateway(app: express.Express, deps: SlackGatewayDep
 
     try {
       if (command === "/法務依頼") {
+        const uploadEmail = await getStaffEmailBySlackId(String(params.user_id || ""));
         const opened = await slackApi("views.open", {
           trigger_id: params.trigger_id,
-          view: getLegalRequestModal("legal_consult", {}, selfBase),
+          view: getLegalRequestModal("legal_consult", { uploadEmail }, selfBase),
         });
         if (opened && opened.ok) return res.status(200).send("");
         return res.json({
@@ -1602,10 +1652,14 @@ export function registerSlackGateway(app: express.Express, deps: SlackGatewayDep
           } else if (selected === "deadline_change") {
             candidates = await fetchUserCandidates(payload.user.id, "any");
           }
+          const uploadEmail =
+            selected === "legal_consult"
+              ? await getStaffEmailBySlackId(payload.user.id)
+              : "";
           await slackApi("views.update", {
             view_id: payload.view.id,
             hash: payload.view.hash,
-            view: getLegalRequestModal(selected, { candidates }, selfBase),
+            view: getLegalRequestModal(selected, { candidates, uploadEmail }, selfBase),
           });
         }
 
@@ -1633,13 +1687,17 @@ export function registerSlackGateway(app: express.Express, deps: SlackGatewayDep
           if (liType === "delivery_inspec" || liType === "license_calc") {
             liCandidates = await fetchUserCandidates(payload.user.id, liType);
           }
+          const liUploadEmail =
+            liType === "legal_consult"
+              ? await getStaffEmailBySlackId(payload.user.id)
+              : "";
 
           await slackApi("views.update", {
             view_id: payload.view.id,
             hash: payload.view.hash,
             view: getLegalRequestModal(
               liType,
-              { candidates: liCandidates, liCount },
+              { candidates: liCandidates, liCount, uploadEmail: liUploadEmail },
               selfBase
             ),
           });
@@ -1967,7 +2025,13 @@ export function registerSlackGateway(app: express.Express, deps: SlackGatewayDep
     submission.line_items_text = formatLineItemsText(submission);
     submission.backlog_issue_type_name =
       REQUEST_TYPE_TO_BACKLOG_TYPE[submission.request_type] || "法務相談";
-    submission.upload_page_base = buildAttachmentUploadUrl(selfBase);
+    // DM のアップロードリンク用 base。依頼者メールを署名に束縛して渡す
+    // (worker が &issue=<課題番号> を追記する)。
+    submission.upload_page_base = buildAttachmentUploadUrl(
+      selfBase,
+      undefined,
+      await getStaffEmailBySlackId(submission.slack_user_id)
+    );
     if (submission.multi_contract) submission.skip_pdf = true;
 
     dispatchWorker(
