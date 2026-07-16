@@ -365,20 +365,27 @@ export async function updateConditionLinks(
     inbound = dir === "out"; // out=当社受領=請求台帳対象
   }
 
+  // Phase 4: 直書き化。旧・ビュー経由の UPDATE のうち
+  //   - source_ip_id / master_contract_id / ringi_id はビューの NULL 計算列
+  //     (0101 で実体列を DROP 済み・トリガも無視)のため削除(元々永続化されない)。
+  //   - status_flags / is_inbound は cli_upd トリガの SET 対象外で永続化されて
+  //     いなかった(休眠バグ)。実体直書きで本来の意図どおり保存されるようになる。
+  //   - work_id → source_work_id、flow_direction(in/out) → direction(payable/receivable)。
   await query(
-    `UPDATE capability_line_items
-        SET source_ip_id = $2, work_id = $3, master_contract_id = $4, ringi_id = $5,
-            status_flags = COALESCE($6::jsonb, status_flags),
-            is_inbound = COALESCE($7::boolean, is_inbound),
-            flow_direction = CASE WHEN $8::boolean THEN $9::varchar ELSE flow_direction END,
+    `UPDATE condition_lines
+        SET source_work_id = $2,
+            status_flags = COALESCE($3::jsonb, status_flags),
+            is_inbound = COALESCE($4::boolean, is_inbound),
+            direction = CASE WHEN $5::boolean
+                             THEN (CASE WHEN $6::varchar = 'out' THEN 'receivable'
+                                        WHEN $6::varchar = 'in'  THEN 'payable'
+                                        ELSE direction END)
+                             ELSE direction END,
             updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1`,
+      WHERE id = $1 AND legacy_role = 'cli'`,
     [
       id,
-      links.source_ip_id ?? null,
       links.work_id ?? null,
-      links.master_contract_id ?? null,
-      links.ringi_id ?? null,
       flagsJson,
       inbound,
       dirProvided,
@@ -684,10 +691,13 @@ export async function updateConditionStatusFlags(
     if (flags[def.key] === true) clean[def.key] = true;
   }
   const json = JSON.stringify(clean);
+  // Phase 4: 直書き化。旧・ビュー経由では cli_upd トリガが status_flags を
+  //   SET 対象にしておらず永続化されていなかった(休眠バグ)。実体直書きで
+  //   本来の意図どおり保存されるようになる。
   await query(
-    `UPDATE capability_line_items
+    `UPDATE condition_lines
         SET status_flags = $2::jsonb, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $1`,
+      WHERE id = $1 AND legacy_role = 'cli'`,
     [id, json]
   );
   // 新台帳へも反映(未適用環境 42P01/42703 は非致命でスキップ)。

@@ -3699,11 +3699,14 @@ ${details}
 
     // 送信履歴を更新
     try {
+      // Phase 4: last_alert_at / alert_count は 0101 以降ビューの NULL 計算列で
+      //   実体(condition_lines)に列が無く、トリガも無視していたため永続化されて
+      //   いなかった(休眠バグ)。挙動維持のため updated_at の更新のみ直書きする。
+      //   アラート抑制の復元は別課題(アラート再設計時に実列を追加して対応)。
       await query(
-        `UPDATE capability_line_items
-            SET last_alert_at = CURRENT_TIMESTAMP,
-                alert_count   = COALESCE(alert_count, 0) + 1
-          WHERE id = $1`,
+        `UPDATE condition_lines
+            SET updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1 AND legacy_role = 'cli'`,
         [row.line_item_id]
       );
     } catch (e) {
@@ -4136,13 +4139,13 @@ ${details}
       : null;
 
     // 1. DB 更新 + アラートカウントリセット (Phase 23: capability_line_items)
+    // Phase 4: 直書き化。last_alert_at / alert_count はビューの NULL 計算列
+    //   (実体列なし・トリガ無視)のため削除(元々永続化されていない)。
     await query(
-      `UPDATE capability_line_items
+      `UPDATE condition_lines
           SET delivery_date  = $1,
-              last_alert_at  = NULL,
-              alert_count    = 0,
               updated_at     = CURRENT_TIMESTAMP
-        WHERE id = $2`,
+        WHERE id = $2 AND legacy_role = 'cli'`,
       [newDateStr, lineItemId]
     );
 
@@ -4806,13 +4809,12 @@ ${details}
     }> = [];
 
     for (const item of itemsRes.rows) {
+      // Phase 4: 直書き化(alert 列はビューの NULL 計算列のため削除)。
       await query(
-        `UPDATE capability_line_items
+        `UPDATE condition_lines
             SET delivery_date  = $1,
-                last_alert_at  = NULL,
-                alert_count    = 0,
                 updated_at     = CURRENT_TIMESTAMP
-          WHERE id = $2`,
+          WHERE id = $2 AND legacy_role = 'cli'`,
         [newDateStr, item.id]
       );
       updated.push({
@@ -6210,14 +6212,14 @@ ${details}
     try {
       if (keepNos.length === 0) {
         await query(
-          `DELETE FROM capability_financial_conditions WHERE capability_id = $1`,
+          `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'cfc'`,
           [capabilityId]
         );
       } else {
         await query(
-          `DELETE FROM capability_financial_conditions
-            WHERE capability_id = $1
-              AND condition_no NOT IN (${keepNos
+          `DELETE FROM condition_lines
+            WHERE capability_id = $1 AND legacy_role = 'cfc'
+              AND line_no NOT IN (${keepNos
                 .map((_, i) => `$${i + 2}`)
                 .join(",")})`,
           [capabilityId, ...keepNos]
@@ -6711,11 +6713,11 @@ ${details}
       const c = conds[i] as any;
       try {
         await query(
-          `UPDATE capability_financial_conditions
+          `UPDATE condition_lines
               SET manufacturer = $3, seller = $4, max_region = $5,
-                  max_language = $6, is_addon = $7, quantity = $8,
+                  max_language = $6, is_addon = $7, quantity = $8::numeric,
                   updated_at = CURRENT_TIMESTAMP
-            WHERE capability_id = $1 AND condition_no = $2`,
+            WHERE capability_id = $1 AND line_no = $2 AND legacy_role = 'cfc'`,
           [
             capabilityId,
             i + 1,
@@ -7090,13 +7092,14 @@ ${details}
 
       if (items.length === 0) {
         await query(
-          `DELETE FROM capability_line_items WHERE capability_id = $1`,
+          `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'cli'`,
           [capabilityId]
         );
       } else {
         await query(
-          `DELETE FROM capability_line_items
-            WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
+          `DELETE FROM condition_lines
+            WHERE capability_id = $1 AND legacy_role = 'cli'
+              AND (line_no - 1000) <> ALL($2::int[])`,
           [capabilityId, keepNos]
         );
       }
@@ -7192,13 +7195,14 @@ ${details}
       const keepNos = computed.map((e) => e.line_no).filter((n) => n > 0);
       if (keepNos.length === 0) {
         await query(
-          `DELETE FROM capability_expenses WHERE capability_id = $1`,
+          `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'expense'`,
           [capabilityId]
         );
       } else {
         await query(
-          `DELETE FROM capability_expenses
-            WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
+          `DELETE FROM condition_lines
+            WHERE capability_id = $1 AND legacy_role = 'expense'
+              AND (line_no - 3000) <> ALL($2::int[])`,
           [capabilityId, keepNos]
         );
       }
@@ -7247,13 +7251,14 @@ ${details}
       const keepNos = computed.map((f) => f.line_no).filter((n) => n > 0);
       if (keepNos.length === 0) {
         await query(
-          `DELETE FROM capability_other_fees WHERE capability_id = $1`,
+          `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'other_fee'`,
           [capabilityId]
         );
       } else {
         await query(
-          `DELETE FROM capability_other_fees
-            WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
+          `DELETE FROM condition_lines
+            WHERE capability_id = $1 AND legacy_role = 'other_fee'
+              AND (line_no - 2000) <> ALL($2::int[])`,
           [capabilityId, keepNos]
         );
       }
@@ -12750,9 +12755,10 @@ ${details}
         }
         if (paymentDate) {
           await query(
-            `UPDATE capability_line_items cli SET payment_date = $2, updated_at = now()
-               FROM contract_capabilities cc
-              WHERE cli.capability_id = cc.id AND cc.document_number = $1`,
+            `UPDATE condition_lines cli SET payment_date = $2, updated_at = now()
+               FROM documents cc
+              WHERE cli.capability_id = cc.id AND cc.document_number = $1
+                AND cli.legacy_role = 'cli'`,
             [d.document_number, paymentDate]
           );
         }
@@ -17026,7 +17032,7 @@ ${details}
               .map((r: any) => Number(r.id))
               .filter((n: number) => Number.isFinite(n));
             await query(
-              `DELETE FROM capability_line_items WHERE capability_id = $1`,
+              `DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'cli'`,
               [orderItemId]
             );
             await recalculateCapabilityTotal(orderItemId, Number(formData.taxRate) || 10);
@@ -17082,9 +17088,9 @@ ${details}
               .map((r: any) => Number(r.id))
               .filter((n: number) => Number.isFinite(n));
             await query(
-              `DELETE FROM capability_line_items
-                WHERE capability_id = $1
-                  AND line_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
+              `DELETE FROM condition_lines
+                WHERE capability_id = $1 AND legacy_role = 'cli'
+                  AND (line_no - 1000) NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
               [orderItemId, ...keepNos]
             );
           }
@@ -17335,7 +17341,10 @@ ${details}
             const dir = low === "out" || fd === "アウト" ? "out" : low === "in" || fd === "イン" ? "in" : null;
             if (dir) {
               await query(
-                `UPDATE capability_line_items SET flow_direction = $2 WHERE capability_id = $1`,
+                `UPDATE condition_lines
+                    SET direction = CASE WHEN $2 = 'out' THEN 'receivable' ELSE 'payable' END,
+                        updated_at = now()
+                  WHERE capability_id = $1 AND legacy_role = 'cli'`,
                 [orderItemId, dir]
               );
             }
@@ -17362,13 +17371,13 @@ ${details}
           const keepExpenseNos = computedExpenses.map((e) => e.line_no).filter((n) => n > 0);
           if (keepExpenseNos.length > 0) {
             await query(
-              `DELETE FROM capability_expenses
-                WHERE capability_id = $1
-                  AND line_no NOT IN (${keepExpenseNos.map((_, i) => `$${i + 2}`).join(",")})`,
+              `DELETE FROM condition_lines
+                WHERE capability_id = $1 AND legacy_role = 'expense'
+                  AND (line_no - 3000) NOT IN (${keepExpenseNos.map((_, i) => `$${i + 2}`).join(",")})`,
               [orderItemId, ...keepExpenseNos]
             );
           } else {
-            await query("DELETE FROM capability_expenses WHERE capability_id = $1", [orderItemId]);
+            await query("DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'expense'", [orderItemId]);
           }
 
           for (const e of computedExpenses) {
@@ -17409,14 +17418,14 @@ ${details}
           const keepFeeNos = computedFees.map((f) => f.line_no).filter((n) => n > 0);
           if (keepFeeNos.length > 0) {
             await query(
-              `DELETE FROM capability_other_fees
-                WHERE capability_id = $1
-                  AND line_no NOT IN (${keepFeeNos.map((_, i) => `$${i + 2}`).join(",")})`,
+              `DELETE FROM condition_lines
+                WHERE capability_id = $1 AND legacy_role = 'other_fee'
+                  AND (line_no - 2000) NOT IN (${keepFeeNos.map((_, i) => `$${i + 2}`).join(",")})`,
               [orderItemId, ...keepFeeNos]
             );
           } else {
             await query(
-              "DELETE FROM capability_other_fees WHERE capability_id = $1",
+              "DELETE FROM condition_lines WHERE capability_id = $1 AND legacy_role = 'other_fee'",
               [orderItemId]
             );
           }
@@ -17618,11 +17627,16 @@ ${details}
             .map((l) => l.capability_line_item_id)
             .filter((n) => Number.isFinite(n) && n > 0);
           if (inspectedLineIds.length > 0) {
+            // Phase 4: 直書き化。旧・ビュー経由の UPDATE は cli_upd トリガが
+            //   status_flags を SET 対象にしておらず永続化されていなかった
+            //   (休眠バグ)。実体直書きで本来の意図どおりフラグが立つようになる。
             await query(
-              `UPDATE capability_line_items cli
+              `UPDATE condition_lines cli
                   SET status_flags = COALESCE(cli.status_flags, '{}'::jsonb)
-                                     || jsonb_build_object('inspection_issued', true)
+                                     || jsonb_build_object('inspection_issued', true),
+                      updated_at = now()
                 WHERE cli.id = ANY($1::int[])
+                  AND cli.legacy_role = 'cli'
                   AND cli.amount_ex_tax IS NOT NULL AND cli.amount_ex_tax > 0
                   AND COALESCE(cli.status_flags->>'inspection_issued','') <> 'true'
                   AND COALESCE((
