@@ -46,17 +46,16 @@ INSERT/UPDATE/DELETE すべて INSTEAD OF トリガ(`cfc_*` / `cli_*` / `exp_*` 
 
 | Phase 4 第3弾(2026-07-15) | **18** | capability_* の DELETE 25箇所 / UPDATE 14箇所を condition_lines 直書き化。<br>変換ルール: WHERE へ legacy_role 条件付与(cfc/cli/expense/other_fee)、view line_no のオフセット逆変換(cli:+1000/fee:+2000/exp:+3000)、flow_direction(in/out)→direction(payable/receivable)、cfc の大型更新は cl_scheme()/cl_resolve_work() で cfc_upd の CASE 意味論を再現(応答形はビュー再読取で互換維持)。<br>**判明した休眠バグの修復を含む**: cli_upd トリガが status_flags / is_inbound を SET 対象にしておらず、検収済フラグ(inspection_issued)や状態フラグ保存がビュー経由では永続化されていなかった → 直書きで本来の意図どおり保存される。また view の NULL 計算列(last_alert_at / alert_count / source_ip_id / basis / advance・forecast_amount 等)への書込みは実体列が無く元々無効のため削除(コメントで明記) |
 
-### 残り 18 箇所の内訳（第4弾 = 最終スライス）
+| Phase 4 第4弾(2026-07-16) | **0 — G1 達成** | INSERT capability_* **18箇所を condition_lines 直書き化**。cfc_ins / cli_ins / exp_ins / fee_ins の意味論を移植:<br>① line_no オフセット(cli:+1000 / fee:+2000 / exp:+3000、cfc はそのまま)<br>② line_code = 既存 (document_id,line_no) の code 温存 or `cl_next_code()`(COALESCE+サブクエリで遅延評価)<br>③ direction = `cl_dir(capability_id)`、scheme = `cl_scheme()` / SUBSCRIPTION 判定、royalty 以外の rate/mg/ag NULL 化、amount_ex_tax 導出<br>④ ON CONFLICT (document_id, line_no) DO UPDATE(トリガと同一の SET 列)<br>⑤ ビュー行を返していた API は RETURNING id + ビュー再読取で応答形を互換維持<br>付随修復: copied_from_condition_id(0083 実列だが 0101 ビューで NULL 計算列化され保存されず)を実列へ復元。トリガ無視の NULL 計算列(region_language_label / fee_type / royalty_calc_basis / basis / advance・forecast_amount / rate_pct(cli))は除去 |
 
-| 操作 | 件数 | 変換方針 |
-|---|---|---|
-| INSERT INTO capability_financial_conditions | 6 | cfc_ins 移植: cl_scheme/cl_dir/cl_next_code + ON CONFLICT(document_id,line_no) |
-| INSERT INTO capability_line_items | 4 | cli_ins 移植(line_no+1000 / scheme / direction) |
-| INSERT INTO capability_expenses | 4 | exp_ins 移植(line_no+3000 / legacy_role='expense') |
-| INSERT INTO capability_other_fees | 4 | fee_ins 移植(line_no+2000 / legacy_role='other_fee') |
+## 2.1 G1 達成後の次ステップ
 
-いずれも既存の直書きヘルパ `services/worker/src/lib/conditionWrite.ts` への集約を軸に、
-トリガの採番(cl_next_code)・既存コード温存(document_id×line_no 一致時)を再現する。
+- **G2(トリガ撤去)**: `tg_cc_ins` / `tg_cfc_*` / `tg_cli_*` / `tg_exp_*` / `tg_fee_*` の DROP は
+  本スライスのデプロイ後、監査期間(計画 §10 の 6)を置いてから migration で実施。
+- **CI ゲート**: `scripts/audit/compat_view_refs.sh --gate-writes 0` を CI に組み込み、
+  互換VIEWへの書込みの再発を防ぐ。
+- **cl_* ヘルパ関数**(cl_dir / cl_scheme / cl_next_code / cl_resolve_work)は直書き SQL が
+  参照し続けるため G2 では削除しない(インライン化は Phase 7 で検討)。
 
 読取り(FROM/JOIN)は **309 箇所**(Phase 7 対象。書込みゼロ達成後に着手)。
 
