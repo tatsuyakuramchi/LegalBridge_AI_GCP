@@ -328,8 +328,31 @@ function handleInteractivity_(payload) {
         ) {
           submission.target_issue_key = submission.target_issue_key_select;
         }
-        handleDeadlineChangeSubmission_(submission);
-        return jsonResponse_({ response_action: 'clear' });
+        var dcRes = handleDeadlineChangeSubmission_(submission);
+        if (dcRes && dcRes.fieldErrors) {
+          // バリデーション不備はフォーム内のインラインエラーで返す
+          // (旧実装は DM 通知のみでモーダルが黙って閉じていた)。
+          return jsonResponse_({ response_action: 'errors', errors: dcRes.fieldErrors });
+        }
+        if (dcRes && dcRes.ok) {
+          return jsonResponse_({
+            response_action: 'update',
+            view: getSubmissionCompleteView_({
+              heading: '納期変更依頼を受け付けました',
+              issueKey: dcRes.createdKey || dcRes.targetIssueKey,
+              requestType: 'deadline_change',
+              summary:
+                (dcRes.targetIssueKey || '') + ' の納期を ' + (dcRes.newDate || '') + ' へ変更',
+              noteLines: [
+                '法務担当者が内容を確認後に納期が変更されます。完了時に DM でお知らせします。',
+              ],
+            }),
+          });
+        }
+        return jsonResponse_({
+          response_action: 'push',
+          view: getSubmissionErrorView_(dcRes && dcRes.error),
+        });
       }
 
       // Phase 22.2 V2: delivery_inspec / license_calc で候補が選択されたら
@@ -341,8 +364,32 @@ function handleInteractivity_(payload) {
         submission.target_issue_key_select &&
         submission.target_issue_key_select !== '__NEW__'
       ) {
-        handleLinkTriggerSubmission_(submission, submission.target_issue_key_select);
-        return jsonResponse_({ response_action: 'clear' });
+        // 明細を含む入力全文を worker 経由で子課題コメントに残すため、
+        // 表示ラベル込みの整形テキストを添えて送る。
+        submission.line_items_text = formatLineItemsText_(submission);
+        var ltRes = handleLinkTriggerSubmission_(
+          submission,
+          submission.target_issue_key_select
+        );
+        if (ltRes && ltRes.ok) {
+          return jsonResponse_({
+            response_action: 'update',
+            view: getSubmissionCompleteView_({
+              heading: '既存課題に紐付けて受け付けました',
+              issueKey: submission.target_issue_key_select,
+              requestType: submission.request_type,
+              summary: submission.summary,
+              noteLines: [
+                '文書の作成処理を開始しました。完了時に DM でお知らせします。',
+                'フォームの入力内容 (明細を含む) は対象課題のコメントに記録されます。',
+              ],
+            }),
+          });
+        }
+        return jsonResponse_({
+          response_action: 'push',
+          view: getSubmissionErrorView_(ltRes && ltRes.error),
+        });
       }
 
       // Phase 28: 検収書・利用許諾計算書の新規起票は、取引先入力の代わりに
@@ -499,7 +546,13 @@ function handleInteractivity_(payload) {
       const created = createBacklogIssue_(submission);
       if (created && created.__error) {
         notifyUserOfError_(submission.slack_user_id, created.__error);
-      } else if (created && created.issueKey) {
+        // 「戻る」で入力を保持したままフォームへ戻れるよう push で重ねる。
+        return jsonResponse_({
+          response_action: 'push',
+          view: getSubmissionErrorView_(created.__error),
+        });
+      }
+      if (created && created.issueKey) {
         // Backlog API 成功直後の速報 DM (1〜2 秒)。webhook 到着までの
         // 沈黙 (5〜10 秒) を埋めるための即時フィードバック。
         // Phase 19 の本通知 (notifyIssueEvent) はこの後 worker から来る。
@@ -513,6 +566,20 @@ function handleInteractivity_(payload) {
               ? '\n📎 レビュー対象文書・参考資料の添付は <' + attachUploadUrl +
                 '|資料アップロードページ> からお願いします (課題番号は入力済みで開きます)。'
               : ''),
+        });
+        // Phase 29: 黙って閉じる (clear) のをやめ、受付完了ビューへ遷移する。
+        return jsonResponse_({
+          response_action: 'update',
+          view: getSubmissionCompleteView_({
+            issueKey: created.issueKey,
+            requestType: submission.request_type,
+            summary: submission.summary,
+            uploadUrl: attachUploadUrl,
+            noteLines:
+              submission.request_type === 'legal_consult'
+                ? ['レビューしてほしい文書は下の資料アップロードページから添付してください。']
+                : [],
+          }),
         });
       }
       return jsonResponse_({ response_action: 'clear' });
@@ -1190,10 +1257,17 @@ function notifyUserOfError_(userId, message) {
  * @param childIssueKey 紐付け対象の既存子課題キー (例: "LEGAL-200")
  */
 function handleLinkTriggerSubmission_(submission, childIssueKey) {
-  if (!submission || !submission.slack_user_id) return;
-  if (!childIssueKey) return;
+  if (!submission || !submission.slack_user_id) {
+    return { ok: false, error: '不正な送信です。' };
+  }
+  if (!childIssueKey) {
+    return { ok: false, error: '対象課題が指定されていません。' };
+  }
 
-  // worker /api/intake/link-trigger を叩く
+  // worker /api/intake/link-trigger を叩く。
+  // Phase 29: worker は 202 (accepted) を即返し、文書生成はバックグラウンド
+  // で実行される (Slack の 3 秒予算内に収めるため)。完了 DM は worker から
+  // 届くので、ここでは受付 DM だけ送る。
   var payload = Object.assign({}, submission, {
     existing_issue_key: childIssueKey,
   });
@@ -1203,19 +1277,17 @@ function handleLinkTriggerSubmission_(submission, childIssueKey) {
     slackPost_('chat.postMessage', {
       channel: submission.slack_user_id,
       text:
-        '✅ *既存課題に紐付けて起票しました*\n\n' +
-        '*対象課題:* ' + childIssueKey + '\n' +
-        (result && result.docNumber ? '*文書番号:* ' + result.docNumber + '\n' : '') +
-        (result && result.driveLink ? '*ドキュメント:* ' + result.driveLink + '\n' : '') +
-        '\n本課題のステータスを「トリガー待ち → 未対応」に進めました。' +
-        'まもなく詳細な受付通知をお送りします。',
+        '⏳ *既存課題への紐付けを受け付けました*: ' + childIssueKey + '\n' +
+        '文書の作成処理が完了したら、改めてお知らせします。',
     });
+    return { ok: true, accepted: !!(result && result.accepted) };
   } catch (err) {
     var msg = String(err && err.message ? err.message : err);
     notifyUserOfError_(
       submission.slack_user_id,
       '既存課題への紐付けに失敗しました: ' + msg
     );
+    return { ok: false, error: '既存課題への紐付けに失敗しました: ' + msg };
   }
 }
 
@@ -1232,31 +1304,40 @@ function handleLinkTriggerSubmission_(submission, childIssueKey) {
  * 申請者には「依頼受付」DM を送る (完了 DM は worker → Phase 19 通知から)。
  */
 function handleDeadlineChangeSubmission_(submission) {
-  if (!submission || !submission.slack_user_id) return;
+  if (!submission || !submission.slack_user_id) {
+    return { ok: false, error: '不正な送信です。' };
+  }
 
   var issueKey = String(submission.target_issue_key || '').trim().toUpperCase();
   var newDate = String(submission.new_delivery_date || '').trim();
   var reason = String(submission.change_reason || '').trim();
 
-  // バリデーション
+  // バリデーション。Phase 29: DM 通知でなくフォーム内インラインエラーで
+  // 差し戻す (fieldErrors を返すと caller が response_action: 'errors' にする)。
   if (!issueKey) {
-    notifyUserOfError_(submission.slack_user_id, '対象 Backlog 課題キーが空です。');
-    return;
+    return {
+      fieldErrors: {
+        target_issue_key_block:
+          '対象 Backlog 課題キーを入力するか、上の候補から選択してください。',
+      },
+    };
   }
   if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(issueKey)) {
-    notifyUserOfError_(
-      submission.slack_user_id,
-      '対象 Backlog 課題キーの形式が不正です (例: LEGAL-123)。'
-    );
-    return;
+    return {
+      fieldErrors: {
+        target_issue_key_block: '課題キーの形式が不正です (例: LEGAL-123)。',
+      },
+    };
   }
   if (!newDate) {
-    notifyUserOfError_(submission.slack_user_id, '新しい納期が指定されていません。');
-    return;
+    return {
+      fieldErrors: { new_delivery_date_block: '新しい納期を指定してください。' },
+    };
   }
   if (!reason) {
-    notifyUserOfError_(submission.slack_user_id, '変更理由を入力してください。');
-    return;
+    return {
+      fieldErrors: { change_reason_block: '変更理由を入力してください。' },
+    };
   }
 
   // worker /api/intake/deadline-change-request を叩く (Backlog 課題作成)
@@ -1290,12 +1371,14 @@ function handleDeadlineChangeSubmission_(submission) {
         '法務担当者が内容を確認後、admin-ui から実行されます。' +
         '完了時に再度お知らせします。'
     });
+    return { ok: true, createdKey: createdKey, targetIssueKey: issueKey, newDate: newDate };
   } catch (err) {
     var msg = String(err && err.message ? err.message : err);
     notifyUserOfError_(
       submission.slack_user_id,
       '納期変更依頼の起票に失敗しました: ' + msg
     );
+    return { ok: false, error: '納期変更依頼の起票に失敗しました: ' + msg };
   }
 }
 
@@ -2339,6 +2422,126 @@ function formatLineItemsText_(submission) {
     out.push('');
   });
   return out.join('\n');
+}
+
+// -----------------------------------------------------------------------
+//  Phase 29: 送信後のアンサーバック画面
+//
+//  従来は view_submission の全経路が response_action: 'clear' でモーダルを
+//  黙って閉じるだけだったため、「送信できたのか分からない」という声が
+//  あった。成功時は受付完了ビューへ遷移 (update) し、課題番号と次の
+//  ステップ (DM 通知 / 資料アップロード) を明示する。エラー時は push で
+//  エラービューを重ねる (「戻る」で入力内容を保持したままフォームへ戻れる)。
+// -----------------------------------------------------------------------
+
+var REQUEST_TYPE_LABELS_UI = {
+  legal_consult: '法務レビュー',
+  nda: '秘密保持契約 (NDA)',
+  outsourcing: '業務委託基本契約',
+  license_master: 'ライセンス基本契約',
+  lic_individual: '個別利用許諾条件',
+  sales_master: '売買基本契約',
+  purchase_order: '発注書',
+  delivery_inspec: '納品 / 検収書',
+  license_calc: '利用許諾計算書',
+  deadline_change: '納期変更依頼',
+};
+
+/**
+ * 受付完了ビュー。
+ * opts: { heading, issueKey, requestType, summary, uploadUrl, noteLines[] }
+ */
+function getSubmissionCompleteView_(opts) {
+  opts = opts || {};
+  var fields = [];
+  if (opts.issueKey) {
+    fields.push({ type: 'mrkdwn', text: '*課題番号*\n`' + opts.issueKey + '`' });
+  }
+  if (opts.requestType) {
+    fields.push({
+      type: 'mrkdwn',
+      text: '*依頼種別*\n' + (REQUEST_TYPE_LABELS_UI[opts.requestType] || opts.requestType),
+    });
+  }
+  if (opts.summary) {
+    fields.push({ type: 'mrkdwn', text: '*件名*\n' + String(opts.summary).slice(0, 120) });
+  }
+
+  var blocks = [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '✅ *' + (opts.heading || '依頼を受け付けました') + '*',
+      },
+    },
+  ];
+  if (fields.length > 0) blocks.push({ type: 'section', fields: fields });
+  (opts.noteLines || []).forEach(function (line) {
+    blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: line }] });
+  });
+  if (opts.uploadUrl) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          '📎 資料 (レビュー対象文書・参考資料) の添付は <' + opts.uploadUrl +
+          '|資料アップロードページ> からお願いします (課題番号は入力済みで開きます)。',
+      },
+    });
+  }
+  blocks.push({
+    type: 'context',
+    elements: [
+      {
+        type: 'mrkdwn',
+        text: '詳しい受付通知は DM でお送りします。この画面は閉じて構いません。',
+      },
+    ],
+  });
+
+  return {
+    type: 'modal',
+    callback_id: 'legal_request_complete_modal',
+    title: { type: 'plain_text', text: '受付完了' },
+    close: { type: 'plain_text', text: '閉じる' },
+    blocks: blocks,
+  };
+}
+
+/**
+ * エラービュー。response_action: 'push' で重ねる想定 (「戻る」で入力内容を
+ * 保持したままフォームへ戻れる)。
+ */
+function getSubmissionErrorView_(message) {
+  return {
+    type: 'modal',
+    callback_id: 'legal_request_error_modal',
+    title: { type: 'plain_text', text: 'エラー' },
+    close: { type: 'plain_text', text: '戻る' },
+    blocks: [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: '⚠️ *送信処理でエラーが発生しました*' },
+      },
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: String(message || '不明なエラー').slice(0, 2900) },
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text:
+              '「戻る」で入力画面に戻れます (入力内容は保持されています)。' +
+              '時間をおいて再送しても解決しない場合は法務担当までご連絡ください。',
+          },
+        ],
+      },
+    ],
+  };
 }
 
 /**
