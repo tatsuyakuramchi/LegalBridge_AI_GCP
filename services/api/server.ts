@@ -311,6 +311,8 @@ import { paymentContractsPage } from "./src/views/paymentContractsHtml.ts";
 // 法務依頼 資料アップロード: 課題番号を指定して資料を worker 経由で
 // 法務共有 Drive へ格納する (依頼者向け・書込は worker へ S2S 中継)。
 import { attachmentUploadPage } from "./src/views/attachmentUploadHtml.ts";
+// Slack /法務依頼・/法務検索 の受け口 (Phase 31: GAS からの移管)。
+import { registerSlackGateway } from "./src/routes/slackGateway.ts";
 import {
   listPaymentDocuments,
   buildExportBundle,
@@ -1964,6 +1966,27 @@ async function startServer() {
       }
     }
   );
+
+  // -------------------------------------------------------------------
+  // Slack Gateway (Phase 31) — /法務依頼・/法務検索 の受け口を GAS から移管。
+  //   POST /slack/commands / POST /slack/interactivity
+  // Slack App 側で Request URL をこのサービスへ切り替えると有効になる
+  // (それまで両 EP は未使用のまま無害)。認証は Slack 署名検証
+  // (SLACK_SIGNING_SECRET 設定時) — IAP / portal-secret は通さない。
+  // -------------------------------------------------------------------
+  registerSlackGateway(app, {
+    workerBaseUrl: DOCUMENT_WORKER_URL,
+    portalSecret: process.env.LB_PORTAL_SECRET || "",
+    botToken: dbSettings.SLACK_BOT_TOKEN || process.env.SLACK_BOT_TOKEN || "",
+    signingSecret:
+      dbSettings.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET || "",
+    searchContractStatus: (input: any) =>
+      contractCheckService.searchContractStatus(input),
+    enrichWithBacklogStatus,
+    backlogHost: process.env.BACKLOG_HOST || "arclight.backlog.com",
+    backlogProjectKey: process.env.BACKLOG_PROJECT_KEY || "LEGAL",
+    allowedSearchChannelIds: process.env.ALLOWED_SEARCH_CHANNEL_IDS || "",
+  });
 
   // -------------------------------------------------------------------
   // /api/backlog/* — read-only Backlog REST API passthrough
