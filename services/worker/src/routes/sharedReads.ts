@@ -416,17 +416,17 @@ export function registerSharedReads(
                       SELECT json_agg(
                                json_build_object(
                                  'id', ce.id,
-                                 'line_no', ce.line_no,
-                                 'expense_name', ce.expense_name,
+                                 'line_no', (ce.line_no-3000),
+                                 'expense_name', ce.condition_name,
                                  'spec', ce.spec,
-                                 'spent_date', ce.spent_date,
-                                 'amount_inc_tax', ce.amount_inc_tax,
-                                 'remarks', ce.remarks
+                                 'spent_date', ce.payment_date,
+                                 'amount_inc_tax', ce.amount_ex_tax,
+                                 'remarks', ce.notes
                                )
                                ORDER BY ce.line_no ASC
                              )
-                        FROM capability_expenses ce
-                       WHERE ce.capability_id = cc.id
+                        FROM condition_lines ce
+                       WHERE ce.legacy_role = 'expense' AND ce.capability_id = cc.id
                     ),
                     '[]'::json
                   ) AS expenses,
@@ -435,15 +435,15 @@ export function registerSharedReads(
                       SELECT json_agg(
                                json_build_object(
                                  'id', cof.id,
-                                 'line_no', cof.line_no,
-                                 'fee_name', cof.fee_name,
-                                 'amount', cof.amount,
-                                 'remarks', cof.remarks
+                                 'line_no', (cof.line_no-2000),
+                                 'fee_name', cof.condition_name,
+                                 'amount', cof.amount_ex_tax,
+                                 'remarks', cof.notes
                                )
                                ORDER BY cof.line_no ASC
                              )
-                        FROM capability_other_fees cof
-                       WHERE cof.capability_id = cc.id
+                        FROM condition_lines cof
+                       WHERE cof.legacy_role = 'other_fee' AND cof.capability_id = cc.id
                     ),
                     '[]'::json
                   ) AS other_fees

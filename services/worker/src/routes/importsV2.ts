@@ -1017,10 +1017,10 @@ async function mergePurchaseOrders(
 
     const expRows = (
       await client.query(
-        `SELECT capability_id, line_no, expense_name, spec, spent_date,
-                amount_inc_tax, remarks
-           FROM capability_expenses
-          WHERE capability_id = ANY($1::int[])`,
+        `SELECT capability_id, (line_no-3000) AS line_no, condition_name AS expense_name,
+                spec, payment_date AS spent_date, amount_ex_tax AS amount_inc_tax, notes AS remarks
+           FROM condition_lines
+          WHERE legacy_role = 'expense' AND capability_id = ANY($1::int[])`,
         [capIds]
       )
     ).rows;
@@ -1032,9 +1032,10 @@ async function mergePurchaseOrders(
 
     const feeRows = (
       await client.query(
-        `SELECT capability_id, line_no, fee_name, amount, remarks
-           FROM capability_other_fees
-          WHERE capability_id = ANY($1::int[])`,
+        `SELECT capability_id, (line_no-2000) AS line_no, condition_name AS fee_name,
+                amount_ex_tax AS amount, notes AS remarks
+           FROM condition_lines
+          WHERE legacy_role = 'other_fee' AND capability_id = ANY($1::int[])`,
         [capIds]
       )
     ).rows;

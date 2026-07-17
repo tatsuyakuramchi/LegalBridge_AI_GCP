@@ -343,13 +343,18 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         rows: await readFinancialConditionsForDisplay(deps.query, id),
       };
       const expenses = await deps.query(
-        `SELECT * FROM capability_expenses
-          WHERE capability_id = $1 ORDER BY line_no`,
+        `SELECT id, capability_id, (line_no-3000) AS line_no, condition_name AS expense_name,
+                spec, payment_date AS spent_date, amount_ex_tax AS amount_inc_tax, notes AS remarks,
+                created_at, updated_at
+           FROM condition_lines
+          WHERE legacy_role = 'expense' AND capability_id = $1 ORDER BY line_no`,
         [id]
       );
       const fees = await deps.query(
-        `SELECT * FROM capability_other_fees
-          WHERE capability_id = $1 ORDER BY line_no`,
+        `SELECT id, capability_id, (line_no-2000) AS line_no, condition_name AS fee_name,
+                amount_ex_tax AS amount, notes AS remarks, created_at, updated_at
+           FROM condition_lines
+          WHERE legacy_role = 'other_fee' AND capability_id = $1 ORDER BY line_no`,
         [id]
       );
       // Phase 23.6.10: form_data lookup を broaden する。
