@@ -1490,7 +1490,7 @@ export function registerSlackGateway(app: express.Express, deps: SlackGatewayDep
                 cc.contract_status,
                 v.vendor_name, v.vendor_code, v.entity_type,
                 d.issue_key
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
            LEFT JOIN LATERAL (
              SELECT dd.issue_key FROM documents dd

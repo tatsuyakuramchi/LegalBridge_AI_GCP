@@ -122,7 +122,7 @@ export async function listConditions(
   const { sql: whereSql, params } = buildWhere(f);
 
   const fromJoins = `FROM capability_line_items cli
-       JOIN contract_capabilities cc ON cc.id = cli.capability_id
+       JOIN documents cc ON cc.id = cli.capability_id
        LEFT JOIN condition_lines cl ON cl.source_line_item_id = cli.id
        LEFT JOIN condition_line_status_v sv ON sv.id = cl.id ${COMMON_JOINS}`;
 
@@ -531,7 +531,7 @@ export async function autoLinkConditions(opts: {
             cli.source_ip_id, cli.work_id, cli.master_contract_id, cli.ringi_id,
             cc.vendor_id, cc.document_number, cc.contract_title, cc.contract_category
        FROM capability_line_items cli
-       JOIN contract_capabilities cc ON cc.id = cli.capability_id
+       JOIN documents cc ON cc.id = cli.capability_id
       WHERE 1=1 ${idsClause}
       ORDER BY cli.id`,
     params
@@ -742,7 +742,7 @@ export async function autoStatusConditions(opts: {
               false
             ) AS ev_insp
        FROM capability_line_items cli
-       JOIN contract_capabilities cc ON cc.id = cli.capability_id
+       JOIN documents cc ON cc.id = cli.capability_id
       WHERE 1=1 ${idsClause}
       ORDER BY cli.id`,
     params

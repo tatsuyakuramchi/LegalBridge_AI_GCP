@@ -145,7 +145,7 @@ async function computeNode(work: WorkRow, allDeals: any[]) {
               si.title AS source_ip_title, si.source_code,
               fc.rate_pct, fc.mg_amount, fc.region_language_label AS rate_basis
          FROM capability_line_items cli
-         JOIN contract_capabilities cc ON cc.id = cli.capability_id
+         JOIN documents cc ON cc.id = cli.capability_id
          LEFT JOIN vendors v ON v.id = cc.vendor_id
          LEFT JOIN source_ips si ON si.id = cli.source_ip_id
          LEFT JOIN LATERAL (
@@ -414,7 +414,7 @@ export async function worksByContractNumber(docNumber: string): Promise<Array<{ 
     const res = await query(
       `SELECT DISTINCT w.id, w.work_code, w.title
          FROM capability_line_items cli
-         JOIN contract_capabilities cc ON cc.id = cli.capability_id
+         JOIN documents cc ON cc.id = cli.capability_id
          JOIN works w ON w.id = cli.work_id
         WHERE cc.document_number = $1
         ORDER BY w.work_code`,

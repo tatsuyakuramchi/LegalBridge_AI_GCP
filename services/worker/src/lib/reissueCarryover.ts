@@ -56,7 +56,7 @@ const NEW_LINES_SQL = `
   SELECT cl.id, cl.line_code, cl.payment_scheme, cl.direction, cl.amount_ex_tax,
          COALESCE(NULLIF(cl.subject, ''), cl.condition_name) AS sig_name
     FROM condition_lines cl
-    LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+    LEFT JOIN documents cc ON cc.id = cl.capability_id
     LEFT JOIN documents d ON d.id = cl.document_id
    WHERE COALESCE(cc.document_number, d.document_number) = $1`;
 
@@ -65,7 +65,7 @@ const OLD_EVENT_LINES_SQL = `
   SELECT cl.id, cl.line_code, cl.payment_scheme, cl.direction, cl.amount_ex_tax,
          COALESCE(NULLIF(cl.subject, ''), cl.condition_name) AS sig_name
     FROM condition_lines cl
-    LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+    LEFT JOIN documents cc ON cc.id = cl.capability_id
     LEFT JOIN documents d ON d.id = cl.document_id
    WHERE COALESCE(cc.base_document_number, d.base_document_number) = $1
      AND COALESCE(cc.document_number, d.document_number) <> $2

@@ -452,7 +452,7 @@ export async function importLegalOnRows(
 
   // 既存 document_number を一括フェッチ (重複チェック用)
   const existing = await query(
-    `SELECT document_number FROM contract_capabilities
+    `SELECT document_number FROM documents
       WHERE document_number IS NOT NULL`
   );
   const existingDocNums = new Set<string>(
