@@ -42,6 +42,26 @@ function block(start, endExclusive) {
 const formBlock = block(fcStart, histStart);
 const histBlock = block(histStart, afterHist);
 
+// form-context ハンドラが依存する共有ヘルパ(api/server.ts のモジュール関数)を抽出し、
+//   生成モジュール内(registerFormReadRoutes 本体)へ同梱する。これらは `query` と
+//   CLI_VIEW_SQL / CFC_VIEW_SQL のみに依存するため、deps.query のクロージャで動く。
+//   これで「生成元が helper 呼び出しへ改修された」状態でも byte-exact 生成が成立する。
+function extractFn(name) {
+  const start = findLine(new RegExp(`^async function ${name}\\(`));
+  if (start < 0) throw new Error(`helper not found: ${name}`);
+  let end = -1;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^\}/.test(lines[i])) { end = i; break; }
+  }
+  if (end < 0) throw new Error(`helper close not found: ${name}`);
+  return lines.slice(start, end + 1).join("\n");
+}
+const SHARED_HELPERS = [
+  "readCapabilityLinesForInspectionDisplay",
+  "readCapabilityFinancialRowsForDisplay",
+];
+const helperBlock = SHARED_HELPERS.map(extractFn).join("\n\n");
+
 // 外部参照の簡易チェック(query/backlogService/標準以外の怪しい呼び出し)
 const combined = formBlock + "\n" + histBlock;
 const calls = [...combined.matchAll(/([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g)].map((m) => m[1]);
@@ -58,11 +78,15 @@ const allowed = new Set([
 const suspicious = [...new Set(calls)].filter((c) => !allowed.has(c) && c !== "backlogService");
 // backlogService.method() は backlogService が前置されるので calls には method 名が入る
 const methodOnBacklog = ["getIssue", "extractCustomFields", "getIssues", "getStatuses", "getIssueTypes", "getCustomFields", "getCategories"];
-const reallySuspicious = suspicious.filter((c) => !methodOnBacklog.includes(c));
+// 同梱する共有ヘルパ呼び出しは想定内(生成モジュール内に定義を同梱するため)。
+const reallySuspicious = suspicious.filter(
+  (c) => !methodOnBacklog.includes(c) && !SHARED_HELPERS.includes(c)
+);
 
 const header = `// AUTO-GENERATED from services/api/server.ts by scripts/extract-form-routes.mjs.
 // Do not edit. C2 batch 3b: backlog form-context / history の byte-exact 移植。
 // 依存: query, backlogService(getIssue / extractCustomFields)。
+// form-context が使う共有 read ヘルパ(readCapability*ForDisplay)も生成元から同梱する。
 import type { Express } from "express";
 import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.ts";
 
@@ -74,7 +98,11 @@ export function registerFormReadRoutes(
 
 `;
 
-writeFileSync(outFile, header + formBlock + "\n\n" + histBlock + "\n}\n", "utf8");
+writeFileSync(
+  outFile,
+  header + helperBlock + "\n\n" + formBlock + "\n\n" + histBlock + "\n}\n",
+  "utf8"
+);
 
 console.log(`form-context: lines ${fcStart + 1}-${histStart} (${histStart - fcStart} lines)`);
 console.log(`history:      lines ${histStart + 1}-${afterHist} (${afterHist - histStart} lines)`);
