@@ -73,10 +73,10 @@ INSERT/UPDATE/DELETE すべて INSTEAD OF トリガ(`cfc_*` / `cli_*` / `exp_*` 
 
 ## 4. 注意事項・要決定
 
-- **`services/worker/src/lib/db.ts` のレガシー起動DDL**: `RUN_INIT_DB=true` 時のみ実行される
-  旧 `ALTER TABLE contract_capabilities ADD COLUMN …` が残存(0101 以降は VIEW のため実行すると
-  エラーになる死コード)。本番は migration ランナーが単独所有(D2)のため無害だが、Phase 7 で
-  ブロックごと削除する。
+- **`services/worker/src/lib/db.ts` のレガシー起動DDL**: ~~`RUN_INIT_DB=true` 時のみ実行される
+  旧 `ALTER TABLE contract_capabilities ADD COLUMN …`~~ → **Phase 7(2026-07-16)で撤去済み**。
+  worker/api の initDb()(計2320行)と worker の RUN_INIT_DB 分岐・import を削除。
+  schema は migrations/ が単一所有(D2)。
 - **LB-11(form_data 不変化)の要決定**: 計画 §9 Phase 4 は「form_data は発行後更新しない。編集は
   revision 追加」とするが、現行の**内部修正**(Phase 23.1: 同 row 上書き・同番号維持)と衝突する。
   選択肢: (a) 内部修正を廃止し常に revision 採番 / (b) 内部修正は「発行日当日のみ」等に制限 /

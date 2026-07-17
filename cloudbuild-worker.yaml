@@ -7,8 +7,8 @@
 #   ② services/worker/ をビルドして legalbridge-document-worker にデプロイ。
 #
 # 設計意図:
-#   - スキーマの単一所有者は migrations/ ランナー（DDL は worker 起動時 initDb では流さない。
-#     worker は RUN_INIT_DB=true の時だけ後方互換で起動時 DDL）。
+#   - スキーマの単一所有者は migrations/ ランナー（worker 起動時の DDL は無い。
+#     Phase 7 で旧 RUN_INIT_DB / initDb の起動時レガシー DDL は撤去済み）。
 #   - マイグレーションは「デプロイ時に 1 回」適用（boot-time DDL の競合・権限拡大を避ける）。
 #   - lb-migrate-database-url（最小権限 lb_migrate ロール）で接続。worker 実行時の
 #     DATABASE_URL（アプリ rw ロール）とは別系統で、最小権限を維持。

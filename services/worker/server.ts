@@ -47,7 +47,6 @@ import { EmailService } from "./src/services/emailService.ts";
 import { ExcelService } from "./src/services/excelService.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
 import {
-  initDb,
   query,
   pool,
   getNewDocumentNumber,
@@ -284,20 +283,10 @@ async function startServer() {
   };
 
   // schema は migrations/ ランナーが単一所有する(統合: worker デプロイ・パイプラインの
-  //   migrate ステップ = cloudbuild-worker.yaml ① で適用)。worker は既定では起動時に
-  //   DDL を触らない。boot-time DDL は複数インスタンス同時起動での競合・アプリロールへの
-  //   DDL 権限付与を招くため避ける。
-  //   RUN_INIT_DB="true" の時だけ後方互換で起動時 initDb を実行(ローカル/緊急用)。
-  if (process.env.RUN_INIT_DB === "true") {
-    try {
-      await initDb();
-      console.log("✅ Database initialized via initDb (RUN_INIT_DB=true; legacy boot-time DDL)");
-    } catch (dbErr) {
-      console.error("❌ Database initialization failed:", dbErr);
-    }
-  } else {
-    console.log("⏭️  initDb skipped — schema owned by migrations/ runner (applied in worker deploy pipeline)");
-  }
+  //   migrate ステップ = cloudbuild-worker.yaml ① で適用)。worker は起動時に DDL を触らない。
+  //   Phase 7: 旧 RUN_INIT_DB 起動時 initDb(0101 以降 contract_capabilities が VIEW のため
+  //   ALTER でエラーになる死コード)は撤去した。緊急のスキーマ適用は migrations/ を使う。
+  console.log("⏭️  boot-time DDL none — schema owned by migrations/ runner (applied in worker deploy pipeline)");
 
   const app = express();
   const PORT = Number(process.env.PORT) || 8080;
