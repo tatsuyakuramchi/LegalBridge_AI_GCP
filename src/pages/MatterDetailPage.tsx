@@ -379,9 +379,28 @@ export function MatterDetailPage() {
   async function absorb() {
     const from = Number(absorbId)
     if (!from) return push("取り込む案件IDを入力してください", "error")
-    if (!window.confirm(`案件 #${from} の課題・文書・送信履歴をこの案件へ取り込み、#${from} を削除します。よろしいですか？`)) return
+    if (!window.confirm(`案件 #${from} の課題・タスク・文書・ファイル・送信履歴・Driveフォルダをこの案件へ取り込み、#${from} を削除します。よろしいですか？`)) return
     try {
-      await run(matterClient.absorb(matterId, { fromMatterId: from }), "案件を統合しました")
+      const json: any = await matterClient.absorb(matterId, { fromMatterId: from })
+      const mv = json?.moved || {}
+      const parts = [
+        mv.issues ? `課題${mv.issues}` : "",
+        mv.tasks ? `タスク${mv.tasks}` : "",
+        mv.documents ? `文書${mv.documents}` : "",
+        mv.files ? `ファイル${mv.files}` : "",
+      ].filter(Boolean)
+      const folderMsg =
+        json?.folder?.action === "adopted"
+          ? " / Driveフォルダを引き継ぎ"
+          : json?.folder?.action === "moved"
+          ? " / Driveフォルダを統合先へ移動"
+          : json?.folder?.action === "failed"
+          ? " / Driveフォルダ移動は失敗(手動で確認してください)"
+          : ""
+      push(
+        `案件を統合しました${parts.length ? `（${parts.join("・")}）` : ""}${folderMsg}`,
+        json?.folder?.action === "failed" ? "error" : "success"
+      )
       setAbsorbId("")
       await load()
     } catch (e: any) {
@@ -752,12 +771,15 @@ export function MatterDetailPage() {
                 <Textarea value={edit.remarks} onChange={(e) => setEdit({ ...edit, remarks: e.target.value })} className="text-[12px] min-h-[60px]" />
               </div>
             </div>
-            <div className="flex items-center gap-2 pt-2 border-t border-dashed border-border">
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-border">
               <span className="text-[11px] text-muted-foreground">重複案件の統合:</span>
               <Input value={absorbId} onChange={(e) => setAbsorbId(e.target.value)} placeholder="取り込む案件ID (例: 12)" className="h-8 text-[12px] max-w-[160px]" />
               <Button size="sm" variant="outline" onClick={absorb}>
                 <GitMerge className="h-3.5 w-3.5 mr-1" /> 取り込む
               </Button>
+              <span className="text-[10px] text-muted-foreground w-full">
+                課題・タスク・文書・ファイル・送信履歴を引き継ぎ、統合元のDriveフォルダはこの案件のフォルダ配下へ移動（統合先にフォルダが無ければ引き継ぎ）します。
+              </span>
             </div>
             <div className="flex items-center justify-between">
               <Button variant="destructive" size="sm" onClick={deleteMatter}>

@@ -20,7 +20,7 @@
  *   DELETE /api/matters/:id/documents/:docId … 文書の紐付け解除
  *   GET    /api/matters/:id/sends            … 送信履歴
  *   POST   /api/matters/:id/sends            … 送信履歴を記録（channel/recipient/subject 等）
- *   POST   /api/matters/:id/absorb           … 別案件(fromMatterId)の課題/文書/送信を取り込み（重複案件の統合）
+ *   POST   /api/matters/:id/absorb           … 別案件(fromMatterId)の課題/タスク/文書/ファイル/送信/Driveフォルダを取り込み（重複案件の統合）
  *
  *   query インターフェースのみ依存（server.ts 非依存＝単体テスト可能）。
  */
@@ -38,6 +38,16 @@ export interface MatterDeps {
     counterparty?: string | null;
     title?: string | null;
   }) => Promise<{ folderId: string; folderUrl: string }>;
+  /**
+   * Phase 6 (案件統合): 統合元(from)の Drive フォルダを統合先(to)フォルダ配下へ
+   * 移動する。両案件がフォルダを持つときのみ呼ばれる(best-effort、失敗しても統合は続行)。
+   * 省略時は Drive 移動をスキップ(単体テスト・Drive 無効環境)。
+   */
+  moveMatterFolder?: (opts: {
+    fromFolderId: string;
+    toFolderId: string;
+    fromMatterCode?: string | null;
+  }) => Promise<{ link: string; name: string }>;
 }
 
 const s = (v: any): string | null =>
@@ -589,24 +599,101 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
   });
 
   // ── 統合（重複案件の取り込み） ────────────────────────────────────────────────
-  //   fromMatterId の 課題/文書/送信履歴 を :id へ移し、空になった from を削除する。
+  //   fromMatterId の 課題/タスク/文書/ファイル/送信履歴 を :id へ移し、Drive フォルダも
+  //   統合したうえで、空になった from を削除する。
+  //   子行は「削除前に」すべて移すため、from 削除の CASCADE で失われる行は無い。
   app.post("/api/matters/:id/absorb", json, async (req, res) => {
     try {
       const id = Number(req.params.id);
       const fromId = Number((req.body || {}).fromMatterId);
-      if (!fromId || fromId === id) return res.status(400).json({ ok: false, error: "fromMatterId が不正です" });
-      // 課題: 衝突(同一 backlog_issue_key)は from 側を捨てて id 側を残す。
-      await query(
+      if (!id || !fromId || fromId === id) {
+        return res.status(400).json({ ok: false, error: "fromMatterId が不正です" });
+      }
+      // 統合元・先の存在確認と Drive フォルダ情報の取得。
+      const both = await query(
+        `SELECT id, matter_code, drive_folder_id, drive_folder_url FROM matters WHERE id = ANY($1::int[])`,
+        [[id, fromId]]
+      );
+      const target = both.rows.find((r) => Number(r.id) === id);
+      const from = both.rows.find((r) => Number(r.id) === fromId);
+      if (!target) return res.status(404).json({ ok: false, error: "統合先の案件が見つかりません" });
+      if (!from) return res.status(404).json({ ok: false, error: "統合元の案件が見つかりません" });
+
+      // ① 課題: 衝突(同一 backlog_issue_key)は from 側を捨てて id 側を残す。
+      const movedIssues = await query(
         `UPDATE matter_issues mi SET matter_id = $1
           WHERE mi.matter_id = $2
             AND NOT EXISTS (SELECT 1 FROM matter_issues x WHERE x.matter_id = $1 AND x.backlog_issue_key = mi.backlog_issue_key)`,
         [id, fromId]
       );
-      await query(`UPDATE documents SET matter_id = $1 WHERE matter_id = $2`, [id, fromId]);
+      // ② タスク(0126): 統合先に既存の is_primary があるので、移動分は必ず is_primary=FALSE に
+      //    降格させて部分ユニーク制約(uq_matter_tasks_primary)違反を避ける。
+      const movedTasks = await query(
+        `UPDATE matter_tasks SET matter_id = $1, is_primary = FALSE, updated_at = now()
+          WHERE matter_id = $2`,
+        [id, fromId]
+      );
+      // ③ 文書 / ファイル(0127) / 送信履歴。
+      const movedDocs = await query(`UPDATE documents SET matter_id = $1 WHERE matter_id = $2`, [id, fromId]);
+      let movedFilesCount = 0;
+      try {
+        const r = await query(`UPDATE document_files SET matter_id = $1 WHERE matter_id = $2`, [id, fromId]);
+        movedFilesCount = r.rowCount || 0;
+      } catch (e: any) {
+        // document_files 未適用(0127 未反映)の環境では無視して続行。
+        if (e?.code !== "42P01") throw e;
+      }
       await query(`UPDATE document_sends SET matter_id = $1 WHERE matter_id = $2`, [id, fromId]);
+
+      // ④ Drive フォルダの統合(best-effort)。
+      //    - from にフォルダ無し           → 何もしない
+      //    - 統合先にフォルダ無し           → from のフォルダを統合先が引き継ぐ(DB のみ)
+      //    - 両方フォルダあり               → from フォルダを統合先フォルダ配下へ移動
+      let folder: {
+        action: "none" | "adopted" | "moved" | "failed";
+        link?: string | null;
+        error?: string;
+      } = { action: "none" };
+      const fromFolderId = s(from.drive_folder_id);
+      const toFolderId = s(target.drive_folder_id);
+      if (fromFolderId) {
+        if (!toFolderId) {
+          await query(
+            `UPDATE matters SET drive_folder_id = $2, drive_folder_url = $3, updated_at = now() WHERE id = $1`,
+            [id, fromFolderId, s(from.drive_folder_url)]
+          );
+          folder = { action: "adopted", link: s(from.drive_folder_url) };
+        } else if (deps.moveMatterFolder) {
+          try {
+            const r = await deps.moveMatterFolder({
+              fromFolderId,
+              toFolderId,
+              fromMatterCode: from.matter_code,
+            });
+            folder = { action: "moved", link: r.link };
+          } catch (e: any) {
+            console.warn("[matters] absorb: drive folder move failed (non-fatal):", e?.message || e);
+            folder = { action: "failed", error: String(e?.message || e) };
+          }
+        }
+      }
+
+      // ⑤ 空になった from を削除し、統合先を touch。
       await query(`DELETE FROM matters WHERE id = $1`, [fromId]);
       await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [id]);
-      res.json({ ok: true, absorbedInto: id, removed: fromId });
+
+      res.json({
+        ok: true,
+        absorbedInto: id,
+        removed: fromId,
+        moved: {
+          issues: movedIssues.rowCount || 0,
+          tasks: movedTasks.rowCount || 0,
+          documents: movedDocs.rowCount || 0,
+          files: movedFilesCount,
+        },
+        folder,
+      });
     } catch (e: any) {
       console.error("[matters] absorb failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
