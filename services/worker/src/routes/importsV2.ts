@@ -988,7 +988,7 @@ async function mergePurchaseOrders(
     const delChk = await client.query(
       `SELECT COUNT(*)::int AS n
          FROM delivery_line_items dli
-         JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+         JOIN condition_lines cli ON cli.id = dli.capability_line_item_id AND cli.legacy_role = 'cli'
         WHERE cli.capability_id = ANY($1::int[])`,
       [capIds]
     );
@@ -1001,11 +1001,13 @@ async function mergePurchaseOrders(
     // 3. 全件の業務明細を capability_line_items から取得(DB を正とする)
     const cliRows = (
       await client.query(
-        `SELECT capability_id, line_no, category, item_name, spec, calc_method,
-                payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
+        `SELECT capability_id, (line_no-1000) AS line_no, category,
+                condition_name AS item_name, spec,
+                CASE payment_scheme WHEN 'subscription' THEN 'SUBSCRIPTION' ELSE 'FIXED' END AS calc_method,
+                payment_method, payment_terms, quantity::numeric AS quantity, unit_price, amount_ex_tax,
                 delivery_date, payment_date, cycle, billing_day, term_start, term_end
-           FROM capability_line_items
-          WHERE capability_id = ANY($1::int[])`,
+           FROM condition_lines
+          WHERE legacy_role = 'cli' AND capability_id = ANY($1::int[])`,
         [capIds]
       )
     ).rows;

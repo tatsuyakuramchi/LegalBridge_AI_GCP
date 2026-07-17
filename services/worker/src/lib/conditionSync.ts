@@ -13,38 +13,9 @@
  * 変換ルールは conditionLineMapper.ts に集約 (C-2 バックフィルと完全共用)。
  */
 
-import {
-  mapLineItemToConditionLine,
-  mapFinancialConditionToConditionLine,
-  conditionLineInsertValues,
-  CONDITION_LINE_COLUMNS,
-} from "./conditionLineMapper.js";
-
 // pool / client のどちらでも受ける最小インターフェース。
 export interface Db {
   query(text: string, params?: any[]): Promise<{ rows: any[]; rowCount?: number | null }>;
-}
-
-const INSERT_CL = `INSERT INTO condition_lines (${CONDITION_LINE_COLUMNS.join(
-  ", "
-)}) VALUES (${CONDITION_LINE_COLUMNS.map((_, i) => `$${i + 1}`).join(", ")})`;
-
-async function nextSeq(db: Db, kind: string, year: number): Promise<number> {
-  const r = await db.query(
-    `INSERT INTO document_sequences (kind, year, current_value) VALUES ($1, $2, 1)
-       ON CONFLICT (kind, year) DO UPDATE SET current_value = document_sequences.current_value + 1
-     RETURNING current_value`,
-    [kind, year]
-  );
-  return Number(r.rows[0].current_value);
-}
-
-async function nextLineNo(db: Db, capabilityId: number): Promise<number> {
-  const r = await db.query(
-    `SELECT COALESCE(MAX(line_no),0) AS m FROM condition_lines WHERE capability_id = $1`,
-    [capabilityId]
-  );
-  return Number(r.rows[0].m) + 1;
 }
 
 async function nextEventNo(db: Db, lineId: number): Promise<number> {
@@ -61,165 +32,14 @@ async function nextEventNo(db: Db, lineId: number): Promise<number> {
  * 戻り値 = 追加した condition_lines 件数。
  */
 export async function syncConditionLinesForCapability(
-  db: Db,
-  capabilityId: number
+  _db: Db,
+  _capabilityId: number
 ): Promise<number> {
   // スキーマ単純化(0089): capability_financial_conditions / capability_line_items は
   //   condition_lines 上の互換ビュー(INSTEAD OF トリガ)になった。書き込みは既に
   //   condition_lines へ直接着地しているため、ミラー同期は不要（循環/二重化を避ける）。
+  //   G3b: 到達不能だった旧ミラー実装(capability_* からの読取り)は削除済み。
   return 0;
-
-  // eslint-disable-next-line no-unreachable
-  const year = new Date().getFullYear();
-  let added = 0;
-
-  const cap = (
-    await db.query(
-      `SELECT id, record_type, structural_role, contract_category, contract_type,
-              contract_title, vendor_id, effective_date, expiration_date,
-              template_family, backlog_issue_key
-         FROM documents WHERE id = $1`,
-      [capabilityId]
-    )
-  ).rows[0];
-  if (!cap) return 0;
-
-  // A案: master 直付けの明細は暗黙 terms 契約に切り出して付ける
-  //   (master は枠組みのみ・条件明細を持たない原則。C-2 バックフィルと同じ挙動)。
-  const targetId = await resolveTermsCapability(db, cap);
-
-  const liRows = await db.query(
-    `SELECT li.* FROM capability_line_items li
-      WHERE li.capability_id = $1
-        AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.source_line_item_id = li.id)
-      ORDER BY li.line_no`,
-    [capabilityId]
-  );
-  for (const li of liRows.rows) {
-    const lineNo = await nextLineNo(db, targetId);
-    const code = `CL-${year}-${String(await nextSeq(db, "condition_line", year)).padStart(5, "0")}`;
-    const row = mapLineItemToConditionLine(li, targetId, lineNo, code);
-    await db.query(INSERT_CL, conditionLineInsertValues(row));
-    added++;
-  }
-
-  const fcRows = await db.query(
-    `SELECT fc.* FROM capability_financial_conditions fc
-      WHERE fc.capability_id = $1
-        AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.source_condition_id = fc.id)
-      ORDER BY fc.condition_no`,
-    [capabilityId]
-  );
-  for (const fc of fcRows.rows) {
-    const lineNo = await nextLineNo(db, targetId);
-    const code = `CL-${year}-${String(await nextSeq(db, "condition_line", year)).padStart(5, "0")}`;
-    const row = mapFinancialConditionToConditionLine(
-      fc,
-      { effective_date: cap.effective_date, expiration_date: cap.expiration_date },
-      targetId,
-      lineNo,
-      code
-    );
-    await db.query(INSERT_CL, conditionLineInsertValues(row));
-    added++;
-  }
-
-  // 2c-1: 既存 condition_lines のメタを旧 line item から再同期(変更の追従)。
-  //   status_flags(検収書発行済 等)・紐付け編集・方向が source 側で変わっても
-  //   新台帳へ反映する。新台帳が旧の忠実なスーパーセットであり続けるため。
-  await db.query(
-    `UPDATE condition_lines cl
-        SET source_ip_id       = cli.source_ip_id,
-            master_contract_id = cli.master_contract_id,
-            ringi_id           = cli.ringi_id,
-            status_flags       = COALESCE(cli.status_flags, '{}'::jsonb),
-            is_inbound         = COALESCE(cli.is_inbound, FALSE),
-            flow_direction     = cli.flow_direction,
-            updated_at         = CURRENT_TIMESTAMP
-       FROM capability_line_items cli
-      WHERE cl.source_line_item_id = cli.id
-        AND cli.capability_id = $1`,
-    [capabilityId]
-  );
-  return added;
-}
-
-const IMPLICIT_PREFIX = "（基本契約内条件）";
-
-/**
- * A案: structural_role='master'(or record_type='master_contract') の契約に
- * 条件明細を付ける場合、暗黙の terms 契約を 1 件生成 (or 再利用) して返す。
- * terms / その他はそのまま自身を返す。C-2 バックフィルの resolveTargetCapability と同等。
- */
-async function resolveTermsCapability(db: Db, cap: any): Promise<number> {
-  const role =
-    cap.structural_role ||
-    (cap.record_type === "master_contract" ? "master" : "terms");
-  if (role !== "master") return cap.id;
-
-  const existing = await db.query(
-    `SELECT id FROM documents
-      WHERE parent_capability_id = $1 AND contract_title LIKE $2
-      ORDER BY id LIMIT 1`,
-    [cap.id, IMPLICIT_PREFIX + "%"]
-  );
-  if (existing.rows.length) return existing.rows[0].id;
-
-  const ins = await db.query(
-    `INSERT INTO documents (
-             record_type,
-             contract_category,
-             contract_type,
-             contract_title,
-             vendor_id,
-             effective_date,
-             expiration_date,
-             structural_role,
-             parent_capability_id,
-             template_family,
-             backlog_issue_key,
-             template_type,
-             revision,
-             is_primary,
-             lifecycle_status
-           ) VALUES (
-             'standalone_contract',
-             $1,
-             $2,
-             $3,
-             $4,
-             $5,
-             $6,
-             'terms',
-             $7,
-             $8,
-             $9,
-             COALESCE($2, ''),
-             NULL,
-             NULL,
-             NULL
-           )
-     RETURNING id`,
-    [
-      cap.contract_category,
-      cap.contract_type,
-      IMPLICIT_PREFIX + (cap.contract_title || ""),
-      cap.vendor_id,
-      cap.effective_date,
-      cap.expiration_date,
-      cap.id,
-      cap.template_family,
-      cap.backlog_issue_key,
-    ]
-  );
-  const newId = ins.rows[0].id;
-  await db.query(
-    `INSERT INTO contract_scopes (capability_id, scope)
-       SELECT $1, scope FROM contract_scopes WHERE capability_id = $2
-     ON CONFLICT (capability_id, scope) DO NOTHING`,
-    [newId, cap.id]
-  );
-  return newId;
 }
 
 /**

@@ -126,8 +126,8 @@ export async function recalculateCapabilityTotal(
 }> {
   const sumRes = await query(
     `SELECT COALESCE(SUM(amount_ex_tax), 0) AS total
-       FROM capability_line_items
-      WHERE capability_id = $1`,
+       FROM condition_lines
+      WHERE legacy_role = 'cli' AND capability_id = $1`,
     [capabilityId]
   );
   const amountExTax = Number(sumRes.rows[0].total) || 0;
@@ -207,7 +207,7 @@ export async function getOrderedLineEconomics(
     if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
   }
   const li = await query(
-    `SELECT amount_ex_tax, quantity, unit_price FROM capability_line_items WHERE id = $1`,
+    `SELECT amount_ex_tax, quantity::numeric AS quantity, unit_price FROM condition_lines WHERE id = $1 AND legacy_role = 'cli'`,
     [capabilityLineItemId]
   );
   if (!li.rows.length) return null;

@@ -212,8 +212,8 @@ async function getRoyaltyConditionEconomics(
   }
   const r = await query(
     `SELECT rate_pct, mg_amount, COALESCE(ag_amount, 0) AS ag_amount, currency
-       FROM capability_financial_conditions
-      WHERE id = $1`,
+       FROM condition_lines
+      WHERE id = $1 AND legacy_role = 'cfc'`,
     [cfcId]
   );
   if (!r.rows.length) return null;
@@ -432,10 +432,10 @@ export async function getLicenseMgStatus(
   //   引数 licenseContractId は capability_id として解釈する
   //   (Phase 23 マイグレーションで ID が引き継がれている前提)。
   const conds = await query(
-    `SELECT id, condition_no, mg_amount
-       FROM capability_financial_conditions
-      WHERE capability_id = $1
-      ORDER BY condition_no ASC`,
+    `SELECT id, line_no AS condition_no, mg_amount
+       FROM condition_lines
+      WHERE legacy_role = 'cfc' AND capability_id = $1
+      ORDER BY line_no ASC`,
     [licenseContractId]
   );
 

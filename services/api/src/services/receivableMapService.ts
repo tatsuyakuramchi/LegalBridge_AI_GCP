@@ -99,18 +99,18 @@ type WorkRow = { id: number; title: string; work_code: string; is_original: bool
 async function loadAllDeals(): Promise<any[]> {
   try {
     const r = await query(
-      `SELECT cfc.id, cfc.work_id,
+      `SELECT cfc.id, cfc.source_work_id AS work_id,
               'sublicense' AS receivable_kind,
               COALESCE(v.vendor_name, '') AS sublicensee_name,
               '' AS source_contract_number,
               COALESCE(cfc.currency, 'JPY') AS currency,
               'active' AS status,
               COALESCE(SUM(COALESCE(cr.received_amount, cr.computed_royalty_ex_tax)), 0) AS net
-         FROM capability_financial_conditions cfc
+         FROM condition_lines cfc
          LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
          LEFT JOIN condition_receipts cr ON cr.condition_id = cfc.id
-        WHERE cfc.condition_kind = 'sublicense_out'
-        GROUP BY cfc.id, cfc.work_id, v.vendor_name, cfc.currency`
+        WHERE cfc.legacy_role = 'cfc' AND cfc.condition_kind = 'sublicense_out'
+        GROUP BY cfc.id, cfc.source_work_id, v.vendor_name, cfc.currency`
     );
     return r.rows.map((d: any) => ({ ...d, net: Number(d.net) || 0 }));
   } catch (err: any) {
@@ -144,26 +144,26 @@ async function computeNode(work: WorkRow, allDeals: any[]) {
               v.vendor_name AS licensor_name,
               si.title AS source_ip_title, si.source_code,
               fc.rate_pct, fc.mg_amount, fc.region_language_label AS rate_basis
-         FROM capability_line_items cli
+         FROM condition_lines cli
          JOIN documents cc ON cc.id = cli.capability_id
          LEFT JOIN vendors v ON v.id = cc.vendor_id
          LEFT JOIN source_ips si ON si.id = cli.source_ip_id
          LEFT JOIN LATERAL (
-           SELECT f.rate_pct, f.mg_amount, f.region_language_label
-             FROM capability_financial_conditions f
-            WHERE f.capability_id = cc.id
+           SELECT f.rate_pct, f.mg_amount, f.condition_name AS region_language_label
+             FROM condition_lines f
+            WHERE f.legacy_role = 'cfc' AND f.capability_id = cc.id
               AND (
-                f.region_language_label ILIKE '%サブライセンス%'
-                OR f.region_language_label ILIKE '%翻訳%'
-                OR f.region_language_label ILIKE '%海外%'
+                f.condition_name ILIKE '%サブライセンス%'
+                OR f.condition_name ILIKE '%翻訳%'
+                OR f.condition_name ILIKE '%海外%'
                 OR f.base_price_label ILIKE '%受領%' OR f.base_price_label ILIKE '%受取%'
                 OR f.formula_text ILIKE '%受領%'   OR f.formula_text ILIKE '%受取%'
-                OR (cc.contract_category ILIKE 'license%' AND f.condition_no = 2)
+                OR (cc.contract_category ILIKE 'license%' AND f.line_no = 2)
               )
             ORDER BY f.rate_pct DESC NULLS LAST
             LIMIT 1
          ) fc ON TRUE
-        WHERE cli.work_id = $1
+        WHERE cli.legacy_role = 'cli' AND cli.source_work_id = $1
           AND COALESCE(cli.is_inbound, FALSE) = FALSE
           AND (cc.contract_category ILIKE 'license%' OR cc.contract_category = 'publication')`,
       [work.id]
@@ -315,7 +315,7 @@ export async function listMappableWorks(): Promise<Array<{ id: number; work_code
     const res = await query(
       `SELECT w.id, w.work_code, w.title, COUNT(d.id)::int AS deal_count
          FROM works w
-         JOIN capability_financial_conditions d ON d.work_id = w.id AND d.condition_kind = 'sublicense_out'
+         JOIN condition_lines d ON d.source_work_id = w.id AND d.legacy_role = 'cfc' AND d.condition_kind = 'sublicense_out'
         GROUP BY w.id, w.work_code, w.title
         ORDER BY w.work_code DESC NULLS LAST, w.id DESC
         LIMIT 1000`
@@ -413,10 +413,10 @@ export async function worksByContractNumber(docNumber: string): Promise<Array<{ 
   try {
     const res = await query(
       `SELECT DISTINCT w.id, w.work_code, w.title
-         FROM capability_line_items cli
+         FROM condition_lines cli
          JOIN documents cc ON cc.id = cli.capability_id
-         JOIN works w ON w.id = cli.work_id
-        WHERE cc.document_number = $1
+         JOIN works w ON w.id = cli.source_work_id
+        WHERE cli.legacy_role = 'cli' AND cc.document_number = $1
         ORDER BY w.work_code`,
       [docNumber]
     );
