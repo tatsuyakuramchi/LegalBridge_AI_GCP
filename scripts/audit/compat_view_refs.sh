@@ -86,3 +86,13 @@ if [ "${1:-}" = "--gate-writes" ]; then
   fi
   echo "OK: 互換VIEW書込み ${WRITE_TOTAL} 箇所 (<= 上限 ${MAX})"
 fi
+# CI ゲート用: --gate-reads N で読取りが N を超えたら非0終了(Phase 7 の読取り撤去の退行防止)。
+# reads は段階移行中のため、現状値を上限に設定して「増やさない」ラチェットとして使う。
+if [ "${1:-}" = "--gate-reads" ]; then
+  MAX="${2:?--gate-reads には上限数を指定}"
+  if [ "$READ_TOTAL" -gt "$MAX" ]; then
+    echo "NG: 互換VIEW読取りが ${READ_TOTAL} 箇所 (> 上限 ${MAX})。実体表(documents/condition_lines)直読みへ移行してください。" >&2
+    exit 1
+  fi
+  echo "OK: 互換VIEW読取り ${READ_TOTAL} 箇所 (<= 上限 ${MAX})"
+fi

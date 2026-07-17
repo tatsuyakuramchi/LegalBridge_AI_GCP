@@ -52,6 +52,16 @@ steps:
       - --gate-writes
       - "0"
 
+  # Phase 7 G3: 互換VIEW読取りのラチェット(現状値を上限に「増やさない」)。
+  #   読取りを実体表直読みへ移行して減らしたら、この上限も同時に下げていく。
+  - id: gate-compat-reads
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - scripts/audit/compat_view_refs.sh
+      - --gate-reads
+      - "282"
+
   # ──────────────────────────────────────────────────────────────────────
   # ① DB マイグレーション（worker デプロイの前提。失敗したら以降のステップは走らない）
   #    migrations/ を Cloud Run Job としてビルド→deploy→execute する。
