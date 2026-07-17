@@ -940,7 +940,7 @@ async function mergePurchaseOrders(
               cc.id AS cap_id, cc.vendor_id, cc.record_type,
               cc.contract_category, cc.contract_title, cc.tax_rate
          FROM documents d
-         LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+         LEFT JOIN documents cc ON cc.document_number = d.document_number
         WHERE d.document_number = ANY($1::text[])
         FOR UPDATE OF d`,
       [allDocNumbers]

@@ -1889,7 +1889,7 @@ async function startServer() {
                   cc.contract_status,
                   v.vendor_name, v.vendor_code, v.entity_type,
                   d.issue_key
-             FROM contract_capabilities cc
+             FROM documents cc
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN LATERAL (
                SELECT dd.issue_key FROM documents dd
@@ -2085,7 +2085,7 @@ async function startServer() {
       if (template === "purchase_order") {
         const orderHeader = await query(
           `SELECT id, amount_ex_tax, tax_rate
-             FROM contract_capabilities
+             FROM documents
             WHERE backlog_issue_key = $1
               AND record_type = 'purchase_order'`,
           [key]
@@ -2150,7 +2150,7 @@ async function startServer() {
             const poHeader = await query(
               `SELECT id, amount_ex_tax, tax_rate, backlog_issue_key,
                       contract_title, due_date, created_at
-                 FROM contract_capabilities
+                 FROM documents
                 WHERE backlog_issue_key = $1
                   AND record_type = 'purchase_order'`,
               [parentKey]
@@ -2314,7 +2314,7 @@ async function startServer() {
                       AND d.template_type LIKE '%purchase_order%'
                     ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number
           FROM delivery_events de
-          LEFT JOIN contract_capabilities oi
+          LEFT JOIN documents oi
                  ON de.capability_id = oi.id
                 AND oi.record_type = 'purchase_order'
           LEFT JOIN vendors v ON v.id = oi.vendor_id
@@ -2529,7 +2529,7 @@ async function startServer() {
           try {
             lc = await query(
               `SELECT id, ledger_ref_id, material_ref_id, work_id
-                 FROM contract_capabilities
+                 FROM documents
                 WHERE backlog_issue_key = $1
                   AND contract_category = 'license'`,
               [key]
@@ -2537,7 +2537,7 @@ async function startServer() {
           } catch (colErr: any) {
             if (colErr && colErr.code === "42703") {
               lc = await query(
-                `SELECT id FROM contract_capabilities
+                `SELECT id FROM documents
                   WHERE backlog_issue_key = $1
                     AND contract_category = 'license'`,
                 [key]
@@ -2737,7 +2737,7 @@ async function startServer() {
       const orders = await query(
         `SELECT id, document_number, contract_title, amount_ex_tax,
                 created_at
-           FROM contract_capabilities
+           FROM documents
           WHERE backlog_issue_key = $1
             AND record_type = 'purchase_order'
           ORDER BY created_at ASC`,
@@ -2761,7 +2761,7 @@ async function startServer() {
         `
         SELECT de.*, oi.document_number AS po_document_number
         FROM delivery_events de
-        LEFT JOIN contract_capabilities oi
+        LEFT JOIN documents oi
                ON de.capability_id = oi.id
               AND oi.record_type = 'purchase_order'
         WHERE de.backlog_issue_key = $1 OR oi.backlog_issue_key = $2
@@ -2989,7 +2989,7 @@ async function startServer() {
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
              LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
@@ -3041,8 +3041,8 @@ async function startServer() {
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
-             LEFT JOIN contract_capabilities pcc ON pcc.id = cc.parent_capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
+             LEFT JOIN documents pcc ON pcc.id = cc.parent_capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
              LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
@@ -3112,7 +3112,7 @@ async function startServer() {
              FROM external_assets ea
              LEFT JOIN documents d
                ON d.document_number = ea.asset_number
-             LEFT JOIN contract_capabilities cc
+             LEFT JOIN documents cc
                ON cc.document_number = ea.asset_number
                   OR cc.document_number = COALESCE(d.base_document_number, ea.asset_number)
             WHERE ${
@@ -3584,7 +3584,7 @@ async function startServer() {
                     COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder,
                     (SELECT cc2.document_number
                        FROM condition_lines cl2
-                       JOIN contract_capabilities cc2 ON cc2.id = cl2.capability_id
+                       JOIN documents cc2 ON cc2.id = cl2.capability_id
                       WHERE cl2.source_material_id = wm.id
                         AND cl2.transaction_kind = 'license'
                         AND COALESCE(cc2.source_system,'') <> 'master_register'
@@ -4229,7 +4229,7 @@ async function startServer() {
                     AND dx.template_type IN ('royalty_statement', 'license_calculation_sheet')
                     AND COALESCE(dx.lifecycle_status, 'final') = 'final') AS calc_doc_count,
                 cc.updated_at
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
            LEFT JOIN LATERAL (
              SELECT dd.issue_key FROM documents dd
