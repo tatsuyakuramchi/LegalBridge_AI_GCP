@@ -8,6 +8,7 @@ import {
   findStaffBySlackId,
 } from "@/src/lib/slackRequester"
 import { useMergeCart } from "@/src/context/MergeCartContext"
+import { matterClient } from "@/src/lib/api/matterClient"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -56,43 +57,41 @@ export function RequestsPage() {
   const [matterByIssue, setMatterByIssue] = React.useState<Map<string, LinkedMatter>>(new Map())
   const refreshMatters = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/matters/issue-links")
-      if (res.ok) {
-        const json = await res.json()
-        const links: any[] = Array.isArray(json?.links) ? json.links : []
-        if (json?.ok !== false) {
-          const map = new Map<string, LinkedMatter>()
-          for (const l of links) {
-            if (!l?.backlog_issue_key) continue
-            map.set(String(l.backlog_issue_key), {
-              id: Number(l.matter_id),
-              matter_code: l.matter_code ?? null,
-              title: l.title ?? null,
-            })
-          }
-          setMatterByIssue(map)
-          return
-        }
-      }
-      // フォールバック: 旧 API(代表課題のみ)
-      const resOld = await fetch("/api/matters")
-      const jsonOld = await resOld.json()
-      const rows: any[] = Array.isArray(jsonOld)
-        ? jsonOld
-        : jsonOld?.matters || jsonOld?.rows || jsonOld?.items || jsonOld?.data || []
+      // 主経路: 課題→案件リンク(LB-03)。未デプロイ環境では ApiError を投げるので
+      //   catch して旧 API(代表課題のみ)へフォールバックする。
+      const json: any = await matterClient.issueLinks()
+      const links: any[] = Array.isArray(json?.links) ? json.links : []
       const map = new Map<string, LinkedMatter>()
-      for (const m of rows) {
-        if (m?.primary_issue_key) {
-          map.set(String(m.primary_issue_key), {
-            id: Number(m.id),
-            matter_code: m.matter_code ?? null,
-            title: m.title ?? null,
-          })
-        }
+      for (const l of links) {
+        if (!l?.backlog_issue_key) continue
+        map.set(String(l.backlog_issue_key), {
+          id: Number(l.matter_id),
+          matter_code: l.matter_code ?? null,
+          title: l.title ?? null,
+        })
       }
       setMatterByIssue(map)
     } catch {
-      /* 案件一覧の取得失敗は致命的でない(ボタンは新規作成モードで動作) */
+      // フォールバック: 旧 API(代表課題のみ)
+      try {
+        const jsonOld: any = await matterClient.list()
+        const rows: any[] = Array.isArray(jsonOld)
+          ? jsonOld
+          : jsonOld?.matters || jsonOld?.rows || jsonOld?.items || jsonOld?.data || []
+        const map = new Map<string, LinkedMatter>()
+        for (const m of rows) {
+          if (m?.primary_issue_key) {
+            map.set(String(m.primary_issue_key), {
+              id: Number(m.id),
+              matter_code: m.matter_code ?? null,
+              title: m.title ?? null,
+            })
+          }
+        }
+        setMatterByIssue(map)
+      } catch {
+        /* 案件一覧の取得失敗は致命的でない(ボタンは新規作成モードで動作) */
+      }
     }
   }, [])
   React.useEffect(() => {

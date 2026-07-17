@@ -63,10 +63,23 @@ cloudbuild.yaml の inject ステップを git 履歴から復元して再ビル
 
 | スライス | 内容 | 状態 |
 |---|---|---|
-| 第1弾 | 同一オリジン BFF + 秘密のバンドル焼き込み廃止(上記) | 実装済 |
-| 第2弾 | **IAP/入口の締め**: admin-ui を IAP 配下に置き `ADMIN_UI_ENFORCE_ROLE=true`(HTML+APIともadmin限定)。search-api 側 portal_secret 受け入れ経路の縮小(admin-ui BFF の egress のみに限定する運用 or サービス間 ID トークン化)。worker のサービス間認証(ID トークン)導入検討 | 未着手(GCP設定が主) |
-| 第3弾 | **ドメインAPIクライアント**: `src/lib/api/`(matterClient / documentClient / conditionClient / fileClient)を導入し、fetch 204箇所を段階移行。mutation 後の invalidate 規則(TanStack Query)をクライアント層で定義 | 未着手 |
-| 第4弾 | 共通 DTO / validation / mapping の shared package 化、AppDataContext の縮小 | 未着手 |
+| 第1弾 | 同一オリジン BFF + 秘密のバンドル焼き込み廃止(§2) | 実装済(2026-07-16) |
+| 第2弾 | **ドメインAPIクライアント基盤 + matterClient**: `src/lib/api/httpClient.ts`(相対 /api・相関ID・エラー正規化)と `matterClient` を新設。案件系 fetch を全面移行(MatterDetailPage / MattersListPage / RequestsPage / IssueDetailPage / DocumentEditorPage / MatterLinkButton / MergeCartPanel)。BFF(server.ts)に X-Request-Id 相関を追加(採番・上流転送・レスポンス echo・ログ付与) | 実装済(2026-07-16) |
+| 第3弾 | **残りのドメインクライアント**: documentClient / conditionClient / fileClient を追加し、残る fetch を段階移行。mutation 後の invalidate 規則をクライアント層へ(現状は各ページの再取得 load() で代替) | 未着手 |
+| 第4弾 | **IAP/入口の締め**(GCP設定が主): admin-ui を IAP 配下に置き `ADMIN_UI_ENFORCE_ROLE=true`(HTML+APIともadmin限定、コードは第1弾で実装済)。search-api 側 portal_secret 受け入れの縮小(BFF egress 限定 or サービス間 ID トークン化)。worker のサービス間認証導入検討 | 未着手(GCP設定が主) |
+| 第5弾 | 共通 DTO / validation / mapping の shared package 化、AppDataContext の縮小 | 未着手 |
+
+### 第2弾メモ(ドメインクライアントの設計)
+
+- `httpClient.apiRequest<T>(path, {method, body, headers, signal, requestId})`:
+  - 相対 /api を叩く(BFF 経由)。`X-Request-Id` を自動採番して付与。
+  - body がプレーンオブジェクトなら JSON 化 + Content-Type 付与、FormData/Blob/string は素通し
+    (multipart の boundary をブラウザに任せる)。
+  - `{ ok:false, error }` エンベロープなら `ApiError` を投げる。エンベロープ無しは
+    `!res.ok` で投げる。既存の手書きラッパと等価。
+- `matterClient`: 案件ドメインの全ルート(一覧/詳細/CRUD/tasks/issues/documents/
+  attachments/drive-folder/absorb/issue-links)。レスポンスは worker のエンベロープをそのまま返す。
+- 非案件の汎用呼び出し(backlog merge / documents email 等)は `apiRequest` を直接使う。
 
 ## 4. 運用メモ
 

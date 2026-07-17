@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/toast"
 import { EntitySearchSelect } from "@/src/components/search/EntitySearch"
+import { matterClient } from "@/src/lib/api/matterClient"
 
 export type LinkedMatter = {
   id: number
@@ -84,17 +85,11 @@ export function MatterLinkButton({
     }
     setSaving(true)
     try {
-      const res = await fetch("/api/matters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: t,
-          primary_issue_key: issueKey,
-          status: "open",
-        }),
+      const json: any = await matterClient.create({
+        title: t,
+        primary_issue_key: issueKey,
+        status: "open",
       })
-      const json = await res.json()
-      if (!res.ok || !json?.ok) throw new Error(json?.error || "作成に失敗しました")
       push("案件を作成しました", "success")
       setOpen(false)
       onChanged?.()
@@ -109,17 +104,11 @@ export function MatterLinkButton({
   async function linkExisting(matterId: number) {
     setSaving(true)
     try {
-      const res = await fetch(`/api/matters/${matterId}/issues`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          backlog_issue_key: issueKey,
-          relation: "related",
-          summary_snapshot: summary || null,
-        }),
+      await matterClient.addIssue(matterId, {
+        backlog_issue_key: issueKey,
+        relation: "related",
+        summary_snapshot: summary || null,
       })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok || json?.ok === false) throw new Error(json?.error || "紐づけに失敗しました")
       push("既存案件へ紐づけました", "success")
       setOpen(false)
       onChanged?.()

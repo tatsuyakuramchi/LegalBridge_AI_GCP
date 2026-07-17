@@ -27,6 +27,7 @@ import {
   resolveSlackMentions,
 } from "@/src/lib/slackRequester"
 import { useMergeCart } from "@/src/context/MergeCartContext"
+import { matterClient } from "@/src/lib/api/matterClient"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -156,8 +157,7 @@ export function IssueDetailPage() {
   const refreshLinkedMatter = React.useCallback(async () => {
     if (!issueKey) return
     try {
-      const res = await fetch("/api/matters")
-      const json = await res.json()
+      const json: any = await matterClient.list()
       const rows: any[] = Array.isArray(json)
         ? json
         : json?.matters || json?.rows || json?.items || json?.data || []

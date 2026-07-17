@@ -26,6 +26,7 @@ import {
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
+import { matterClient } from "@/src/lib/api/matterClient"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -507,11 +508,8 @@ export function DocumentEditorPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/matters/${mid}`)
-        const json = await res.json().catch(() => ({}))
-        if (!res.ok || json?.ok === false || !json?.matter) {
-          throw new Error(json?.error || `HTTP ${res.status}`)
-        }
+        const json: any = await matterClient.get(mid)
+        if (!json?.matter) throw new Error("案件が見つかりません")
         if (cancelled) return
         const m = json.matter
         setMatterContext({
