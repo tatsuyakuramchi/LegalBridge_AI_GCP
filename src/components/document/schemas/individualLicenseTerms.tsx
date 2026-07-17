@@ -229,6 +229,12 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     }
   }
 
+  // 自社側の担当者(通知先)はサイドバー選択中スタッフから組み立てる(空欄は既存値を保持)。
+  const staffPersonStr = (s: any) =>
+    [s?.department, s?.staff_name].filter((x) => x && String(x).trim() !== "").join(" ")
+  const staffContactLine = (s: any) =>
+    [staffPersonStr(s), s?.phone, s?.email].filter((x) => x && String(x).trim() !== "").join(" / ")
+
   const fillLicensorFromSelf = () =>
     setFormData({
       ...formData,
@@ -236,6 +242,10 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       Licensor_住所: companyProfile?.address || "",
       Licensor_氏名会社名: companyProfile?.name || "",
       Licensor_代表者名: companyProfile?.representative || "",
+      // C案(自社版): 担当/電話/メールを選択中スタッフから充填([取引先]と対称)。
+      Licensor_担当者: staffPersonStr(selectedStaff) || formData.Licensor_担当者 || "",
+      Licensor_電話: selectedStaff?.phone || formData.Licensor_電話 || "",
+      Licensor_メール: selectedStaff?.email || formData.Licensor_メール || "",
       LICENSOR_IS_CORPORATION: true,
     })
 
@@ -272,6 +282,8 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       Licensee_住所: companyProfile?.address || "",
       Licensee_氏名会社名: companyProfile?.name || "",
       Licensee_代表者名: companyProfile?.representative || "",
+      // 連絡先(1欄)は選択中スタッフの 担当 / 電話 / メール を連結([取引先]と対称)。
+      Licensee_連絡先: staffContactLine(selectedStaff) || formData.Licensee_連絡先 || "",
       LICENSEE_IS_CORPORATION: true,
     })
 
@@ -291,12 +303,15 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
   }
   const fillLicenseeFromPartner = () => fillLicenseeFrom(activeVendor)
 
-  const fillStaffAsSupervisor = () => {
-    if (!selectedStaff) return
+  const fillStaffAsSupervisor = () => fillSupervisorFrom(selectedStaff)
+  // 任意のスタッフ s を監修者に充填(Sync Staff ボタンと staff 検索の双方から使う)。
+  const fillSupervisorFrom = (s: any) => {
+    if (!s) return
+    const name = s.staff_name || s.name || ""
     setFormData({
       ...formData,
-      監修者: selectedStaff.staff_name || "",
-      クレジット表示: `© Arclight / ${selectedStaff.staff_name || ""}`,
+      監修者: name,
+      クレジット表示: `© Arclight / ${name}`,
     })
   }
 
@@ -1101,6 +1116,16 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         icon={<ShieldCheck className="w-4 h-4" />}
         headerActions={sideButton("Sync Staff", fillStaffAsSupervisor, !selectedStaff)}
       >
+        <div className="col-span-full space-y-1">
+          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            担当者を検索して監修者を充填（DB検索補完）
+          </label>
+          <EntitySearchSelect
+            entity="staff"
+            onSelect={(o) => o && fillSupervisorFrom(o.raw)}
+            placeholder="担当者を検索（氏名 / 部署 / メール）"
+          />
+        </div>
         {renderField("監修者")}
         {renderField("クレジット表示")}
         {renderField("承認時期")}

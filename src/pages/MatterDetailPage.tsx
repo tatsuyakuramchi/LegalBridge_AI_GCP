@@ -48,6 +48,7 @@ import { matterClient } from "@/src/lib/api/matterClient"
 import { apiRequest } from "@/src/lib/api/httpClient"
 import { useMatterMergeCart } from "@/src/context/MatterMergeCartContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
+import { StaffPicker } from "@/src/components/cloudsign/StaffPicker"
 import { IssuePicker } from "@/src/components/IssuePicker"
 import {
   MATTER_STAGES,
@@ -166,6 +167,10 @@ export function MatterDetailPage() {
   const [emailTo, setEmailTo] = React.useState("")
   const [emailCc, setEmailCc] = React.useState("")
   const [emailSending, setEmailSending] = React.useState(false)
+  // メール送信: 取引先引用(検索→連絡先メール自動補完)。
+  const [emailVendorCode, setEmailVendorCode] = React.useState("")
+  const [emailContactIdx, setEmailContactIdx] = React.useState(0)
+  const [emailContacts, setEmailContacts] = React.useState<any[]>([])
   // クラウドサインは署名者ルート等の課題コンテキストが必要なため、課題詳細の
   // 送信モーダルをディープリンク(?cloudsign=文書番号)で開く。Drive 上のPDFがある正本のみ。
   const isDrivePdf = (link?: string | null) => {
@@ -466,11 +471,60 @@ export function MatterDetailPage() {
     setMergeOpen(true)
   }
 
+  // 取引先の連絡先配列から主担当の index を返す(無ければ先頭)。
+  const primaryContactIdx = (contacts: any[]) => {
+    const i = (contacts || []).findIndex((c) => c && c.is_primary)
+    return i >= 0 ? i : 0
+  }
+  // 一覧の取引先に連絡先メールが無いことがあるため、詳細を取得して連絡先を補う。
+  const loadVendorContacts = async (v: any): Promise<any[]> => {
+    let contacts = Array.isArray(v?.contacts) ? v.contacts : []
+    if (!contacts.length || !contacts.some((c: any) => c && c.email)) {
+      try {
+        const res = await fetch(`/api/master/vendors/${encodeURIComponent(v.vendor_code)}`)
+        if (res.ok) {
+          const d = await res.json()
+          const detail = d?.data ?? d
+          if (Array.isArray(detail?.contacts)) contacts = detail.contacts
+          if (!v.email && detail?.email) v.email = detail.email
+        }
+      } catch {
+        /* 詳細取得失敗は無視(一覧の値で続行) */
+      }
+    }
+    return contacts
+  }
+  // 取引先を選択したら連絡先を読み込み、主担当メールを宛先に自動補完する。
+  const applyEmailVendor = async (v: any) => {
+    if (!v) {
+      setEmailVendorCode("")
+      setEmailContacts([])
+      setEmailContactIdx(0)
+      return
+    }
+    setEmailVendorCode(v.vendor_code || "")
+    const contacts = await loadVendorContacts(v)
+    setEmailContacts(contacts)
+    const idx = primaryContactIdx(contacts)
+    setEmailContactIdx(idx)
+    setEmailTo(
+      contacts[idx]?.email || contacts.find((x: any) => x?.email)?.email || v.email || ""
+    )
+  }
+
   // メール送信: 文書を取引先へ送る(宛先空欄なら取引先の主担当)。送信履歴にも自動記録される。
+  //   開いた時点で案件の取引先(vendor_id)を自動選択し、主担当メールを宛先に補完する。
   function openEmail(d: any) {
     setEmailDoc(d)
     setEmailTo("")
     setEmailCc("")
+    setEmailVendorCode("")
+    setEmailContactIdx(0)
+    setEmailContacts([])
+    // 文書自身の vendor_id を優先し、無ければ案件の vendor_id を使う。
+    const vid = d?.vendor_id ?? data?.matter?.vendor_id ?? edit.vendor_id
+    const v = vid != null ? (vendors as any[])?.find((x) => x.id === vid) : null
+    if (v) void applyEmailVendor(v)
   }
 
   async function sendEmailNow() {
@@ -1488,11 +1542,53 @@ export function MatterDetailPage() {
               文書を取引先へメール送信します（PDF添付・失敗時は本文リンクのみ）。送信結果はこの案件の送信履歴に記録されます。
             </p>
             <div className="space-y-1">
+              <Label className="text-[11px]">取引先を検索（選択で送信先メールを自動補完）</Label>
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode={emailVendorCode}
+                onSelect={(v) => void applyEmailVendor(v)}
+                placeholder="取引先を検索（コード / 名称 / 屋号）"
+                size="compact"
+              />
+            </div>
+            {emailContacts.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-[11px]">担当者（連絡先）を選択</Label>
+                <NativeSelect
+                  value={String(emailContactIdx)}
+                  onChange={(e) => {
+                    const i = Number(e.target.value)
+                    setEmailContactIdx(i)
+                    if (emailContacts[i]?.email) setEmailTo(emailContacts[i].email)
+                  }}
+                  className="h-8 text-[12px]"
+                >
+                  {emailContacts.map((c, i) => (
+                    <option key={i} value={i}>
+                      {(c.contact_name || "（氏名なし）") +
+                        (c.title ? `（${c.title}）` : "") +
+                        (c.email ? ` <${c.email}>` : "") +
+                        (c.is_primary ? " ★主担当" : "")}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            )}
+            <div className="space-y-1">
               <Label className="text-[11px]">宛先（空欄なら取引先の主担当。複数はカンマ区切り）</Label>
               <Input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="a@example.com, b@example.com" className="h-8 text-[12px]" />
             </div>
             <div className="space-y-1">
-              <Label className="text-[11px]">CC（任意。複数はカンマ区切り）</Label>
+              <Label className="text-[11px]">CC（任意。複数はカンマ区切り。設定の既定CCにも追加されます）</Label>
+              <StaffPicker
+                staff={staffList as any}
+                placeholder="スタッフを検索して CC に追加（氏名 / メール / 部署）"
+                onPick={(s) => {
+                  if (!s.email) return
+                  const cur = emailCc.split(",").map((x) => x.trim()).filter(Boolean)
+                  if (!cur.includes(s.email)) setEmailCc([...cur, s.email].join(", "))
+                }}
+              />
               <Input value={emailCc} onChange={(e) => setEmailCc(e.target.value)} placeholder="cc@example.com" className="h-8 text-[12px]" />
             </div>
           </DialogBody>
