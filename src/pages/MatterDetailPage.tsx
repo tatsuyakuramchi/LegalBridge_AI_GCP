@@ -46,6 +46,7 @@ import {
 import { useAppData } from "@/src/context/AppDataContext"
 import { matterClient } from "@/src/lib/api/matterClient"
 import { apiRequest } from "@/src/lib/api/httpClient"
+import { useMatterMergeCart } from "@/src/context/MatterMergeCartContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { IssuePicker } from "@/src/components/IssuePicker"
 import {
@@ -115,6 +116,7 @@ export function MatterDetailPage() {
   const { matterId } = useParams()
   const navigate = useNavigate()
   const { push } = useToast()
+  const mergeCart = useMatterMergeCart()
   const { vendors, issues, refreshIssues, staffList } = useAppData()
 
   const [data, setData] = React.useState<any>(null)
@@ -773,12 +775,32 @@ export function MatterDetailPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-border">
               <span className="text-[11px] text-muted-foreground">重複案件の統合:</span>
-              <Input value={absorbId} onChange={(e) => setAbsorbId(e.target.value)} placeholder="取り込む案件ID (例: 12)" className="h-8 text-[12px] max-w-[160px]" />
+              {/* カート方式: この案件をカートへ入れ、他の重複案件も集めてから統合先を選ぶ */}
+              <Button
+                size="sm"
+                variant={mergeCart.has(Number(matterId)) ? "default" : "outline"}
+                onClick={() => {
+                  const idNum = Number(matterId)
+                  if (mergeCart.has(idNum)) {
+                    mergeCart.remove(idNum)
+                  } else {
+                    mergeCart.add(
+                      { id: idNum, matter_code: m.matter_code, title: m.title, counterparty: m.counterparty },
+                      { openPanel: true }
+                    )
+                  }
+                }}
+              >
+                <GitMerge className="h-3.5 w-3.5 mr-1" />
+                {mergeCart.has(Number(matterId)) ? "統合カートに追加済み" : "統合カートに追加"}
+              </Button>
+              <span className="text-[11px] text-muted-foreground">または ID 指定:</span>
+              <Input value={absorbId} onChange={(e) => setAbsorbId(e.target.value)} placeholder="取り込む案件ID (例: 12)" className="h-8 text-[12px] max-w-[140px]" />
               <Button size="sm" variant="outline" onClick={absorb}>
-                <GitMerge className="h-3.5 w-3.5 mr-1" /> 取り込む
+                取り込む
               </Button>
               <span className="text-[10px] text-muted-foreground w-full">
-                課題・タスク・文書・ファイル・送信履歴を引き継ぎ、統合元のDriveフォルダはこの案件のフォルダ配下へ移動（統合先にフォルダが無ければ引き継ぎ）します。
+                カートに重複案件を集め、統合先(残す案件)を選んで一括統合できます。課題・タスク・文書・ファイル・送信履歴を引き継ぎ、統合元のDriveフォルダはこの案件のフォルダ配下へ移動（統合先にフォルダが無ければ引き継ぎ）します。
               </span>
             </div>
             <div className="flex items-center justify-between">

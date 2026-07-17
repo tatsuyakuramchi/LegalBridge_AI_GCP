@@ -4,6 +4,7 @@ import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
 import { SkinProvider } from "@/src/lib/skin"
 import { MergeCartPanel } from "@/src/components/backlog/MergeCartPanel"
+import { MatterMergeCartPanel } from "@/src/components/matter/MatterMergeCartPanel"
 
 export function AppShell() {
   return (
@@ -18,6 +19,8 @@ export function AppShell() {
         </div>
         {/* 課題統合カート: どの画面からでも籠の中身を見ながら統合できる常駐パネル */}
         <MergeCartPanel />
+        {/* 案件統合カート: 重複案件を集めて統合先を選び一括統合する常駐パネル */}
+        <MatterMergeCartPanel />
       </div>
     </SkinProvider>
   )
