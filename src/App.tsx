@@ -26,6 +26,7 @@ import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ReceivableMapPanel } from "./pages/master/ReceivableMapPanel" // 統合 P3-4
 import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
+import { WorkSearchPanel } from "./pages/master/WorkSearchPanel" // 作品検索(専用画面)
 import { MaterialEntryPanel } from "./pages/master/MaterialEntryPanel" // 原作マテリアル登録
 import { WorkMaterialLinkPanel } from "./pages/master/WorkMaterialLinkPanel" // 作品↔原作マテリアル 紐づけ
 import { SublicenseConditionPanel } from "./pages/master/SublicenseConditionPanel" // 再許諾条件登録
@@ -96,6 +97,7 @@ export default function App() {
                   <Route path="conditions" element={<Navigate to="/condition-lines?tab=search" replace />} />
                   <Route path="receivable-map" element={<ReceivableMapPanel />} />{/* 統合 P3-4 */}
                   <Route path="work-model" element={<WorkModelPanel />} />{/* 統合 P3-5 */}
+                  <Route path="work-search" element={<WorkSearchPanel />} />{/* 作品検索(専用画面) */}
                   {/* 統合 増分④: 3カードエディタは /works/:id へ移設。旧URLは温存リダイレクト */}
                   <Route path="work-graph" element={<Navigate to="/works" replace />} />
                   <Route path="staff" element={<StaffPanel />} />

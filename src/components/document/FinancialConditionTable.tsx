@@ -13,6 +13,30 @@
  */
 
 import React from "react";
+import { RegionLanguageSelect } from "./RegionLanguageSelect";
+import {
+  COUNTRIES,
+  LANGUAGES,
+  REGION_PRESETS,
+  WORLD,
+  ALL_LANG,
+  composeNames,
+  type Opt,
+} from "@/src/lib/regionLanguageMaster";
+
+// 選択(regions/languages)を初期化するため、name→Opt の逆引き(既存文字列のフォールバック用)。
+const NAME_TO_COUNTRY = new Map<string, Opt>([...COUNTRIES, WORLD].map((o) => [o.name, o]));
+const NAME_TO_LANGUAGE = new Map<string, Opt>([...LANGUAGES, ALL_LANG].map((o) => [o.name, o]));
+function strToOpts(arr: Opt[] | undefined, str: string | undefined, nameMap: Map<string, Opt>): Opt[] {
+  if (Array.isArray(arr) && arr.length) return arr.filter((o) => o && o.name);
+  const s = (str || "").trim();
+  if (!s) return [];
+  return s
+    .split(/[・、,\/／]/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((name) => nameMap.get(name) || { code: "", name });
+}
 import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +66,10 @@ export type FinancialCondition = {
   // 後方互換・表示用の合成ラベル。region_territory・region_language から自動生成。
   //   旧データ(2項目が無い行)はこのラベルを '・' で分割してフォールバックする。
   region_language_label?: string; // 例: 国内・日本語
+  // 選択式・国名単位・複数選択(1対N)。保存は子テーブル(condition_line_regions/languages)、
+  //   region_territory/region_language は name を '・' 連結して合成し互換維持。
+  regions?: Opt[];
+  languages?: Opt[];
   // 構造化した計算式タイプ。calc_method は互換のため calc_type から自動導出。
   calc_type?: CalcType;
   calc_method?: string; // ROYALTY / FIXED / SUBSCRIPTION (calc_type から自動設定)
@@ -321,6 +349,31 @@ export const FinancialConditionTable: React.FC<Props> = ({
     });
   };
 
+  // 選択式(複数国/言語)の更新: 子テーブル用の regions/languages を保持しつつ、
+  //   互換の region_territory/region_language/region_language_label を name 連結で合成。
+  const updateRegionOpts = (idx: number, opts: Opt[]) => {
+    const territory = composeNames(opts);
+    const language = strToOpts(conditions[idx].languages, conditions[idx].region_language, NAME_TO_LANGUAGE)
+      .map((o) => o.name)
+      .join("・");
+    update(idx, {
+      regions: opts,
+      region_territory: territory,
+      region_language_label: composeRegionLabel(territory, language),
+    });
+  };
+  const updateLanguageOpts = (idx: number, opts: Opt[]) => {
+    const language = composeNames(opts);
+    const territory = strToOpts(conditions[idx].regions, conditions[idx].region_territory, NAME_TO_COUNTRY)
+      .map((o) => o.name)
+      .join("・");
+    update(idx, {
+      languages: opts,
+      region_language: language,
+      region_language_label: composeRegionLabel(territory, language),
+    });
+  };
+
   // 構造化フィールド変更時: calc_method(互換) と計算式テキストを自動再計算して反映。
   const recalc = (idx: number, patch: Partial<FinancialCondition>) => {
     const merged = { ...conditions[idx], ...patch };
@@ -486,27 +539,22 @@ export const FinancialConditionTable: React.FC<Props> = ({
                       ))}
                     </select>
                   )}
-                  <input
-                    type="text"
-                    value={readRegionParts(c).territory}
-                    onChange={(e) =>
-                      updateRegion(idx, { region_territory: e.target.value })
-                    }
-                    placeholder="テリトリー (例: 国内)"
-                    title="許諾テリトリー(地域)。例: 国内 / 北米 / 全世界"
+                  <RegionLanguageSelect
+                    value={strToOpts(c.regions, c.region_territory, NAME_TO_COUNTRY)}
+                    onChange={(opts) => updateRegionOpts(idx, opts)}
+                    options={COUNTRIES}
+                    presets={REGION_PRESETS}
+                    special={WORLD}
+                    placeholder="許諾地域(国)を選択"
                     disabled={readOnly}
-                    className="flex-1 min-w-[90px] text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
                   />
-                  <input
-                    type="text"
-                    value={readRegionParts(c).language}
-                    onChange={(e) =>
-                      updateRegion(idx, { region_language: e.target.value })
-                    }
-                    placeholder="言語 (例: 日本語)"
-                    title="許諾言語。例: 日本語 / 英語 / 全言語"
+                  <RegionLanguageSelect
+                    value={strToOpts(c.languages, c.region_language, NAME_TO_LANGUAGE)}
+                    onChange={(opts) => updateLanguageOpts(idx, opts)}
+                    options={LANGUAGES}
+                    special={ALL_LANG}
+                    placeholder="許諾言語を選択"
                     disabled={readOnly}
-                    className="flex-1 min-w-[90px] text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
                   />
                 </div>
                 {!readOnly && (

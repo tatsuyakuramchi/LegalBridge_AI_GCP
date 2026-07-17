@@ -11,6 +11,7 @@
  */
 import * as React from "react"
 import { useParams, useNavigate } from "react-router-dom"
+import { RightsTreePanel } from "./RightsTreePanel"
 import { Globe } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -1071,6 +1072,9 @@ export function WorkGraphPanel() {
           />
         </div>
       </header>
+
+      {/* 契約・権利ツリー（金銭イン/アウト・買い切り・許諾地域サマリー）。 */}
+      {workId ? <RightsTreePanel workId={workId} /> : null}
 
       {loading ? (
         <div className="text-xs font-mono text-muted-foreground py-8 text-center">読み込み中…</div>

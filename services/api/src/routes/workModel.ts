@@ -311,6 +311,72 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 作品検索(DB直結): title / title_kana / work_code / alternative_titles を横断 ILIKE。
+  //   任意フィルタ type/status/division、ページング(limit/offset)、総件数付き。
+  //   専用画面(ポータル /search/work ・ admin-ui 作品検索)の共通データ源。
+  //   ※ /:id より前に登録しないと "search" が :id にキャプチャされる。
+  app.get("/api/v3/works/search", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const type = String(req.query.type ?? "").trim();
+      const status = String(req.query.status ?? "").trim();
+      const division = String(req.query.division ?? "").trim();
+      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+      const where: string[] = ["COALESCE(w.kind, 'own') = 'own'"];
+      const params: any[] = [];
+      if (q) {
+        params.push(`%${q}%`);
+        const p = `$${params.length}`;
+        where.push(
+          `(w.title ILIKE ${p} OR w.title_kana ILIKE ${p} OR w.work_code ILIKE ${p}
+            OR EXISTS (SELECT 1 FROM unnest(w.alternative_titles) alt WHERE alt ILIKE ${p}))`
+        );
+      }
+      if (type) { params.push(type); where.push(`w.work_type = $${params.length}`); }
+      if (status) { params.push(status); where.push(`w.status = $${params.length}`); }
+      if (division) { params.push(division); where.push(`$${params.length} = ANY(w.division)`); }
+      const whereSql = where.join(" AND ");
+
+      const cnt = await query(
+        `SELECT COUNT(*)::int AS total FROM works w WHERE ${whereSql}`,
+        params
+      );
+      const total = Number(cnt.rows[0]?.total ?? 0);
+
+      // 関連度: 完全一致 > 前方一致 > 部分一致。q 無しは id 降順。
+      const relParams = [...params];
+      let orderSql = "w.id DESC";
+      if (q) {
+        relParams.push(q);
+        const eq = `$${relParams.length}`;
+        relParams.push(`${q}%`);
+        const pre = `$${relParams.length}`;
+        orderSql =
+          `CASE WHEN w.title ILIKE ${eq} OR w.work_code ILIKE ${eq} THEN 0 ` +
+          `WHEN w.title ILIKE ${pre} THEN 1 ELSE 2 END, w.id DESC`;
+      }
+      relParams.push(limit);
+      const limP = `$${relParams.length}`;
+      relParams.push(offset);
+      const offP = `$${relParams.length}`;
+
+      const rows = await query(
+        `SELECT w.id, w.work_code, w.title, w.title_kana, w.alternative_titles,
+                w.division, w.work_type, w.status, w.is_original, w.is_active,
+                (SELECT COUNT(*) FROM products p WHERE p.work_id = w.id)        AS product_count,
+                (SELECT COUNT(*) FROM work_materials wm WHERE wm.work_id = w.id) AS material_count
+           FROM works w
+          WHERE ${whereSql}
+          ORDER BY ${orderSql}
+          LIMIT ${limP} OFFSET ${offP}`,
+        relParams
+      );
+      res.json({ ok: true, total, limit, offset, rows: rows.rows });
+    } catch (e) { fail(res, e); }
+  });
+
   app.get("/api/v3/works/:id", ...requireRead, async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -429,6 +495,134 @@ export function registerWorkModelRoutes(
         upstream: upstream.rows,
         downstream: downstream.rows,
       });
+    } catch (e) { fail(res, e); }
+  });
+
+  // ── 権利ツリー(金銭イン/アウト＋買い切り＋許諾地域サマリー)──────────────
+  //   作品を根に condition_lines を直読みし、取得(payable)/許諾(receivable)へ分岐。
+  //   買い切り = 固定額(rate/mg なし・amount_ex_tax あり) → 金額表示。
+  //   ランニング = 計算条件(印税/MG) ＋ region_territory / region_language を表示。
+  //   許諾側は region_territory で地域サマリーを集計(言語ロールアップ＋重複検知)。
+  app.get("/api/v3/works/:id/rights-tree", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const w = await query(
+        `SELECT id, work_code, title, work_type, status FROM works WHERE id = $1`,
+        [id]
+      );
+      if (w.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+
+      const cl = await query(
+        `SELECT cl.id, cl.direction, cl.payment_scheme, cl.calc_method,
+                cl.rate_pct, cl.mg_amount, cl.amount_ex_tax, cl.currency,
+                -- 0133: 許諾地域/言語は 1対N 子テーブルを国名単位で集約(無ければ旧列)。
+                COALESCE(
+                  (SELECT string_agg(rr.country_name, '・' ORDER BY rr.sort_order, rr.id)
+                     FROM condition_line_regions rr WHERE rr.condition_line_id = cl.id),
+                  cl.region_territory
+                ) AS region_territory,
+                COALESCE(
+                  (SELECT string_agg(ll.language_name, '・' ORDER BY ll.sort_order, ll.id)
+                     FROM condition_line_languages ll WHERE ll.condition_line_id = cl.id),
+                  cl.region_language
+                ) AS region_language,
+                cl.formula_text,
+                COALESCE(NULLIF(cl.condition_name,''), NULLIF(cl.subject,''), '(無題)') AS name,
+                COALESCE(v.vendor_name, dv.vendor_name) AS party,
+                d.document_number
+           FROM condition_lines cl
+           LEFT JOIN vendors v   ON v.id  = cl.counterparty_vendor_id
+           LEFT JOIN documents d ON d.id  = cl.document_id
+           LEFT JOIN vendors dv  ON dv.id = d.vendor_id
+          WHERE cl.work_id = $1
+            AND cl.void_reason IS NULL
+          ORDER BY cl.direction, cl.line_no NULLS LAST, cl.id`,
+        [id]
+      );
+
+      const isRunning = (r: any) => {
+        const scheme = String(r.payment_scheme || "").toLowerCase();
+        const cm = String(r.calc_method || "").toUpperCase();
+        return (
+          ["royalty", "subscription", "per_unit", "installment"].includes(scheme) ||
+          ["ROYALTY", "SUBSCRIPTION", "PER_UNIT", "INSTALLMENT"].includes(cm) ||
+          r.rate_pct != null ||
+          (r.mg_amount != null && Number(r.mg_amount) > 0)
+        );
+      };
+      const yen = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP");
+      const calcLabel = (r: any) => {
+        const rate = r.rate_pct != null ? Number(r.rate_pct) : null;
+        const mg = r.mg_amount != null && Number(r.mg_amount) > 0 ? Number(r.mg_amount) : null;
+        if (rate != null && rate !== 0) return mg ? `MG ${yen(mg)} ＋ ${rate}%` : `印税 ${rate}%`;
+        if (mg) return `MG ${yen(mg)}`;
+        if (r.formula_text) return String(r.formula_text);
+        if (String(r.payment_scheme || "").toLowerCase() === "subscription") return "定期課金";
+        return "計算条件あり";
+      };
+
+      const rights = cl.rows.map((r: any) => {
+        const running = isRunning(r);
+        const amount = r.amount_ex_tax != null ? Number(r.amount_ex_tax) : null;
+        const type = running ? "run" : amount && amount > 0 ? "own" : "free";
+        return {
+          id: r.id,
+          direction: r.direction, // payable / receivable
+          dir: r.direction === "receivable" ? "in" : "out",
+          type, // own(買い切り) / run(ランニング) / free(無償)
+          name: r.name,
+          party: r.party || "(取引先未設定)",
+          amount,
+          amount_label: amount != null ? yen(amount) : null,
+          calc: type === "run" ? calcLabel(r) : type === "free" ? "無償" : null,
+          territory: r.region_territory || null,
+          language: r.region_language || null,
+          document_number: r.document_number || null,
+        };
+      });
+
+      const acquired = rights.filter((r) => r.direction === "payable");
+      const granted = rights.filter((r) => r.direction === "receivable");
+
+      // 許諾地域サマリー: region_territory ごとに言語ロールアップ＋対象権利。
+      const map: Record<string, { territory: string; languages: string[]; rights: string[] }> = {};
+      const order: string[] = [];
+      for (const g of granted) {
+        // 0133: territory は「・」連結の複数国。国名単位に分解して集計する。
+        const countries = String(g.territory || "")
+          .split(/[・,\/／、]/).map((s) => s.trim()).filter(Boolean);
+        const list = countries.length ? countries : ["（地域未設定）"];
+        const langs = String(g.language || "—").split(/[・,\/／、]/).map((s) => s.trim()).filter(Boolean);
+        for (const t of list) {
+          if (!map[t]) { map[t] = { territory: t, languages: [], rights: [] }; order.push(t); }
+          langs.forEach((l) => { if (l && !map[t].languages.includes(l)) map[t].languages.push(l); });
+          if (!map[t].rights.includes(g.name)) map[t].rights.push(g.name);
+        }
+      }
+      // 「全世界」的な広域許諾と特定地域で同一言語が重なる場合は重複候補として返す。
+      const WORLD = ["全世界", "世界", "worldwide", "global", "all"];
+      const worldKey = order.find((t) => WORLD.some((w2) => t.toLowerCase().includes(w2.toLowerCase())));
+      const overlaps: string[] = [];
+      if (worldKey) {
+        for (const t of order) {
+          if (t === worldKey) continue;
+          for (const l of map[t].languages) {
+            if (map[worldKey].languages.includes(l)) overlaps.push(`${t}（${l}）`);
+          }
+        }
+      }
+      const territorySummary = order.map((t) => map[t]);
+
+      const buyouts = acquired.filter((r) => r.type === "own");
+      const totals = {
+        buyout_count: buyouts.length,
+        buyout_amount: buyouts.reduce((s, r) => s + (r.amount || 0), 0),
+        acquired_count: acquired.length,
+        granted_count: granted.length,
+      };
+
+      res.json({ ok: true, work: w.rows[0], acquired, granted, territorySummary, overlaps, totals });
     } catch (e) { fail(res, e); }
   });
 
