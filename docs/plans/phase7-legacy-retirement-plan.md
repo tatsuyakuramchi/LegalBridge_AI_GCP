@@ -28,7 +28,7 @@
 | ゲート | 内容 | スライス | 状態 |
 |---|---|---|---|
 | G2 | INSTEAD OF トリガ(tg_cc_ins/tg_cfc_*/tg_cli_*/tg_exp_*/tg_fee_*)と その関数を DROP。書込みゼロ(G1)が前提。VIEW と cl_* ヘルパは残す | 第1弾(migration 0131) | 実装済(2026-07-16) |
-| G3a | `contract_capabilities` 読取り 165 を `documents` 直読みへ(1:1 passthrough のため原則リネーム) | 第2弾〜(ファイル単位) | **進行中**: 第2弾リーフ8(16)→266、第3弾 unifiedIssues/formReadRoutes/db.ts(19)→247、第4弾 dataLinkage(22)→225。ratchet 225。残: server.ts(52)/workModel(23)/sharedReads/contractsV2/contractCheckService(SELECT *系)/formReadRoutes 453。<br>※ dataLinkage の documents-vs-cc ドリフトprobe は cc==documents のため自己比較(版family)に等価化。件数挙動は不変だが、将来 probe 自体の要否を見直す(TODO) |
+| G3a | `contract_capabilities` 読取り 165 を `documents` 直読みへ(1:1 passthrough のため原則リネーム) | 第2弾〜(ファイル単位) | **進行中**: 第2弾リーフ8(16)→266、第3弾 unifiedIssues/formReadRoutes/db.ts(19)→247、第4弾 dataLinkage(22)→225、第5弾 workModel(23)→202。ratchet 202。残: server.ts(52)/sharedReads/contractsV2/contractCheckService(SELECT *系)/formReadRoutes 453。<br>※ dataLinkage の documents-vs-cc ドリフトprobe は cc==documents のため自己比較(版family)に等価化。件数挙動は不変だが、将来 probe 自体の要否を見直す(TODO) |
 | G3b | `capability_*` 読取り 117 を `condition_lines`(legacy_role + 列マッピング)直読みへ | 第3弾以降 | 未着手 |
 | G4 | 読取りゼロ達成 + 本番クエリログで一定期間アクセス無しを確認し VIEW を DROP | 最終 | 未着手 |
 | — | cl_* ヘルパ(cl_dir/cl_scheme/cl_next_code/cl_resolve_work)のインライン化検討、旧起動DDL(RUN_INIT_DB)ブロック削除、旧設計書の更新 | 仕上げ | 未着手 |
