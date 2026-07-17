@@ -11,6 +11,7 @@ import {
   ListChecks,
   Layers,
   AlertTriangle,
+  GitMerge,
 } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -32,6 +33,7 @@ import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect
 import { IssuePicker } from "@/src/components/IssuePicker"
 import { STAGE_LABEL } from "@/src/components/matter/matterStages"
 import { matterClient } from "@/src/lib/api/matterClient"
+import { useMatterMergeCart } from "@/src/context/MatterMergeCartContext"
 
 // 案件管理 一覧。1行 = 1案件。Backlog課題(重複/部分)・文書・送信・条件明細を束ねる。
 //   API: GET /api/matters (matter_overview_v)。詳細は /matters/:id。
@@ -83,6 +85,7 @@ const isOverdue = (m: MatterRow) =>
 export function MattersListPage() {
   const navigate = useNavigate()
   const { push } = useToast()
+  const mergeCart = useMatterMergeCart()
   const { vendors, issues } = useAppData()
   const [rows, setRows] = React.useState<MatterRow[]>([])
   const [loading, setLoading] = React.useState(true)
@@ -285,9 +288,33 @@ export function MattersListPage() {
                     <ListChecks className="h-3 w-3" /> {m.condition_count}
                   </span>
                 </span>
-                {/* 最終更新 */}
-                <span className="text-center text-[11px] font-mono text-muted-foreground tabular-nums">
-                  {fmtShortDate(m.updated_at)}
+                {/* 最終更新 + 統合カード追加 */}
+                <span className="flex items-center justify-end gap-1.5">
+                  <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+                    {fmtShortDate(m.updated_at)}
+                  </span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title={mergeCart.has(m.id) ? "統合カートから外す" : "統合カートに追加"}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      e.preventDefault()
+                      if (mergeCart.has(m.id)) mergeCart.remove(m.id)
+                      else
+                        mergeCart.add(
+                          { id: m.id, matter_code: m.matter_code, title: m.title, counterparty: m.counterparty },
+                          { openPanel: true }
+                        )
+                    }}
+                    className={`inline-flex items-center justify-center h-6 w-6 rounded-sm border transition-colors ${
+                      mergeCart.has(m.id)
+                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40"
+                        : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <GitMerge className="h-3.5 w-3.5" />
+                  </span>
                 </span>
                 <ChevronRight className="h-4 w-4 text-muted-foreground hidden md:block" />
               </button>
