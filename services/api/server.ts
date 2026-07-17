@@ -290,7 +290,6 @@ import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
 import { masterContractsPage } from "./src/views/masterContractsHtml.ts";
 import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
-import { workModelEmbedPage } from "./src/views/workModelHtml.ts";
 import { workSearchPage } from "./src/views/workSearchHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
 import {
@@ -3731,19 +3730,11 @@ async function startServer() {
   });
 
   // B1: 作品中心モデルの閲覧ページ(Search 専用フロント)。/api/v3 を同一オリジンで読む。
-  app.get("/work-model", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "work-model", renderErrorPage }), (req, res) => {
-    try {
-      // 統合: admin-ui の作品モデル(React)を iframe で埋め込む(ADMIN_UI_URL 未設定なら旧コンソール)
-      res.type("html").send(workModelEmbedPage((req as any).userRole as Role));
-    } catch (error) {
-      console.error("/work-model failed:", error);
-      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
-    }
-  });
-
-  // 作品検索(専用画面): works を DB 直結(/api/v3/works/search)で横断検索する
-  //   ポータルネイティブ検索。従来の作品モデル iframe より軽く使いやすい。viewer 可。
-  app.get("/search/work", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "search-work", renderErrorPage }), (req, res) => {
+  // 「作品モデル」= DB 直結(/api/v3/works/search)のポータルネイティブ作品検索。
+  //   従来の admin-ui iframe 埋め込みを廃し、契約台帳の下(コンソール)に作品検索を置く。
+  //   作品データの整理・編集は admin-ui(マスタ)側の作品モデルで行う。
+  //   旧 URL /search/work は互換のため作品検索へリダイレクト。
+  const renderWorkSearch = (req: any, res: any) => {
     try {
       res.type("html").send(
         workSearchPage({
@@ -3752,10 +3743,12 @@ async function startServer() {
         })
       );
     } catch (error) {
-      console.error("/search/work failed:", error);
+      console.error("/work-model failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
     }
-  });
+  };
+  app.get("/work-model", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "work-model", renderErrorPage }), renderWorkSearch);
+  app.get("/search/work", requireIapUser({ renderErrorPage }), attachAppRole(), (_req, res) => res.redirect(302, "/work-model"));
 
   // 条件明細(capability_line_items)の横断一覧・検索ページ。
   app.get("/master/conditions", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "conditions", renderErrorPage }), (req, res) => {

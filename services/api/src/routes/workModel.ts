@@ -536,7 +536,7 @@ export function registerWorkModelRoutes(
            LEFT JOIN documents d ON d.id  = cl.document_id
            LEFT JOIN vendors dv  ON dv.id = d.vendor_id
           WHERE cl.work_id = $1
-            AND cl.void_reason IS NULL
+            AND COALESCE(cl.is_active, true) = true
           ORDER BY cl.direction, cl.line_no NULLS LAST, cl.id`,
         [id]
       );
