@@ -9062,7 +9062,7 @@ ${details}
             const vr = await query(
               `SELECT COALESCE(NULLIF(v.vendor_name,''), NULLIF(v.trade_name,''),
                                NULLIF(v.pen_name,'')) AS name
-                 FROM contract_capabilities cc
+                 FROM documents cc
                  JOIN vendors v ON v.id = cc.vendor_id
                 WHERE cc.document_number = $1
                 LIMIT 1`,
@@ -9235,7 +9235,7 @@ ${details}
           if ((!vendorCode || vendorCode.toUpperCase() === "UNKNOWN") && !vendorName && d.issue_key) {
             const orderRes = await query(
               `SELECT v.vendor_code
-                 FROM contract_capabilities cc
+                 FROM documents cc
                  LEFT JOIN vendors v ON v.id = cc.vendor_id
                 WHERE cc.backlog_issue_key = $1
                   AND cc.record_type = 'purchase_order'
@@ -9437,7 +9437,7 @@ ${details}
         `SELECT d.id, d.document_number, d.issue_key, d.template_type, d.form_data,
                 d.drive_link, d.base_document_number, cc.id AS capability_id
            FROM documents d
-           LEFT JOIN contract_capabilities cc
+           LEFT JOIN documents cc
              ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
            LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
           WHERE d.template_type = ANY($1::text[])
@@ -9616,7 +9616,7 @@ ${details}
             let ledgerCodeForV3: string | null = null;
             try {
               const lc = await query(
-                `SELECT l.ledger_code FROM contract_capabilities cc
+                `SELECT l.ledger_code FROM documents cc
                    JOIN ledgers l ON l.id = cc.ledger_ref_id
                   WHERE cc.id = $1 LIMIT 1`,
                 [capId]
@@ -9716,7 +9716,7 @@ ${details}
         await query(
           `SELECT d.document_number, d.issue_key, d.form_data, cc.id AS capability_id
              FROM documents d
-             JOIN contract_capabilities cc
+             JOIN documents cc
                ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
             WHERE d.template_type = ANY($1::text[])
               AND COALESCE(d.lifecycle_status, 'final') = 'final'
@@ -10559,7 +10559,7 @@ ${details}
       if (!projectTitle || !orderPoDate) {
         try {
           const capT = await query(
-            `SELECT contract_title, issue_date_po FROM contract_capabilities
+            `SELECT contract_title, issue_date_po FROM documents
               WHERE document_number = $1 LIMIT 1`,
             [documentNumber]
           );
@@ -12419,7 +12419,7 @@ ${details}
                 d.created_at, cc.contract_title AS cap_contract_title,
                 cc.issue_date_po AS cap_issue_date_po
            FROM documents d
-           LEFT JOIN contract_capabilities cc
+           LEFT JOIN documents cc
              ON cc.document_number = d.document_number
           WHERE d.id = $1`,
         [id]
@@ -12456,14 +12456,14 @@ ${details}
           let poDate: any = null;
           if (fd.parent_po_id) {
             const q = await query(
-              `SELECT issue_date_po FROM contract_capabilities WHERE id = $1 LIMIT 1`,
+              `SELECT issue_date_po FROM documents WHERE id = $1 LIMIT 1`,
               [Number(fd.parent_po_id)]
             );
             poDate = q.rows[0]?.issue_date_po || null;
           }
           if (!poDate && fd.parent_po_issue_key) {
             const q = await query(
-              `SELECT issue_date_po FROM contract_capabilities
+              `SELECT issue_date_po FROM documents
                 WHERE backlog_issue_key = $1 AND record_type = 'purchase_order' LIMIT 1`,
               [String(fd.parent_po_issue_key)]
             );
@@ -12473,7 +12473,7 @@ ${details}
             const q = await query(
               `SELECT cc.issue_date_po
                  FROM documents d
-                 JOIN contract_capabilities cc ON cc.backlog_issue_key = d.issue_key
+                 JOIN documents cc ON cc.backlog_issue_key = d.issue_key
                   AND cc.record_type = 'purchase_order'
                 WHERE d.document_number = $1 LIMIT 1`,
               [String(fd.parent_po_number)]
@@ -12966,7 +12966,7 @@ ${details}
         await client.query(
           `SELECT d.id, d.document_number, d.drive_link, d.contract_id, cc.id AS cap_id
              FROM documents d
-             LEFT JOIN contract_capabilities cc
+             LEFT JOIN documents cc
                ON cc.document_number = d.document_number
             WHERE d.id = ANY($1::int[])
             FOR UPDATE OF d`,
@@ -13236,7 +13236,7 @@ ${details}
                         AND d.template_type LIKE '%purchase_order%'
                       ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number,
                     v.vendor_name AS vendor_name
-               FROM contract_capabilities cc
+               FROM documents cc
                LEFT JOIN vendors v ON v.id = cc.vendor_id
               WHERE cc.backlog_issue_key = $1
                 AND cc.record_type = 'purchase_order'
@@ -13392,7 +13392,7 @@ ${details}
           if (!orderItemId && parentPoIssueKey) {
             // Phase 23: order_items → contract_capabilities (purchase_order)
             const r = await query(
-              `SELECT id FROM contract_capabilities
+              `SELECT id FROM documents
                  WHERE backlog_issue_key = $1
                    AND record_type = 'purchase_order'
                  LIMIT 1`,
@@ -13404,7 +13404,7 @@ ${details}
             const r = await query(
               `SELECT cc.id, cc.backlog_issue_key
                  FROM documents d
-                 JOIN contract_capabilities cc
+                 JOIN documents cc
                    ON cc.backlog_issue_key = d.issue_key
                   AND cc.record_type = 'purchase_order'
                 WHERE d.document_number = $1
@@ -13444,7 +13444,7 @@ ${details}
                         AND d.template_type LIKE '%purchase_order%'
                       ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number,
                     v.vendor_name AS vendor_name
-               FROM contract_capabilities cc
+               FROM documents cc
                LEFT JOIN vendors v ON v.id = cc.vendor_id
               WHERE cc.id = $1
                 AND cc.record_type = 'purchase_order'
@@ -14437,7 +14437,7 @@ ${details}
           `WITH issue_line_refs AS (
              SELECT cl.id AS condition_line_id, 'contracting'::text AS relation
                FROM condition_lines cl
-               JOIN contract_capabilities cc ON cc.id = cl.capability_id
+               JOIN documents cc ON cc.id = cl.capability_id
               WHERE cc.backlog_issue_key = $1
              UNION ALL
              SELECT ce.condition_line_id, 'payment'::text AS relation
@@ -14480,7 +14480,7 @@ ${details}
                     SELECT DISTINCT x.issue_key
                       FROM (
                         SELECT cc2.backlog_issue_key AS issue_key
-                          FROM contract_capabilities cc2
+                          FROM documents cc2
                          WHERE cc2.id = cl.capability_id
                         UNION ALL
                         SELECT ce2.backlog_issue_key AS issue_key
@@ -14527,7 +14527,7 @@ ${details}
              JOIN condition_lines cl ON cl.id = il.condition_line_id
              LEFT JOIN condition_line_status_v s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
             ORDER BY cl.line_code NULLS LAST, cl.id`,
           [issueKey]
         );
@@ -14613,7 +14613,7 @@ ${details}
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
              LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
@@ -14676,7 +14676,7 @@ ${details}
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
                      AND ce.event_type = 'inspection') AS inspection_event_count
                  FROM condition_lines cl
-                 LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+                 LEFT JOIN documents cc ON cc.id = cl.capability_id
                 WHERE cl.id = ANY($1::int[])`,
               [ids]
             );
@@ -14747,7 +14747,7 @@ ${details}
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
              LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
@@ -15306,7 +15306,7 @@ ${details}
         `SELECT v.vendor_code, v.vendor_name, v.entity_type,
                 v.account_holder_kana, v.withholding_enabled,
                 v.invoice_registration_number
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.id = $1 LIMIT 1`,
         [masterId]
@@ -15321,7 +15321,7 @@ ${details}
           `SELECT v.vendor_code, v.vendor_name, v.entity_type,
                   v.account_holder_kana, v.withholding_enabled,
                   v.invoice_registration_number
-             FROM contract_capabilities cc
+             FROM documents cc
              LEFT JOIN vendors v ON v.id = cc.vendor_id
             WHERE cc.id = $1 AND cc.record_type = 'purchase_order'
             LIMIT 1`,
@@ -15839,7 +15839,7 @@ ${details}
           // 注: contract_capabilities に work_id 列は無い。ledger_ref_id のみ既存値を取り込む。
           const existingLc = await query(
             `SELECT ledger_ref_id
-               FROM contract_capabilities
+               FROM documents
               WHERE backlog_issue_key = $1
                 AND contract_category = 'license'
                 AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
@@ -16469,7 +16469,7 @@ ${details}
             const poNum = String(fd.linked_contract_number || parentOrderNumber || "").trim();
             if (poNum) {
               const cq = await query(
-                `SELECT id FROM contract_capabilities
+                `SELECT id FROM documents
                   WHERE document_number = $1 AND record_type = 'purchase_order' LIMIT 1`,
                 [poNum]
               );
@@ -16953,7 +16953,7 @@ ${details}
         if (templateType === "pub_license_terms") {
           try {
             const capRes = await query(
-              `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+              `SELECT id FROM documents WHERE document_number = $1 LIMIT 1`,
               [docNumber]
             );
             const capId = Number(capRes.rows[0]?.id);
@@ -17029,7 +17029,7 @@ ${details}
         // Phase 23: order_items → contract_capabilities (purchase_order),
         //   delivery_events.order_item_id → capability_id。
         const orderRes = await query(
-          `SELECT id FROM contract_capabilities
+          `SELECT id FROM documents
              WHERE backlog_issue_key = $1
                AND record_type = 'purchase_order'
              LIMIT 1`,
@@ -17685,7 +17685,7 @@ ${details}
           orderItemId = Number(formData.parent_po_id);
         } else {
           const orderItemResult = await query(
-            `SELECT id FROM contract_capabilities
+            `SELECT id FROM documents
               WHERE backlog_issue_key = $1
                 AND record_type = 'purchase_order'`,
             [issueKey]
@@ -17963,7 +17963,7 @@ ${details}
         //   ledger_ref_id / material_ref_id は実在列なので既存値を引き継ぐ。
         const existingLcRow = await query(
           `SELECT ledger_ref_id, material_ref_id
-             FROM contract_capabilities
+             FROM documents
             WHERE backlog_issue_key = $1
               AND contract_category = 'license'
               AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
