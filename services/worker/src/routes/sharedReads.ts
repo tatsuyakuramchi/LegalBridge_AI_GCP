@@ -261,7 +261,7 @@ export function registerSharedReads(
       let result: any;
       try {
         result = await query(
-          `SELECT cc.*, v.vendor_name,
+          `SELECT cc.id, cc.vendor_id, cc.external_asset_id, cc.record_type, cc.contract_category, cc.contract_type, cc.contract_title, cc.document_number, cc.contract_status, cc.effective_date, cc.expiration_date, cc.auto_renewal, cc.source_system, cc.legalon_url, cc.cloudsign_url, cc.drive_url, cc.document_url, cc.purpose_codes, cc.purchase_order_allowed, cc.license_condition_allowed, cc.publication_contract_allowed, cc.publication_condition_allowed, cc.condition_number, cc.original_work, cc.work_name, cc.product_name, cc.media, cc.territory, cc.language, cc.scope, cc.covered_service_categories, cc.covered_works, cc.covered_products, cc.covered_media, cc.covered_territory, cc.covered_language, cc.sublicense_allowed, cc.overseas_allowed, cc.translation_allowed, cc.ebook_allowed, cc.merchandising_allowed, cc.video_adaptation_allowed, cc.game_adaptation_allowed, cc.risk_flags, cc.legal_review_required, cc.scope_confidence, cc.reason_template, cc.caution_note, cc.created_at, cc.updated_at, cc.base_document_number, cc.revision, cc.is_primary, cc.superseded_by, cc.lifecycle_status, cc.is_active, cc.additional_parties, cc.renewal_notice_months, cc.alert_lead_months, cc.last_renewal_alert_at, cc.alert_slack_channels, cc.alert_slack_mentions, cc.ledger_code, cc.ledger_ref_id, cc.material_ref_id, cc.tax_rate, cc.amount_ex_tax, cc.amount_inc_tax, cc.tax_amount, cc.due_date, cc.issue_date_po, cc.legal_request_id, cc.backlog_issue_key, cc.flow_direction, cc.deliverable_ownership, cc.structural_role, cc.parent_capability_id, cc.template_family, v.vendor_name,
                   -- フォーム統一: 通常の文書作成フォーム由来の行かどうかを FE が
                   --   判定できるよう template_type を同梱 (cc は documents の互換
                   --   ビューで id が一致する)。テンプレ由来なら「文書フォームで
@@ -447,14 +447,14 @@ export function registerSharedReads(
                     ),
                     '[]'::json
                   ) AS other_fees
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON cc.vendor_id = v.id
            ORDER BY cc.id DESC`
         );
       } catch (err: any) {
         if (err && (err.code === "42P01" || err.code === "42703")) {
           result = await query(
-            `SELECT cc.*, v.vendor_name,
+            `SELECT cc.id, cc.vendor_id, cc.external_asset_id, cc.record_type, cc.contract_category, cc.contract_type, cc.contract_title, cc.document_number, cc.contract_status, cc.effective_date, cc.expiration_date, cc.auto_renewal, cc.source_system, cc.legalon_url, cc.cloudsign_url, cc.drive_url, cc.document_url, cc.purpose_codes, cc.purchase_order_allowed, cc.license_condition_allowed, cc.publication_contract_allowed, cc.publication_condition_allowed, cc.condition_number, cc.original_work, cc.work_name, cc.product_name, cc.media, cc.territory, cc.language, cc.scope, cc.covered_service_categories, cc.covered_works, cc.covered_products, cc.covered_media, cc.covered_territory, cc.covered_language, cc.sublicense_allowed, cc.overseas_allowed, cc.translation_allowed, cc.ebook_allowed, cc.merchandising_allowed, cc.video_adaptation_allowed, cc.game_adaptation_allowed, cc.risk_flags, cc.legal_review_required, cc.scope_confidence, cc.reason_template, cc.caution_note, cc.created_at, cc.updated_at, cc.base_document_number, cc.revision, cc.is_primary, cc.superseded_by, cc.lifecycle_status, cc.is_active, cc.additional_parties, cc.renewal_notice_months, cc.alert_lead_months, cc.last_renewal_alert_at, cc.alert_slack_channels, cc.alert_slack_mentions, cc.ledger_code, cc.ledger_ref_id, cc.material_ref_id, cc.tax_rate, cc.amount_ex_tax, cc.amount_inc_tax, cc.tax_amount, cc.due_date, cc.issue_date_po, cc.legal_request_id, cc.backlog_issue_key, cc.flow_direction, cc.deliverable_ownership, cc.structural_role, cc.parent_capability_id, cc.template_family, v.vendor_name,
                     -- 旧環境 (cc が実テーブルで documents と id が一致しない) では
                     --   template_type は解決できないので NULL 固定。
                     NULL AS template_type,
@@ -471,7 +471,7 @@ export function registerSharedReads(
                     '[]'::json AS line_items,
                     '[]'::json AS expenses,
                     '[]'::json AS other_fees
-             FROM contract_capabilities cc
+             FROM documents cc
              LEFT JOIN vendors v ON cc.vendor_id = v.id
              ORDER BY cc.id DESC`
           );
@@ -576,7 +576,7 @@ export function registerSharedReads(
              FROM external_assets ea
              LEFT JOIN documents d
                ON d.document_number = ea.asset_number
-             LEFT JOIN contract_capabilities cc
+             LEFT JOIN documents cc
                ON cc.document_number = ea.asset_number
                   OR cc.document_number = COALESCE(d.base_document_number, ea.asset_number)
             WHERE ${includeHistory ? "TRUE" : "COALESCE(d.lifecycle_status, 'final') = 'final'"}
