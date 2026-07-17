@@ -88,6 +88,16 @@ steps:
       - "5"
       - --timeout
       - "300"
+      # Phase 6 で共有秘密のバンドル焼き込みを廃止し、BFF プロキシ(server.ts)が
+      #   サーバ env の LB_PORTAL_SECRET から X-LB-PORTAL-SECRET を付与する方式へ
+      #   移行した。その admin-ui 側の秘密バインドはこれまで「既にバインド済み」の
+      #   前提に依存しており、パイプラインでは担保されていなかった。未設定 or 旧
+      #   バージョン固定だと search-api の requireIapUser が portal_secret を弾き、
+      #   取引先マスター保存(search-api 経由の write)が 401 になる。
+      #   ここで :latest を明示バインドし、search-api と同一の値へ自己修復させる。
+      #   --update-secrets は指定キーのみ追加/更新し、他の既存バインドは温存する。
+      - --update-secrets
+      - "LB_PORTAL_SECRET=lb-portal-secret:latest"
       - --quiet
 
   # 4. Force the freshly deployed revision to take 100% of traffic.
