@@ -269,7 +269,17 @@ export function MatterDetailPage() {
   async function createDriveFolder() {
     setCreatingFolder(true)
     try {
-      await run(matterClient.createDriveFolder(matterId), "Drive 案件フォルダを作成しました")
+      const json: any = await matterClient.createDriveFolder(matterId)
+      // LB-08 修復: 案件フォルダ外にあった生成済みPDFを 04_Final へ移動した件数を通知。
+      const moved = Number(json?.relocated?.moved || 0)
+      const failed = Number(json?.relocated?.failed || 0)
+      const extra =
+        moved > 0
+          ? `（案件外にあった文書 ${moved} 件を 04_Final へ移動${failed ? ` / ${failed} 件は移動失敗` : ""}）`
+          : failed
+          ? `（文書 ${failed} 件の移動に失敗）`
+          : ""
+      push(`Drive 案件フォルダを作成しました${extra}`, failed ? "error" : "success")
       await load()
     } catch (e: any) {
       push(`フォルダ作成に失敗: ${e?.message || e}`, "error")

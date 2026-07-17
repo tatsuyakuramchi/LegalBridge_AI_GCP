@@ -10669,6 +10669,29 @@ ${details}
         o.toFolderId,
         `[統合元${o.fromMatterCode ? ` ${o.fromMatterCode}` : ""}] `
       ),
+    // LB-08 修復: 案件フォルダの後付け作成時に、既に生成済みで案件フォルダ外に
+    //   ある "はぐれPDF"(documents.drive_link)を 04_Final 配下へ移動する。
+    //   04_Final を ensure してから 1 件ずつ移動し、成功/スキップ/失敗を集計する。
+    relocateDocsToFinal: async (matterFolderId, driveLinks) => {
+      const final = await googleDriveService.ensureFolder("04_Final", matterFolderId);
+      let moved = 0;
+      let skipped = 0;
+      let failed = 0;
+      for (const link of driveLinks) {
+        try {
+          const r = await googleDriveService.moveFileToFolder(link, final.id);
+          if (r.moved) moved += 1;
+          else skipped += 1;
+        } catch (e: any) {
+          failed += 1;
+          console.warn(
+            "[matters] relocate stray PDF failed (non-fatal):",
+            e?.message || e
+          );
+        }
+      }
+      return { moved, skipped, failed };
+    },
   });
 
   // 関連当事者取引 判定 (/rpt/*): RPT.gs の書込 (法人/役員/株主構成/議案)。読取は search-API。

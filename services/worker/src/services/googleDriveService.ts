@@ -417,6 +417,34 @@ export class GoogleDriveService {
   }
 
   /**
+   * LB-08 修復: drive_link のファイルを targetFolderId 直下へ移動する。
+   *   既にその配下にあれば何もしない(moved=false)。fileId が取れない/移動不要は
+   *   moved=false を返す。移動失敗は throw(呼び出し側で best-effort に集計)。
+   */
+  async moveFileToFolder(
+    driveLink: string,
+    targetFolderId: string
+  ): Promise<{ moved: boolean; fileId: string | null }> {
+    const fileId = this.fileIdFromLink(driveLink);
+    if (!fileId) return { moved: false, fileId: null };
+    const cur = await this.drive.files.get({
+      fileId,
+      fields: "id, parents",
+      supportsAllDrives: true,
+    });
+    const parents = cur.data.parents || [];
+    if (parents.includes(targetFolderId)) return { moved: false, fileId };
+    await this.drive.files.update({
+      fileId,
+      addParents: targetFolderId,
+      removeParents: parents.join(",") || undefined,
+      fields: "id",
+      supportsAllDrives: true,
+    });
+    return { moved: true, fileId };
+  }
+
+  /**
    * Phase 3 (欠損検査): ファイルの実在・状態を確認する。
    *   ok / missing(404 or ゴミ箱) / forbidden(403) / error を返す(throw しない)。
    */
