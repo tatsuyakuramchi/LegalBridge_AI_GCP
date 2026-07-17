@@ -129,7 +129,7 @@ export async function getContractPurposes() {
 
 export async function getMasterContractSummary(vendorId: number) {
   const res = await query(
-    `SELECT * FROM contract_capabilities
+    `SELECT * FROM documents
      WHERE vendor_id = $1 AND record_type = 'master_contract'`,
     [vendorId]
   );
@@ -184,7 +184,7 @@ function createEmptyStatus(availableDocument: string, defaultTitle: string) {
 
 export async function getLicenseConditions(vendorId: number) {
   const res = await query(
-    `SELECT * FROM contract_capabilities
+    `SELECT * FROM documents
      WHERE vendor_id = $1 AND record_type = 'license_condition'`,
     [vendorId]
   );
@@ -201,7 +201,7 @@ export async function getLicenseConditions(vendorId: number) {
 
 export async function getPublicationConditions(vendorId: number) {
   const res = await query(
-    `SELECT * FROM contract_capabilities
+    `SELECT * FROM documents
      WHERE vendor_id = $1 AND record_type = 'publication_condition'`,
     [vendorId]
   );

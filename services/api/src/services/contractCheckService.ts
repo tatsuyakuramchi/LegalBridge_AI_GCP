@@ -206,7 +206,7 @@ export async function getContractPurposes() {
 
 export async function getMasterContractSummary(vendorId: number) {
   const res = await query(
-    `SELECT * FROM contract_capabilities
+    `SELECT * FROM documents
      WHERE vendor_id = $1 AND record_type = 'master_contract'`,
     [vendorId]
   );
@@ -261,7 +261,7 @@ function createEmptyStatus(availableDocument: string, defaultTitle: string) {
 
 export async function getLicenseConditions(vendorId: number) {
   const res = await query(
-    `SELECT * FROM contract_capabilities
+    `SELECT * FROM documents
      WHERE vendor_id = $1 AND record_type = 'license_condition'`,
     [vendorId]
   );
@@ -312,7 +312,7 @@ export async function getDocumentsByCategory(vendorId: number) {
         cc.base_document_number,
         cc.revision,
         cc.is_primary
-      FROM contract_capabilities cc
+      FROM documents cc
       WHERE (
              cc.vendor_id = $1
           OR cc.additional_parties @> jsonb_build_array(jsonb_build_object('vendor_id', $1::int))
@@ -356,7 +356,7 @@ export async function getDocumentsByCategory(vendorId: number) {
         cc.expiration_date,
         cc.contract_type,
         cc.document_url
-      FROM contract_capabilities cc
+      FROM documents cc
       WHERE (
              cc.vendor_id = $1
           OR cc.additional_parties @> jsonb_build_array(jsonb_build_object('vendor_id', $1::int))
@@ -465,7 +465,7 @@ export async function getDocumentsByCategory(vendorId: number) {
 
 export async function getPublicationConditions(vendorId: number) {
   const res = await query(
-    `SELECT * FROM contract_capabilities
+    `SELECT * FROM documents
      WHERE vendor_id = $1 AND record_type = 'publication_condition'`,
     [vendorId]
   );

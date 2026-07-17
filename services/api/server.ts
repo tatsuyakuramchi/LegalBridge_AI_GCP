@@ -2405,7 +2405,7 @@ async function startServer() {
           SELECT lc.*, rp.total_amount as last_payment_amount, rp.period as last_period, me.product_name, me.msrp,
                  v.vendor_name, v.address as vendor_address, v.email as vendor_email, v.contact_name as vendor_contact,
                  ea.asset_number as linked_terms_number, ea.file_link as linked_terms_link
-          FROM contract_capabilities lc
+          FROM documents lc
           LEFT JOIN royalty_payments rp ON lc.id = rp.license_contract_id
           LEFT JOIN manufacturing_events me ON lc.id = me.license_contract_id
           LEFT JOIN vendors v ON (lc.licensor = v.vendor_name)

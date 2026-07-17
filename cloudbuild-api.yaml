@@ -45,7 +45,7 @@ steps:
     args:
       - scripts/audit/compat_view_refs.sh
       - --gate-reads
-      - "135"
+      - "125"
 
   - id: build
     name: gcr.io/cloud-builders/docker
