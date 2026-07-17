@@ -27,6 +27,7 @@ import {
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { matterClient } from "@/src/lib/api/matterClient"
+import { documentClient } from "@/src/lib/api/documentClient"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -338,12 +339,8 @@ export function DocumentEditorPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch(`/api/documents/${encodeURIComponent(targetId)}`)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
-        if (!data?.ok || !data.form_data) {
-          throw new Error(data?.error || "form_data not found")
-        }
+        const data: any = await documentClient.get(targetId)
+        if (!data.form_data) throw new Error("form_data not found")
         if (cancelled) return
         setSelectedTemplate(data.template_type)
         setSelectedIssue(data.issue_key || "")
@@ -614,21 +611,13 @@ export function DocumentEditorPage() {
       )
       if (!hasContent) return false
       try {
-        const res = await fetch("/api/document-drafts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            issue_key: selectedIssue,
-            template_type: selectedTemplate,
-            form_data: formData,
-            // 採番は明示的な「保存」操作のときだけ行う(暗黙保存では採番しない)。
-            assign_number: assignNumber,
-          }),
+        const data: any = await documentClient.saveDraft({
+          issue_key: selectedIssue,
+          template_type: selectedTemplate,
+          form_data: formData,
+          // 採番は明示的な「保存」操作のときだけ行う(暗黙保存では採番しない)。
+          assign_number: assignNumber,
         })
-        const data = await res.json().catch(() => ({}))
-        if (!res.ok || data?.ok === false) {
-          throw new Error(data?.error || `HTTP ${res.status}`)
-        }
         // 発番タイミング: 初回保存で採番された document_number を formData に保持し、
         //   生成(Finalize)時に existingDocumentNumber として流用する。
         const assignedNo = data?.draft?.document_number
@@ -712,16 +701,9 @@ export function DocumentEditorPage() {
       let draft: any = null
       if (!skipRestore && tmpl) {
         try {
-          const dRes = await fetch(
-            `/api/document-drafts/${encodeURIComponent(key)}?template_type=${encodeURIComponent(
-              tmpl
-            )}`
-          )
-          if (dRes.ok) {
-            const d = await dRes.json().catch(() => ({}))
-            if (d?.ok && d?.draft) draft = d.draft
-          }
-          // 404 は draft 無し = 正常系。それ以外のエラーも警告のみで継続。
+          // 404(下書き無し)は null。それ以外のエラーは warn して継続。
+          const d: any = await documentClient.getDraftOrNull(key, tmpl)
+          if (d?.draft) draft = d.draft
         } catch (e) {
           console.warn("[syncFromDatabase] draft lookup failed:", e)
         }
@@ -1086,15 +1068,7 @@ export function DocumentEditorPage() {
     if (!previousDocument?.document_number) return
     setLoadingPrevious(true)
     try {
-      const res = await fetch(
-        `/api/documents/by-number/${encodeURIComponent(
-          previousDocument.document_number
-        )}`
-      )
-      const data = await res.json()
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || `HTTP ${res.status}`)
-      }
+      const data: any = await documentClient.getByNumber(previousDocument.document_number)
       // form_data を formData にマージ (現在の formData が空 or 確認後上書き)
       const hasEdits = Object.keys(formData || {}).some(
         (k) => !k.startsWith("__") && (formData as any)[k]
@@ -1134,15 +1108,7 @@ export function DocumentEditorPage() {
     if (!previousDocument?.document_number) return
     setLoadingPrevious(true)
     try {
-      const res = await fetch(
-        `/api/documents/by-number/${encodeURIComponent(
-          previousDocument.document_number
-        )}`
-      )
-      const data = await res.json()
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || `HTTP ${res.status}`)
-      }
+      const data: any = await documentClient.getByNumber(previousDocument.document_number)
       const prevFormData = {
         ...(data.form_data || {}),
         __reopen_id: previousDocument.id,
@@ -1689,16 +1655,7 @@ export function DocumentEditorPage() {
     const label = doc.document_number || doc.issue_key
     if (!window.confirm(`下書き「${label}」を削除しますか？ (元に戻せません)`)) return
     try {
-      const res = await fetch(
-        `/api/document-drafts/${encodeURIComponent(
-          doc.issue_key
-        )}?template_type=${encodeURIComponent(doc.template_type)}`,
-        { method: "DELETE" }
-      )
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || `HTTP ${res.status}`)
-      }
+      await documentClient.deleteDraft(doc.issue_key, doc.template_type)
       showNotification(`下書き「${label}」を削除しました`, "success")
       // 一覧を更新するため Sheet を一旦閉じる(再オープンで再検索される)。
       setRecallOpen(false)
