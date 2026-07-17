@@ -13,6 +13,7 @@
  */
 
 import type { Express, RequestHandler } from "express";
+import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.ts";
 
 export interface ContractsV2Deps {
   query: (text: string, params?: any[]) => Promise<any>;
@@ -41,12 +42,12 @@ async function readFinancialConditionsForDisplay(
               cl.calc_period_kind, cl.calc_period_close_month
          FROM condition_lines cl
         WHERE cl.source_condition_id IN (
-                SELECT id FROM capability_financial_conditions WHERE capability_id = $1)
+                SELECT id FROM condition_lines WHERE legacy_role = 'cfc' AND capability_id = $1)
         ORDER BY cl.source_seq_no ASC NULLS LAST, cl.id`,
       [capabilityId]
     );
     const oldCount = await query(
-      `SELECT COUNT(*)::int AS c FROM capability_financial_conditions WHERE capability_id = $1`,
+      `SELECT COUNT(*)::int AS c FROM condition_lines WHERE legacy_role = 'cfc' AND capability_id = $1`,
       [capabilityId]
     );
     if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
@@ -57,8 +58,8 @@ async function readFinancialConditionsForDisplay(
   }
   return (
     await query(
-      `SELECT * FROM capability_financial_conditions
-        WHERE capability_id = $1 ORDER BY condition_no`,
+      `SELECT * FROM (${CFC_VIEW_SQL}) cfc
+        WHERE cfc.capability_id = $1 ORDER BY condition_no`,
       [capabilityId]
     )
   ).rows;
@@ -140,8 +141,8 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             (SELECT CASE
                WHEN (SELECT COUNT(*) FROM condition_lines x
                       WHERE x.capability_id = cc.id AND x.source_line_item_id IS NOT NULL)
-                    = (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id)
-                AND (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id) > 0
+                    = (SELECT COUNT(*) FROM condition_lines y WHERE y.legacy_role = 'cli' AND y.capability_id = cc.id)
+                AND (SELECT COUNT(*) FROM condition_lines y WHERE y.legacy_role = 'cli' AND y.capability_id = cc.id) > 0
                THEN (
                  SELECT COUNT(*)::int FROM condition_lines cl
                    JOIN condition_line_status_v s ON s.id = cl.id
@@ -152,7 +153,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
                     AND s.status IN ('open','partially_fulfilled')
                )
                ELSE NULL END),
-            (SELECT COUNT(*) FROM capability_line_items cli
+            (SELECT COUNT(*) FROM (${CLI_VIEW_SQL}) cli
                WHERE cli.capability_id = cc.id
                  AND COALESCE(cli.amount_ex_tax, 0) > 0
                  AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
@@ -161,7 +162,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           ) AS unissued_line_count`;
       // 旧式(新台帳テーブル未適用環境向けフォールバック)。
       const unissuedLegacyExpr = `
-          (SELECT COUNT(*) FROM capability_line_items cli
+          (SELECT COUNT(*) FROM (${CLI_VIEW_SQL}) cli
              WHERE cli.capability_id = cc.id
                AND COALESCE(cli.amount_ex_tax, 0) > 0
                AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
@@ -196,10 +197,10 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           v.vendor_code,
           v.vendor_name,
           v.entity_type AS vendor_entity_type,
-          (SELECT COUNT(*) FROM capability_line_items cli WHERE cli.capability_id = cc.id) AS line_count,
-          (SELECT COUNT(*) FROM capability_financial_conditions cfc WHERE cfc.capability_id = cc.id) AS condition_count,
+          (SELECT COUNT(*) FROM condition_lines cli WHERE cli.legacy_role = 'cli' AND cli.capability_id = cc.id) AS line_count,
+          (SELECT COUNT(*) FROM condition_lines cfc WHERE cfc.legacy_role = 'cfc' AND cfc.capability_id = cc.id) AS condition_count,
           (SELECT COALESCE(SUM(cli.inspected_amount_ex_tax), 0)
-             FROM capability_line_items cli WHERE cli.capability_id = cc.id) AS inspected_amount,
+             FROM (${CLI_VIEW_SQL}) cli WHERE cli.capability_id = cc.id) AS inspected_amount,
           -- 検収書未発行の明細数(検収待ち制御の主キー)。算出式は下で組み立て、
           --   新台帳テーブル未適用環境では旧 status_flags 方式へフォールバックする。
           ${unissuedExpr},
@@ -218,7 +219,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           -- 発注書由来の予定納期: 納品報告(delivery_events)が無く inspection_deadline が
           --   出ない検収待ち行向けに、未検収明細(capability_line_items.delivery_date)の
           --   最も近い納期を返す。画面は inspection_deadline が無い時のフォールバック表示に使う。
-          (SELECT MIN(cli.delivery_date) FROM capability_line_items cli
+          (SELECT MIN(cli.delivery_date) FROM (${CLI_VIEW_SQL}) cli
              WHERE cli.capability_id = cc.id
                AND cli.delivery_date IS NOT NULL
                AND COALESCE(cli.amount_ex_tax, 0) > 0
@@ -333,7 +334,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
                     FROM delivery_line_items dli
                    WHERE dli.capability_line_item_id = cli.id
                 ), 0) AS inspected_amount_so_far
-           FROM capability_line_items cli
+           FROM (${CLI_VIEW_SQL}) cli
           WHERE cli.capability_id = $1
           ORDER BY cli.line_no`,
         [id]
@@ -758,7 +759,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
                  cc.id AS capability_id, cc.document_number, cc.contract_title,
                  cc.contract_category, cc.record_type,
                  v.vendor_name, v.vendor_code
-            FROM capability_financial_conditions cfc
+            FROM (${CFC_VIEW_SQL}) cfc
             JOIN documents cc ON cc.id = cfc.capability_id
             LEFT JOIN vendors v ON v.id = cc.vendor_id
            WHERE ${where.join(" AND ")}

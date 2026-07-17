@@ -1,7 +1,11 @@
 // AUTO-GENERATED from services/api/server.ts by scripts/extract-form-routes.mjs.
-// Do not edit. C2 batch 3b: backlog form-context / history の byte-exact 移植。
+// C2 batch 3b: backlog form-context / history の byte-exact 移植。
 // 依存: query, backlogService(getIssue / extractCustomFields)。
+// ※ 生成元(api/server.ts)は form-context を helper 関数呼び出しへ改修済みで、本ファイルは
+//   旧インライン版から乖離している(再生成すると worker に無い helper を参照して壊れる)。
+//   そのため Phase 7 G3b の互換VIEW撤去は本ファイルを直接手修正で対応した。
 import type { Express } from "express";
+import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.ts";
 
 export function registerFormReadRoutes(
   app: Express,
@@ -83,7 +87,7 @@ export function registerFormReadRoutes(
                       amount_ex_tax, rate_pct, calc_method, payment_terms,
                       payment_method, payment_date, delivery_date,
                       cycle, term_start, term_end, billing_day
-                 FROM capability_line_items
+                 FROM (${CLI_VIEW_SQL}) cli
                 WHERE capability_id = $1
                 ORDER BY line_no ASC`,
               [orderItemId]
@@ -95,7 +99,7 @@ export function registerFormReadRoutes(
                         amount_ex_tax, calc_method, payment_terms,
                         payment_method, payment_date, delivery_date,
                         cycle, term_start, term_end, billing_day
-                   FROM capability_line_items
+                   FROM (${CLI_VIEW_SQL}) cli
                   WHERE capability_id = $1
                   ORDER BY line_no ASC`,
                 [orderItemId]
@@ -178,7 +182,7 @@ export function registerFormReadRoutes(
                           payment_terms,
                           payment_method, payment_date, delivery_date,
                           deliverable_ownership
-                     FROM capability_line_items
+                     FROM (${CLI_VIEW_SQL}) cli
                     WHERE capability_id = $1
                       AND (COALESCE(amount_ex_tax, 0) > 0
                            OR deliverable_ownership = '受注者'
@@ -192,7 +196,7 @@ export function registerFormReadRoutes(
                     `SELECT id, line_no, item_name, spec, unit_price, quantity,
                             amount_ex_tax, calc_method, payment_terms,
                             payment_method, payment_date, delivery_date
-                       FROM capability_line_items
+                       FROM (${CLI_VIEW_SQL}) cli
                       WHERE capability_id = $1
                         AND COALESCE(amount_ex_tax, 0) > 0
                       ORDER BY line_no ASC`,
@@ -344,7 +348,7 @@ export function registerFormReadRoutes(
           SELECT de.*,
                  oi.amount_ex_tax  as order_amount,
                  oi.contract_title as item_desc,
-                 (SELECT cli.spec FROM capability_line_items cli
+                 (SELECT cli.spec FROM (${CLI_VIEW_SQL}) cli
                     WHERE cli.capability_id = oi.id
                     ORDER BY cli.line_no LIMIT 1) as item_spec,
                  v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type,
@@ -621,7 +625,7 @@ export function registerFormReadRoutes(
                         condition_name, calc_type, fixed_kind,
                         subscription_cycle, unit_amount, guarantee_type,
                         region_territory, region_language, applies_scope
-                   FROM capability_financial_conditions
+                   FROM (${CFC_VIEW_SQL}) cfc
                   WHERE capability_id = $1
                   ORDER BY condition_no ASC`,
                 [lcId]
@@ -632,7 +636,7 @@ export function registerFormReadRoutes(
                   `SELECT id, condition_no, region_language_label, calc_method,
                           rate_pct, base_price_label, calc_period, currency,
                           formula_text, payment_terms, mg_amount
-                     FROM capability_financial_conditions
+                     FROM (${CFC_VIEW_SQL}) cfc
                     WHERE capability_id = $1
                     ORDER BY condition_no ASC`,
                   [lcId]

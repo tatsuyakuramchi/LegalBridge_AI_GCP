@@ -92,6 +92,7 @@ import { registerUnifiedIssues } from "./src/routes/unifiedIssues.ts";
 import { registerMatters } from "./src/routes/matters.ts";
 import { registerDocumentFile } from "./src/lib/documentFiles.ts";
 import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
+import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "./src/lib/compatViewSql.ts";
 // C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
 import { registerSharedReads } from "./src/routes/sharedReads.ts";
 // C2 batch 3b: form-context / history(byte-exact 抽出。生成元 scripts/extract-form-routes.mjs)。
@@ -3998,7 +3999,7 @@ ${details}
            cli.delivery_date,
            cc.backlog_issue_key,
            (cli.delivery_date - CURRENT_DATE) AS days_until
-         FROM capability_line_items cli
+         FROM (${CLI_VIEW_SQL}) cli
          JOIN documents cc
            ON cc.id = cli.capability_id
           AND cc.record_type = 'purchase_order'
@@ -4146,7 +4147,7 @@ ${details}
       `SELECT
          cli.id, cli.line_no, cli.item_name, cli.delivery_date,
          cc.backlog_issue_key
-       FROM capability_line_items cli
+       FROM (${CLI_VIEW_SQL}) cli
        JOIN documents cc
          ON cc.id = cli.capability_id
         AND cc.record_type = 'purchase_order'
@@ -4346,7 +4347,7 @@ ${details}
                 WHERE dli.capability_line_item_id = cli.id
                   AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
              ) AS accepted
-           FROM capability_line_items cli
+           FROM (${CLI_VIEW_SQL}) cli
            JOIN documents cc
              ON cc.id = cli.capability_id
             AND cc.record_type = 'purchase_order'
@@ -4390,7 +4391,7 @@ ${details}
       if (capId == null && /^\d+$/.test(key)) {
         const idNum = Number(key);
         r = await query(
-          `SELECT capability_id FROM capability_line_items WHERE id = $1 LIMIT 1`,
+          `SELECT capability_id FROM condition_lines WHERE legacy_role = 'cli' AND id = $1 LIMIT 1`,
           [idNum]
         );
         if (r.rows[0]) capId = Number(r.rows[0].capability_id);
@@ -4427,7 +4428,7 @@ ${details}
                   calc_method, payment_terms, payment_method, payment_date, delivery_date,
                   cycle, term_start, term_end, billing_day,
                   deliverable_ownership, royalty_calc_basis
-             FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
+             FROM (${CLI_VIEW_SQL}) cli WHERE capability_id = $1 ORDER BY line_no ASC`,
           [capId]
         );
       } catch (colErr: any) {
@@ -4436,7 +4437,7 @@ ${details}
             `SELECT line_no, item_name, spec, unit_price, quantity, amount_ex_tax,
                     calc_method, payment_terms, payment_method, payment_date, delivery_date,
                     cycle, term_start, term_end, billing_day
-               FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
+               FROM (${CLI_VIEW_SQL}) cli WHERE capability_id = $1 ORDER BY line_no ASC`,
             [capId]
           );
         } else {
@@ -4827,7 +4828,7 @@ ${details}
     // 未完了 line items を全取得 (Phase 23: capability ベース)
     const itemsRes = await query(
       `SELECT cli.id, cli.line_no, cli.item_name, cli.delivery_date
-         FROM capability_line_items cli
+         FROM (${CLI_VIEW_SQL}) cli
          JOIN documents cc
            ON cc.id = cli.capability_id
           AND cc.record_type = 'purchase_order'
@@ -6643,7 +6644,7 @@ ${details}
     //   経由の自己間接は文書経路で常に NULL(=0件)になるため、自己 id で結線する。
     const clRes = await query(
       `SELECT cl.id AS line_id, cfc.condition_no
-         FROM capability_financial_conditions cfc
+         FROM (${CFC_VIEW_SQL}) cfc
          JOIN condition_lines cl ON cl.id = cfc.id
         WHERE cfc.capability_id = $1`,
       [capabilityId]
@@ -6708,7 +6709,7 @@ ${details}
     // 買切(発注者帰属)の業務委託明細から生成された condition_line を引く。
     const clRes = await query(
       `SELECT cl.id AS line_id, cli.item_name
-         FROM capability_line_items cli
+         FROM (${CLI_VIEW_SQL}) cli
          JOIN condition_lines cl ON cl.source_line_item_id = cli.id
         WHERE cli.capability_id = $1
           AND COALESCE(cli.deliverable_ownership, '発注者') = '発注者'`,
@@ -6912,7 +6913,7 @@ ${details}
     };
     // 取引形態(cfc)を解決。
     const fcRes = await query(
-      `SELECT * FROM capability_financial_conditions
+      `SELECT * FROM (${CFC_VIEW_SQL}) cfc
         WHERE capability_id = $1 AND condition_no = $2 LIMIT 1`,
       [o.capabilityId, o.conditionNo]
     );
@@ -7180,11 +7181,11 @@ ${details}
       const removedRes =
         items.length === 0
           ? await query(
-              `SELECT id FROM capability_line_items WHERE capability_id = $1`,
+              `SELECT id FROM condition_lines WHERE legacy_role = 'cli' AND capability_id = $1`,
               [capabilityId]
             )
           : await query(
-              `SELECT id FROM capability_line_items
+              `SELECT id FROM (${CLI_VIEW_SQL}) cli
                 WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
               [capabilityId, keepNos]
             );
@@ -9713,7 +9714,7 @@ ${details}
               AND ($2 = '' OR d.document_number = $2)
               -- バルク自動検出(document_number 未指定)時のみ「明細欠落」条件で絞る。
               --   document_number 指定時は強制復旧(下の events 安全弁は維持)。
-              AND ($2 <> '' OR NOT EXISTS (SELECT 1 FROM capability_line_items li WHERE li.capability_id = cc.id))
+              AND ($2 <> '' OR NOT EXISTS (SELECT 1 FROM condition_lines li WHERE li.legacy_role = 'cli' AND li.capability_id = cc.id))
               AND ($2 <> '' OR EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id))
             ORDER BY d.created_at DESC NULLS LAST`,
           [CONTRACTING, onlyDoc]
@@ -9790,7 +9791,7 @@ ${details}
             (await query(`SELECT COUNT(*)::int AS n FROM condition_lines WHERE capability_id = $1`, [t.capability_id])).rows[0].n
           );
           const liCount = Number(
-            (await query(`SELECT COUNT(*)::int AS n FROM capability_line_items WHERE capability_id = $1`, [t.capability_id])).rows[0].n
+            (await query(`SELECT COUNT(*)::int AS n FROM condition_lines WHERE legacy_role = 'cli' AND capability_id = $1`, [t.capability_id])).rows[0].n
           );
           resynced.push({
             document_number: t.document_number,
@@ -9872,7 +9873,7 @@ ${details}
           continue;
         }
         const fcRow = (
-          await query(`SELECT capability_id FROM capability_financial_conditions WHERE id = $1`, [fcId])
+          await query(`SELECT capability_id FROM condition_lines WHERE legacy_role = 'cfc' AND id = $1`, [fcId])
         ).rows[0];
         if (!fcRow) {
           skipped.push({ document_number: d.document_number, issue_key: d.issue_key, reason: `financial_condition ${fcId} が存在しない` });
@@ -12999,7 +13000,7 @@ ${details}
           const del = await client.query(
             `SELECT COUNT(*)::int AS n
                FROM delivery_line_items dli
-               JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+               JOIN (${CLI_VIEW_SQL}) cli ON cli.id = dli.capability_line_item_id
               WHERE cli.capability_id = $1`,
             [d.cap_id]
           );
@@ -13016,7 +13017,7 @@ ${details}
             const ev = await client.query(
               `SELECT DISTINCT dli.delivery_event_id AS eid
                  FROM delivery_line_items dli
-                 JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+                 JOIN (${CLI_VIEW_SQL}) cli ON cli.id = dli.capability_line_item_id
                 WHERE cli.capability_id = $1`,
               [d.cap_id]
             );
@@ -13025,7 +13026,7 @@ ${details}
               .filter((x: any) => x != null);
             await client.query(
               `DELETE FROM delivery_line_items dli
-                 USING capability_line_items cli
+                 USING (${CLI_VIEW_SQL}) cli
                 WHERE dli.capability_line_item_id = cli.id
                   AND cli.capability_id = $1`,
               [d.cap_id]
@@ -13298,7 +13299,7 @@ ${details}
 
         const lines = await query(
           `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax
-             FROM capability_line_items
+             FROM (${CLI_VIEW_SQL}) cli
             WHERE capability_id = $1
             ORDER BY line_no ASC`,
           [Number(orderItem.id)]
@@ -13472,7 +13473,7 @@ ${details}
           // Phase 23: order_line_items → capability_line_items
           const orderLinesRes = await client.query(
             `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax
-               FROM capability_line_items
+               FROM (${CLI_VIEW_SQL}) cli
               WHERE capability_id = $1
               ORDER BY line_no ASC`,
             [orderItemId]
@@ -17214,7 +17215,7 @@ ${details}
         if (orderItemId && poItems.length === 0) {
           try {
             const removedRes = await query(
-              `SELECT id FROM capability_line_items WHERE capability_id = $1`,
+              `SELECT id FROM condition_lines WHERE legacy_role = 'cli' AND capability_id = $1`,
               [orderItemId]
             );
             const removedLiIds = removedRes.rows
@@ -17268,7 +17269,7 @@ ${details}
           let removedLiIds: number[] = [];
           if (keepNos.length > 0) {
             const removedRes = await query(
-              `SELECT id FROM capability_line_items
+              `SELECT id FROM (${CLI_VIEW_SQL}) cli
                 WHERE capability_id = $1
                   AND line_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
               [orderItemId, ...keepNos]

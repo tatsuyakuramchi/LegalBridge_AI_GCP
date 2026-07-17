@@ -64,6 +64,7 @@ const header = `// AUTO-GENERATED from services/api/server.ts by scripts/extract
 // Do not edit. C2 batch 3b: backlog form-context / history の byte-exact 移植。
 // 依存: query, backlogService(getIssue / extractCustomFields)。
 import type { Express } from "express";
+import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.ts";
 
 export function registerFormReadRoutes(
   app: Express,
