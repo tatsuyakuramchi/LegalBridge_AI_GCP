@@ -29,9 +29,10 @@
 |---|---|---|---|
 | G2 | INSTEAD OF トリガ(tg_cc_ins/tg_cfc_*/tg_cli_*/tg_exp_*/tg_fee_*)と その関数を DROP。書込みゼロ(G1)が前提。VIEW と cl_* ヘルパは残す | 第1弾(migration 0131) | 実装済(2026-07-16) |
 | G3a | `contract_capabilities` 読取り 165 を `documents` 直読みへ(1:1 passthrough のため原則リネーム) | 第2〜9弾(ファイル単位) | **完了(2026-07-16)**: 165→0。全体 reads 282→117(残は capability_* のみ)。第8弾 contractCheckService(8)+lc.*(2)→125、第9弾 sharedReads/contractsV2/api-server の cc.* 5箇所を互換view列(78列)へ明示展開 + named 3箇所 rename →117。view(subset)→documents(superset)は列参照を壊さず、cc.* は form_data 等の余分列混入を避けるため明示展開した。ratchet 117。 |<br>※ dataLinkage の documents-vs-cc ドリフトprobe は cc==documents のため自己比較(版family)に等価化。件数挙動は不変だが、将来 probe 自体の要否を見直す(TODO) |
-| G3b | `capability_*` 読取り 117 を `condition_lines`(legacy_role + 列マッピング)直読みへ | 第3弾以降 | 未着手 |
-| G4 | 読取りゼロ達成 + 本番クエリログで一定期間アクセス無しを確認し VIEW を DROP | 最終 | 未着手 |
-| — | cl_* ヘルパ(cl_dir/cl_scheme/cl_next_code/cl_resolve_work)のインライン化検討、旧起動DDL(RUN_INIT_DB)ブロック削除、旧設計書の更新 | 仕上げ | 未着手 |
+| G3b | `capability_*` 読取り 117 を `condition_lines`(legacy_role + 列マッピング)直読みへ | 第3弾以降 | **保留(2026-07-16 判断)**: capability_* view は読取り専用で無害(G2 で書込みトリガ撤去済み)。117箇所の列リマップ書換は高リスク・大工数のため当面据え置き。将来 conditionLineMapper へ集約して段階移行 |
+| G4 | 読取りゼロ達成 + 本番クエリログで一定期間アクセス無しを確認し VIEW を DROP | 最終 | 未着手(G3b 完了後) |
+| — | 旧起動DDL(RUN_INIT_DB/initDb)ブロック削除 | 仕上げ(第10弾) | **完了(2026-07-16)**: worker/api の initDb()(計2320行の起動時レガシー DDL)と worker の RUN_INIT_DB 分岐・import を撤去。schema は migrations/ が単一所有。0101 以降 contract_capabilities は VIEW のため旧 ALTER 群は死コードだった |
+| — | cl_* ヘルパのインライン化検討、旧設計書(runbook/manual)の Matter 中心更新 | 仕上げ(残) | 未着手 |
 
 ## 3. 変換ルール(読取り)
 
