@@ -327,6 +327,52 @@ export class GoogleDriveService {
   }
 
   /**
+   * LB-08 連動: 案件フォルダ配下(直下＋標準サブフォルダ1階層)の実ファイルを列挙する。
+   *   フル drive スコープのため、人が Drive で直接入れたファイルも取得できる。
+   *   戻り値は folder(サブフォルダ名 or "(直下)")でグルーピングしやすい平坦配列。失敗は throw。
+   */
+  async listFolderFiles(
+    folderId: string
+  ): Promise<Array<{ id: string; name: string; link: string; mimeType: string; modifiedTime: string; folder: string; isFolder: boolean }>> {
+    const out: Array<{ id: string; name: string; link: string; mimeType: string; modifiedTime: string; folder: string; isFolder: boolean }> = [];
+    const FOLDER_MIME = "application/vnd.google-apps.folder";
+    const listChildren = async (parentId: string, folderName: string, recurse: boolean) => {
+      let pageToken: string | undefined = undefined;
+      do {
+        const resp: any = await this.drive.files.list({
+          q: `'${parentId}' in parents and trashed = false`,
+          fields: "nextPageToken, files(id, name, mimeType, webViewLink, modifiedTime)",
+          orderBy: "folder,name",
+          pageSize: 200,
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
+          pageToken,
+        });
+        for (const f of resp.data.files || []) {
+          const isFolder = f.mimeType === FOLDER_MIME;
+          if (isFolder && recurse) {
+            // 標準サブフォルダは1階層だけ辿る(無限再帰防止)。
+            await listChildren(f.id, f.name || "", false);
+          } else if (!isFolder) {
+            out.push({
+              id: f.id,
+              name: f.name || "(無題)",
+              link: f.webViewLink || `https://drive.google.com/file/d/${f.id}/view`,
+              mimeType: f.mimeType || "",
+              modifiedTime: f.modifiedTime || "",
+              folder: folderName || "(直下)",
+              isFolder: false,
+            });
+          }
+        }
+        pageToken = resp.data.nextPageToken || undefined;
+      } while (pageToken);
+    };
+    await listChildren(folderId, "", true);
+    return out;
+  }
+
+  /**
    * Phase 3 (LB-08, §7): Matter の案件フォルダ一式を作成する。
    *   <root>/<YYYY>/<MTR-code>_<相手方>_<案件名> + 標準サブフォルダ8個。
    *   root は GOOGLE_DRIVE_MATTERS_ROOT_ID(未設定なら GOOGLE_DRIVE_FOLDER_ID)。
