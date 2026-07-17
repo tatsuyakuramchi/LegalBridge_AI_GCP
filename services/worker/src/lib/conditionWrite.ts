@@ -46,6 +46,11 @@ export interface ConditionInput {
   // 属性
   condition_name?: string | null; subject?: string | null; spec?: string | null;
   category?: string | null; notes?: string | null; applies_scope?: string | null;
+  // 再許諾/アウトライセンス等: 種別(sublicense_out/license_in 等)・親ライセンス条件・相手方。
+  //   condition_lines 実列(0116/0114/counterparty_vendor_id)。未指定なら書かない。
+  condition_kind?: string | null;
+  parent_license_condition_id?: number | null;
+  counterparty_vendor_id?: number | null;
   // 互換ビュー振分け（cfc/cli/expense/other_fee）。未指定なら category から導出。
   legacy_role?: string | null;
 }
@@ -236,6 +241,10 @@ export async function upsertDocumentConditions(
       seller: str(c.seller),
       max_region: str(c.max_region),
       max_language: str(c.max_language),
+      // 再許諾/アウトライセンス等の種別・親ライセンス条件・相手方(未指定=NULL、既存テンプレは不変)。
+      condition_kind: str(c.condition_kind),
+      parent_license_condition_id: num(c.parent_license_condition_id),
+      counterparty_vendor_id: num(c.counterparty_vendor_id),
       status_flags: "{}",
       is_inbound: false,
     };
