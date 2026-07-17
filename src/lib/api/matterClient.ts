@@ -69,6 +69,11 @@ export const matterClient = {
     return apiSend("POST", `/api/matters/${matterId}/drive-folder`);
   },
 
+  // LB-08 連動: 案件フォルダ配下の実ファイル一覧(人が直接入れたファイルも含む)。
+  driveFiles(matterId: number | string) {
+    return apiGet(`/api/matters/${matterId}/drive-files`);
+  },
+
   addTask(matterId: number | string, body: Record<string, unknown>) {
     return apiSend("POST", `/api/matters/${matterId}/tasks`, body);
   },

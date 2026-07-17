@@ -25,6 +25,8 @@ import {
   Circle,
   Star,
   Flag,
+  RefreshCw,
+  FolderOpen,
 } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -160,6 +162,10 @@ export function MatterDetailPage() {
   const [mergeMoveData, setMergeMoveData] = React.useState(true)
   const [mergeReason, setMergeReason] = React.useState("")
   const [merging, setMerging] = React.useState(false)
+  // LB-08 連動: Drive 案件フォルダの実ファイル一覧(人が直接入れたファイルも含む)。
+  const [driveFiles, setDriveFiles] = React.useState<any[]>([])
+  const [driveFolderUrl, setDriveFolderUrl] = React.useState<string | null>(null)
+  const [driveFilesLoading, setDriveFilesLoading] = React.useState(false)
   // 文書の送信: 送信方法の選択(メール/クラウドサイン) → 各フォーム。課題詳細と同じ二択に統一。
   const [chooserDoc, setChooserDoc] = React.useState<any>(null)
   // 文書のメール送信(案件ページから直接送る)
@@ -222,6 +228,24 @@ export function MatterDetailPage() {
     load()
   }, [load])
 
+  // LB-08 連動: 案件フォルダの実ファイルを取得(人が直接入れたファイルも含む)。
+  const loadDriveFiles = React.useCallback(async () => {
+    setDriveFilesLoading(true)
+    try {
+      const json: any = await matterClient.driveFiles(matterId)
+      setDriveFiles(Array.isArray(json?.files) ? json.files : [])
+      setDriveFolderUrl(json?.folder_url ?? null)
+    } catch {
+      setDriveFiles([])
+    } finally {
+      setDriveFilesLoading(false)
+    }
+  }, [matterId])
+
+  React.useEffect(() => {
+    loadDriveFiles()
+  }, [loadDriveFiles])
+
   // matterClient を呼び、成功時に okMsg をトーストする薄いラッパ。
   //   (旧 call(path, opts, okMsg) の okMsg 表示挙動を踏襲する。)
   async function run<T>(p: Promise<T>, okMsg?: string): Promise<T> {
@@ -281,6 +305,7 @@ export function MatterDetailPage() {
           : ""
       push(`Drive 案件フォルダを作成しました${extra}`, failed ? "error" : "success")
       await load()
+      await loadDriveFiles()
     } catch (e: any) {
       push(`フォルダ作成に失敗: ${e?.message || e}`, "error")
     } finally {
@@ -357,6 +382,7 @@ export function MatterDetailPage() {
       await run(matterClient.attachDocument(matterId, { document_number: attachDoc.trim() }), "文書を紐付けました")
       setAttachDoc("")
       await load()
+      await loadDriveFiles()
     } catch (e: any) {
       push(String(e?.message || e), "error")
     }
@@ -377,6 +403,7 @@ export function MatterDetailPage() {
       setAttachTitle("")
       if (fileInputRef.current) fileInputRef.current.value = ""
       await load()
+      await loadDriveFiles()
     } catch (e: any) {
       push(String(e?.message || e), "error")
     } finally {
@@ -1329,6 +1356,67 @@ export function MatterDetailPage() {
                     格納
                   </Button>
                 </div>
+              </div>
+
+              {/* LB-08 連動: Drive 案件フォルダの実ファイル一覧(人が直接入れたファイルも含む)。 */}
+              <div className="mt-2 pt-2 border-t border-border/50">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+                    <FolderOpen className="h-3.5 w-3.5" /> Driveフォルダのファイル
+                    <span className="font-mono">{driveFiles.length}</span>
+                    <span className="text-muted-foreground/70">（人が直接入れたファイルも表示）</span>
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {driveFolderUrl && (
+                      <a href={driveFolderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-sky-700 hover:underline">
+                        <ExternalLink className="h-3 w-3" /> フォルダを開く
+                      </a>
+                    )}
+                    <button onClick={loadDriveFiles} disabled={driveFilesLoading} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded border border-border hover:bg-muted" title="フォルダを再取得">
+                      <RefreshCw className={`h-3 w-3 ${driveFilesLoading ? "animate-spin" : ""}`} /> 更新
+                    </button>
+                  </div>
+                </div>
+                {!driveFolderUrl ? (
+                  <p className="text-[11px] text-muted-foreground">案件フォルダが未作成です。上の「＋Driveフォルダ作成」で作成すると、ここにフォルダ内のファイルが表示されます。</p>
+                ) : driveFiles.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">{driveFilesLoading ? "読み込み中…" : "フォルダにファイルはまだありません。"}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {Object.entries(
+                      driveFiles.reduce((acc: Record<string, any[]>, f: any) => {
+                        const k = f.folder || "(直下)"
+                        ;(acc[k] = acc[k] || []).push(f)
+                        return acc
+                      }, {})
+                    ).map(([folder, files]) => (
+                      <div key={folder}>
+                        <p className="text-[10px] font-mono font-bold text-muted-foreground/80 mb-0.5">{folder}</p>
+                        <div className="space-y-0.5">
+                          {(files as any[]).map((f: any) => (
+                            <a
+                              key={f.id}
+                              href={f.link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-2 text-[11.5px] hover:bg-muted rounded px-1.5 py-1 group"
+                              title={f.name}
+                            >
+                              <FileText className="h-3.5 w-3.5 text-muted-foreground flex-none" />
+                              <span className="truncate flex-1">{f.name}</span>
+                              {f.modifiedTime && (
+                                <span className="text-[10px] text-muted-foreground/70 font-mono flex-none">
+                                  {String(f.modifiedTime).slice(0, 10)}
+                                </span>
+                              )}
+                              <ExternalLink className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground flex-none" />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
