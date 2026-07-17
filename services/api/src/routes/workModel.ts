@@ -11,6 +11,7 @@ import {
 } from "../services/workModelImportService.ts";
 import { normalizeGenre, normalizeRole } from "../lib/materialVocab.ts";
 import { getNewDocumentNumber, pool } from "../lib/db.ts";
+import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.ts";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 type Middleware = (req: any, res: any, next: any) => void;
@@ -466,7 +467,7 @@ export function registerWorkModelRoutes(
                   wm.material_code AS source_material_code, wm.material_name AS source_material_name
              FROM condition_lines cl
              LEFT JOIN documents cc ON cc.id = cl.capability_id
-             LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+             LEFT JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN works sw ON sw.id = cl.source_work_id
              LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
              LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
@@ -480,7 +481,7 @@ export function registerWorkModelRoutes(
                   p.product_code, p.product_name
              FROM condition_lines cl
              LEFT JOIN documents cc ON cc.id = cl.capability_id
-             LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+             LEFT JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN products p ON p.id = cl.product_id
              LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
             WHERE cl.id IN (${linkedLineIds}) AND cl.direction = 'receivable'
@@ -676,7 +677,7 @@ export function registerWorkModelRoutes(
         // documents.contract_id 経由で読む。応答形の互換のため contract_id を別名付与。
         query(
           `SELECT f.*, d.contract_id
-             FROM capability_financial_conditions f
+             FROM (${CFC_VIEW_SQL}) f
              JOIN documents d ON d.id = f.capability_id
             WHERE d.contract_id = $1
             ORDER BY f.condition_no, f.id`,
@@ -684,7 +685,7 @@ export function registerWorkModelRoutes(
         ),
         query(
           `SELECT li.*, d.contract_id
-             FROM capability_line_items li
+             FROM (${CLI_VIEW_SQL}) li
              JOIN documents d ON d.id = li.capability_id
             WHERE d.contract_id = $1
             ORDER BY li.line_no, li.id`,
@@ -950,7 +951,7 @@ export function registerWorkModelRoutes(
         `SELECT cfc.*, cl.parent_license_condition_id,
                 sw.title AS source_work_title, sw.work_code AS source_work_code,
                 sm.material_name AS source_material_name
-           FROM capability_financial_conditions cfc
+           FROM (${CFC_VIEW_SQL}) cfc
            LEFT JOIN condition_lines cl ON cl.id = cfc.id
            LEFT JOIN works sw ON sw.id = cfc.source_work_id
            LEFT JOIN work_materials sm ON sm.id = cfc.source_material_id
@@ -973,7 +974,7 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(condNo) || condNo <= 0) {
         const m = await query(
           `SELECT COALESCE(MAX(condition_no), 0) + 1 AS n
-             FROM capability_financial_conditions WHERE work_id = $1`,
+             FROM (${CFC_VIEW_SQL}) cfc WHERE cfc.work_id = $1`,
           [id]
         );
         condNo = Number(m.rows[0]?.n) || 1;
@@ -1034,7 +1035,7 @@ export function registerWorkModelRoutes(
       );
       // 応答互換: 旧実装はビュー行(RETURNING *)を返していたため同じ形で再読取。
       const rRead = await query(
-        `SELECT * FROM capability_financial_conditions WHERE id = $1`,
+        `SELECT * FROM (${CFC_VIEW_SQL}) cfc WHERE cfc.id = $1`,
         [r.rows[0]?.id]
       );
       const row = rRead.rows[0];
@@ -1110,7 +1111,7 @@ export function registerWorkModelRoutes(
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       // 応答互換: 旧実装はビュー行(RETURNING *)を返していたため同じ形で再読取。
       const rr = await query(
-        `SELECT * FROM capability_financial_conditions WHERE id = $1`,
+        `SELECT * FROM (${CFC_VIEW_SQL}) cfc WHERE cfc.id = $1`,
         [cid]
       );
       const row = rr.rows[0];
@@ -1210,7 +1211,7 @@ export function registerWorkModelRoutes(
     if (parentId) {
       const pr = await query(
         `SELECT rate_pct, counterparty_vendor_id, currency, work_id
-           FROM capability_financial_conditions WHERE id = $1`,
+           FROM (${CFC_VIEW_SQL}) cfc WHERE cfc.id = $1`,
         [parentId]
       );
       parent = pr.rows[0] || null;
@@ -1298,10 +1299,10 @@ export function registerWorkModelRoutes(
                 pcfc.rate_pct AS parent_rate_pct, pcfc.currency AS parent_currency,
                 pcfc.counterparty_vendor_id AS licensor_vendor_id,
                 pv.vendor_name AS licensor_name, pw.title AS licensor_work_title
-           FROM capability_financial_conditions cfc
+           FROM (${CFC_VIEW_SQL}) cfc
            LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
            LEFT JOIN condition_lines pcl ON pcl.id = cfc.id
-           LEFT JOIN capability_financial_conditions pcfc ON pcfc.id = pcl.parent_license_condition_id
+           LEFT JOIN (${CFC_VIEW_SQL}) pcfc ON pcfc.id = pcl.parent_license_condition_id
            LEFT JOIN vendors pv ON pv.id = pcfc.counterparty_vendor_id
            LEFT JOIN works pw ON pw.id = pcfc.work_id
           WHERE cfc.work_id = $1 AND pcl.condition_kind = 'sublicense_out'
@@ -1322,7 +1323,7 @@ export function registerWorkModelRoutes(
                 cfc.basis, cfc.calc_type, cfc.unit_price, cfc.currency, cfc.counterparty_vendor_id,
                 v.vendor_name AS counterparty_name
            FROM condition_receipts cr
-           JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
+           JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cr.condition_id
            JOIN condition_lines clk ON clk.id = cfc.id
            LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
           WHERE cfc.work_id = $1 AND clk.condition_kind = 'sublicense_out'
@@ -1361,12 +1362,12 @@ export function registerWorkModelRoutes(
                 pcl.parent_license_condition_id, pcfc.rate_pct AS parent_rate_pct,
                 pv.vendor_name AS licensor_name
            FROM condition_receipts cr
-           JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
+           JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cr.condition_id
            JOIN condition_lines clk ON clk.id = cfc.id
            LEFT JOIN works w ON w.id = cfc.work_id
            LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
            LEFT JOIN condition_lines pcl ON pcl.id = cfc.id
-           LEFT JOIN capability_financial_conditions pcfc ON pcfc.id = pcl.parent_license_condition_id
+           LEFT JOIN (${CFC_VIEW_SQL}) pcfc ON pcfc.id = pcl.parent_license_condition_id
            LEFT JOIN vendors pv ON pv.id = pcfc.counterparty_vendor_id
           WHERE ${where.join(" AND ")}
           ORDER BY cr.period_date DESC NULLS LAST, cr.id DESC
@@ -1399,7 +1400,7 @@ export function registerWorkModelRoutes(
       const b = req.body || {};
       const c = await query(
         `SELECT work_id, counterparty_vendor_id, currency, rate_pct, basis, unit_price, calc_type
-           FROM capability_financial_conditions WHERE id = $1`,
+           FROM (${CFC_VIEW_SQL}) cfc WHERE cfc.id = $1`,
         [cid]
       );
       if (c.rows.length === 0) return res.status(404).json({ ok: false, error: "condition not found" });
@@ -1434,7 +1435,7 @@ export function registerWorkModelRoutes(
         `SELECT cr.condition_id, cfc.work_id, cfc.counterparty_vendor_id, cfc.currency,
                 cfc.rate_pct, cfc.basis, cfc.unit_price, cfc.calc_type
            FROM condition_receipts cr
-           JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
+           JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cr.condition_id
           WHERE cr.id = $1`,
         [rid]
       );
@@ -1503,7 +1504,7 @@ export function registerWorkModelRoutes(
         `SELECT cli.capability_id, cc.document_number, cc.contract_title, cc.record_type,
                 cli.line_no, cli.item_name, cli.amount_ex_tax,
                 cli.deliverable_ownership, cli.calc_method
-           FROM capability_line_items cli
+           FROM (${CLI_VIEW_SQL}) cli
            JOIN documents cc ON cc.id = cli.capability_id
           WHERE cli.work_id = $1
           ORDER BY cc.document_number NULLS LAST, cli.line_no`,
@@ -1516,7 +1517,7 @@ export function registerWorkModelRoutes(
                 cl.payment_scheme, cl.rate_pct, cl.amount_ex_tax, cl.calc_method
            FROM condition_lines cl
            JOIN documents cc ON cc.id = cl.capability_id
-           LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+           LEFT JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cl.source_condition_id
           WHERE cl.work_id = $1
           ORDER BY cc.document_number NULLS LAST, cl.line_no`,
         [id]
@@ -1764,7 +1765,7 @@ export function registerWorkModelRoutes(
            FROM condition_lines cl
            JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN works w ON w.id = cl.work_id
-           LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+           LEFT JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cl.source_condition_id
           WHERE cc.document_number ILIKE '%' || $1 || '%'
           ORDER BY cc.document_number, cl.line_no, cl.id`,
         [doc]
@@ -1858,7 +1859,7 @@ export function registerWorkModelRoutes(
                 cfc.region_territory, cfc.region_language, cfc.region_language_label
            FROM condition_lines cl
            JOIN documents cc ON cc.id = cl.capability_id
-           LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+           LEFT JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cl.source_condition_id
           WHERE cl.source_work_id = $1 AND cl.source_material_id = $2
           ORDER BY cl.line_no, cl.id`,
         [id, mid]
@@ -1984,7 +1985,7 @@ export function registerWorkModelRoutes(
              FROM condition_lines cl
              JOIN work_materials wm ON wm.id = cl.source_material_id
              JOIN documents cc ON cc.id = cl.capability_id
-             JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+             JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN works w ON w.id = wm.work_id
             WHERE wm.material_code = $1${excludeClause}
             ORDER BY is_template DESC, cc.id DESC, cfc.condition_no NULLS LAST, cl.id`,
@@ -2027,7 +2028,7 @@ export function registerWorkModelRoutes(
              FROM condition_lines cl
              JOIN documents cc ON cc.id = cl.capability_id
              JOIN work_materials wm ON wm.id = cl.source_material_id
-             LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+             LEFT JOIN (${CFC_VIEW_SQL}) cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN vendors vh ON vh.id = wm.rights_holder_vendor_id
             WHERE cc.document_number ILIKE '%' || $1 || '%'
               AND wm.material_code IS NOT NULL
@@ -2074,7 +2075,7 @@ export function registerWorkModelRoutes(
                   cli.item_name,
                   COALESCE(cli.deliverable_ownership, '発注者') AS deliverable_ownership,
                   cc.document_number, cc.contract_title, cc.record_type
-             FROM capability_line_items cli
+             FROM (${CLI_VIEW_SQL}) cli
              JOIN documents cc
                ON cc.id = cli.capability_id AND cc.record_type = 'purchase_order'
             WHERE cc.document_number ILIKE '%' || $1 || '%'
@@ -2904,7 +2905,7 @@ export function registerWorkModelRoutes(
                        AND COALESCE(dli.inspected_amount,0) >= COALESCE(cli.amount_ex_tax,0) THEN 'accepted'
                   ELSE 'partial'
                 END AS inspection_status
-           FROM capability_line_items cli
+           FROM (${CLI_VIEW_SQL}) cli
            JOIN documents cc ON cc.id = cli.capability_id
            LEFT JOIN vendors v ON v.id = cc.vendor_id
            LEFT JOIN LATERAL (

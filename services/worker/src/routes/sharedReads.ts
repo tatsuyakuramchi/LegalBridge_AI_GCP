@@ -9,7 +9,7 @@
 //     contract-check/purposes, imports/legalon-csv/template
 
 import type { Express } from "express";
-import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.js";
+import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.ts";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 
