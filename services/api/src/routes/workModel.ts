@@ -516,7 +516,18 @@ export function registerWorkModelRoutes(
       const cl = await query(
         `SELECT cl.id, cl.direction, cl.payment_scheme, cl.calc_method,
                 cl.rate_pct, cl.mg_amount, cl.amount_ex_tax, cl.currency,
-                cl.region_territory, cl.region_language, cl.formula_text,
+                -- 0133: 許諾地域/言語は 1対N 子テーブルを国名単位で集約(無ければ旧列)。
+                COALESCE(
+                  (SELECT string_agg(rr.country_name, '・' ORDER BY rr.sort_order, rr.id)
+                     FROM condition_line_regions rr WHERE rr.condition_line_id = cl.id),
+                  cl.region_territory
+                ) AS region_territory,
+                COALESCE(
+                  (SELECT string_agg(ll.language_name, '・' ORDER BY ll.sort_order, ll.id)
+                     FROM condition_line_languages ll WHERE ll.condition_line_id = cl.id),
+                  cl.region_language
+                ) AS region_language,
+                cl.formula_text,
                 COALESCE(NULLIF(cl.condition_name,''), NULLIF(cl.subject,''), '(無題)') AS name,
                 COALESCE(v.vendor_name, dv.vendor_name) AS party,
                 d.document_number
@@ -578,12 +589,16 @@ export function registerWorkModelRoutes(
       const map: Record<string, { territory: string; languages: string[]; rights: string[] }> = {};
       const order: string[] = [];
       for (const g of granted) {
-        const t = g.territory || "（地域未設定）";
-        if (!map[t]) { map[t] = { territory: t, languages: [], rights: [] }; order.push(t); }
-        String(g.language || "—").split(/[・,\/／]/).map((s) => s.trim()).filter(Boolean).forEach((l) => {
-          if (!map[t].languages.includes(l)) map[t].languages.push(l);
-        });
-        map[t].rights.push(g.name);
+        // 0133: territory は「・」連結の複数国。国名単位に分解して集計する。
+        const countries = String(g.territory || "")
+          .split(/[・,\/／、]/).map((s) => s.trim()).filter(Boolean);
+        const list = countries.length ? countries : ["（地域未設定）"];
+        const langs = String(g.language || "—").split(/[・,\/／、]/).map((s) => s.trim()).filter(Boolean);
+        for (const t of list) {
+          if (!map[t]) { map[t] = { territory: t, languages: [], rights: [] }; order.push(t); }
+          langs.forEach((l) => { if (l && !map[t].languages.includes(l)) map[t].languages.push(l); });
+          if (!map[t].rights.includes(g.name)) map[t].rights.push(g.name);
+        }
       }
       // 「全世界」的な広域許諾と特定地域で同一言語が重なる場合は重複候補として返す。
       const WORLD = ["全世界", "世界", "worldwide", "global", "all"];
