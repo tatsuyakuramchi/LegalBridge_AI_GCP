@@ -65,7 +65,8 @@ cloudbuild.yaml の inject ステップを git 履歴から復元して再ビル
 |---|---|---|
 | 第1弾 | 同一オリジン BFF + 秘密のバンドル焼き込み廃止(§2) | 実装済(2026-07-16) |
 | 第2弾 | **ドメインAPIクライアント基盤 + matterClient**: `src/lib/api/httpClient.ts`(相対 /api・相関ID・エラー正規化)と `matterClient` を新設。案件系 fetch を全面移行(MatterDetailPage / MattersListPage / RequestsPage / IssueDetailPage / DocumentEditorPage / MatterLinkButton / MergeCartPanel)。BFF(server.ts)に X-Request-Id 相関を追加(採番・上流転送・レスポンス echo・ログ付与) | 実装済(2026-07-16) |
-| 第3弾 | **残りのドメインクライアント**: documentClient / conditionClient / fileClient を追加し、残る fetch を段階移行。mutation 後の invalidate 規則をクライアント層へ(現状は各ページの再取得 load() で代替) | 未着手 |
+| 第3弾 | **documentClient**: 文書/下書きの JSON エンドポイントを集約し、DraftsPanel / PendingPdfPanel / DocumentEditorPage(下書き保存/取得・文書取得・by-number・下書き削除)を移行。blob 系(export-excel/preview)と複雑な generate フローは対象外(次スライス) | 実装済(2026-07-16) |
+| 第3.5弾 | **generate フロー + conditionClient / fileClient**: DocumentEditorPage の /api/documents/generate(2箇所)を documentClient.generate へ(要ランタイム確認)。条件明細/ファイルのクライアント追加。mutation 後の invalidate 規則をクライアント層へ(現状は各ページの再取得 load() で代替) | 未着手 |
 | 第4弾 | **IAP/入口の締め**(GCP設定が主): admin-ui を IAP 配下に置き `ADMIN_UI_ENFORCE_ROLE=true`(HTML+APIともadmin限定、コードは第1弾で実装済)。search-api 側 portal_secret 受け入れの縮小(BFF egress 限定 or サービス間 ID トークン化)。worker のサービス間認証導入検討 | 未着手(GCP設定が主) |
 | 第5弾 | 共通 DTO / validation / mapping の shared package 化、AppDataContext の縮小 | 未着手 |
 
@@ -80,6 +81,17 @@ cloudbuild.yaml の inject ステップを git 履歴から復元して再ビル
 - `matterClient`: 案件ドメインの全ルート(一覧/詳細/CRUD/tasks/issues/documents/
   attachments/drive-folder/absorb/issue-links)。レスポンスは worker のエンベロープをそのまま返す。
 - 非案件の汎用呼び出し(backlog merge / documents email 等)は `apiRequest` を直接使う。
+
+### 第3弾メモ(documentClient)
+
+- 文書 + 下書きの **JSON エンドポイント**のみを集約(get / getByNumber / pendingPdf /
+  regeneratePdf / regenerateAndComplete / markAsImported / markPrimary /
+  bulkUpdateFields / bulkDelete / emailSend / listDrafts / getDraftOrNull /
+  saveDraft / deleteDraft / bulkDeleteDrafts)。
+- `getDraftOrNull` は 404(下書き無し=正常系)を null に畳み込む(ApiError.status===404 を吸収)。
+- **対象外**(直接 fetch のまま): blob を返す `/api/documents/export-excel` と
+  `/api/documents/preview`(PDF)、および応答解釈が複雑な `/api/documents/generate`
+  (下書き→発行→PDF・matter_link 警告等)。generate は次スライスでランタイム確認のうえ移行。
 
 ## 4. 運用メモ
 

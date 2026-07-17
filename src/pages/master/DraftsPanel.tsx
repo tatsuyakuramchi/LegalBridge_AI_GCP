@@ -27,6 +27,7 @@ import {
 } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
+import { documentClient } from "@/src/lib/api/documentClient"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
@@ -74,15 +75,8 @@ export function DraftsPanel() {
   const refresh = React.useCallback(async (q?: string) => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
       const qq = (q ?? query).trim()
-      if (qq) params.set("q", qq)
-      params.set("limit", "500")
-      const res = await fetch(`/api/document-drafts?${params.toString()}`)
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || `HTTP ${res.status}`)
-      }
+      const data: any = await documentClient.listDrafts({ q: qq || undefined, limit: 500 })
       const list: DraftRow[] = Array.isArray(data?.drafts) ? data.drafts : []
       setRows(list)
       // 表示中の selected から無くなった ID は外す
@@ -131,14 +125,7 @@ export function DraftsPanel() {
     }
     setBusy(true)
     try {
-      const res = await fetch(
-        `/api/document-drafts/${encodeURIComponent(row.issue_key)}?template_type=${encodeURIComponent(row.template_type)}`,
-        { method: "DELETE" }
-      )
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || `HTTP ${res.status}`)
-      }
+      await documentClient.deleteDraft(row.issue_key, row.template_type)
       showNotification(`削除しました (${row.issue_key})`, "success")
       await refresh()
     } catch (e: any) {
@@ -173,15 +160,7 @@ export function DraftsPanel() {
             //   q で絞り込み中の場合は絞り込み結果のみ削除する直感的な挙動。
             { ids: rows.map((r) => r.id) }
           : { ids: Array.from(selected) }
-      const res = await fetch("/api/document-drafts/bulk-delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data?.ok === false) {
-        throw new Error(data?.error || `HTTP ${res.status}`)
-      }
+      const data: any = await documentClient.bulkDeleteDrafts(body)
       showNotification(`${data?.deleted || 0} 件削除しました`, "success")
       setSelected(new Set())
       await refresh()

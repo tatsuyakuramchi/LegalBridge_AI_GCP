@@ -28,6 +28,7 @@ import {
   Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { documentClient } from "@/src/lib/api/documentClient"
 
 type Row = {
   id: number
@@ -132,9 +133,7 @@ export const PendingPdfPanel: React.FC = () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/documents/pending-pdf?limit=200")
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const json: ApiResponse = await res.json()
+      const json = (await documentClient.pendingPdf(200)) as ApiResponse
       setData(json)
     } catch (e: any) {
       setError(String(e?.message || e))
@@ -156,13 +155,7 @@ export const PendingPdfPanel: React.FC = () => {
       return copy
     })
     try {
-      const res = await fetch(`/api/documents/${row.id}/regenerate-pdf`, {
-        method: "POST",
-      })
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `HTTP ${res.status}`)
-      }
+      const json: any = await documentClient.regeneratePdf(row.id)
       setLastResult({
         id: row.id,
         document_number: json.document_number,
@@ -211,14 +204,7 @@ export const PendingPdfPanel: React.FC = () => {
       return copy
     })
     try {
-      const res = await fetch(
-        `/api/documents/${row.id}/regenerate-and-complete`,
-        { method: "POST" }
-      )
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `HTTP ${res.status}`)
-      }
+      const json: any = await documentClient.regenerateAndComplete(row.id)
       setLastResult({
         id: row.id,
         document_number: json.document_number,
@@ -255,10 +241,7 @@ export const PendingPdfPanel: React.FC = () => {
     if (!window.confirm(`${row.document_number} を作成済扱いにしてキューから外しますか?`)) return
     setBusyRows((b) => ({ ...b, [row.id]: "skipping" }))
     try {
-      const res = await fetch(`/api/documents/${row.id}/mark-as-imported`, {
-        method: "POST",
-      })
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      await documentClient.markAsImported(row.id)
       setLastResult({
         id: row.id,
         document_number: row.document_number,
@@ -348,13 +331,7 @@ export const PendingPdfPanel: React.FC = () => {
         return copy
       })
       try {
-        const res = await fetch(`/api/documents/${row.id}/regenerate-pdf`, {
-          method: "POST",
-        })
-        const json = await res.json()
-        if (!res.ok || !json.ok) {
-          throw new Error(json.error || `HTTP ${res.status}`)
-        }
+        await documentClient.regeneratePdf(row.id)
         okCount++
         // 成功 → 一覧 / 選択から除外
         setData((d) =>
@@ -547,19 +524,11 @@ export const PendingPdfPanel: React.FC = () => {
     setSavingEdit(true)
     setError(null)
     try {
-      const res = await fetch("/api/documents/bulk-update-fields", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: selectedRowObjs.map((r) => r.id),
-          set,
-          remarks_append: remarks,
-        }),
+      const json: any = await documentClient.bulkUpdateFields({
+        ids: selectedRowObjs.map((r) => r.id),
+        set,
+        remarks_append: remarks,
       })
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `HTTP ${res.status}`)
-      }
       setBulkEditOpen(false)
       setLastResult({
         id: -1,
@@ -588,18 +557,10 @@ export const PendingPdfPanel: React.FC = () => {
     setDeleting(true)
     setError(null)
     try {
-      const res = await fetch("/api/documents/bulk-delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: selectedRowObjs.map((r) => r.id),
-          force: forceDelete,
-        }),
+      const json: any = await documentClient.bulkDelete({
+        ids: selectedRowObjs.map((r) => r.id),
+        force: forceDelete,
       })
-      const json = await res.json()
-      if (!res.ok || !json.ok) {
-        throw new Error(json.error || `HTTP ${res.status}`)
-      }
       const deletedNums: string[] = Array.isArray(json.deleted_numbers)
         ? json.deleted_numbers
         : []
