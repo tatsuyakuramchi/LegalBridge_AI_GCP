@@ -284,7 +284,7 @@ export function workSearchPage(opts: {
 </script>`;
 
   return popPage({
-    active: "search-work",
+    active: "work-model",
     mode: "view",
     title: "作品検索",
     subtitle: "自社作品(works)を DB 直結で横断検索します。",
