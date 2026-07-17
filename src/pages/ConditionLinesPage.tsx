@@ -4,6 +4,7 @@ import { Search, Inbox, Loader2, ArrowRight, Trash2, RefreshCw, Bell } from "luc
 
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { conditionClient } from "@/src/lib/api/conditionClient"
 import { promptAndSendDocumentEmail } from "@/src/lib/emailSend"
 
 // データ構造刷新 Phase F: 条件明細管理 UI(一覧)。
@@ -189,8 +190,7 @@ export function ConditionLinesPage() {
   const load = React.useCallback(async () => {
     setLoading(true)
     try {
-      const r = await fetch("/api/condition-lines")
-      const d = await r.json()
+      const d: any = await conditionClient.listLines()
       setRows(Array.isArray(d) ? d : [])
     } catch {
       /* noop */
@@ -310,12 +310,7 @@ export function ConditionLinesPage() {
     if (!window.confirm(`条件明細 ${r.line_code || r.id} を削除します。よろしいですか？\n(検収/計算実績が無い明細のみ削除できます)`)) return
     setDeletingId(r.id)
     try {
-      const res = await fetch(`/api/condition-lines/${r.id}/delete`, { method: "POST" })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data?.ok === false) {
-        window.alert(data?.error || `削除に失敗しました (HTTP ${res.status})`)
-        return
-      }
+      await conditionClient.deleteLine(r.id)
       setRows((prev) => prev.filter((x) => x.id !== r.id))
     } catch (e: any) {
       window.alert(`削除に失敗しました: ${e?.message || e}`)

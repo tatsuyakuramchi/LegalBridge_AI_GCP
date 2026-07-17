@@ -3,6 +3,7 @@ import { ChevronRight, Loader2, Inbox, ArrowDownLeft, ArrowUpRight, Search } fro
 
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
+import { conditionClient } from "@/src/lib/api/conditionClient"
 
 // 条件明細(capability_line_items)の横断結果を「Request 風」のツリーで見るビュー。
 //   切り口(ピボット)= 作品 / 原作 / 取引先 / 部署 を選択してグループ化する。
@@ -200,9 +201,10 @@ export function ConditionTreePage() {
     if (category) p.set("category", category)
     if (includeAll) p.set("include_all", "1")
     p.set("limit", "1000")
-    fetch(`/api/conditions/search?${p.toString()}`, { credentials: "same-origin" })
-      .then((r) => (r.ok ? r.json() : { rows: [] }))
-      .then((d) => setRows(Array.isArray(d?.rows) ? d.rows : []))
+    // 失敗時は空表示にフォールバック(従来挙動を踏襲)。
+    conditionClient
+      .search(p)
+      .then((d: any) => setRows(Array.isArray(d?.rows) ? d.rows : []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false))
   }, [q, category, includeAll])

@@ -15,6 +15,7 @@ import {
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { conditionClient } from "@/src/lib/api/conditionClient"
 
 // データ構造刷新 Phase F: 条件明細詳細(明細番号単位)。
 //   取引先マスター詳細のセクション分割パターンを踏襲。
@@ -163,16 +164,10 @@ function LinkDocumentPanel({
     setBusy(true)
     setMsg(null)
     try {
-      const r = await fetch(`/api/condition-lines/${lineId}/link-document`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          document_id: sel.id,
-          amount_ex_tax: amount === "" ? undefined : Number(amount),
-        }),
+      await conditionClient.linkDocument(lineId, {
+        document_id: sel.id,
+        amount_ex_tax: amount === "" ? undefined : Number(amount),
       })
-      const d = await r.json()
-      if (!r.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${r.status}`)
       onDone()
     } catch (e: any) {
       setMsg("リンクに失敗しました: " + (e?.message || e))
@@ -441,9 +436,7 @@ export function ConditionLineDetailPage() {
   const load = React.useCallback(async () => {
     setLoading(true)
     try {
-      const r = await fetch(`/api/condition-lines/${encodeURIComponent(lineCode)}`)
-      const d = await r.json()
-      if (!r.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${r.status}`)
+      const d: any = await conditionClient.getLine(lineCode)
       setLine(d.line)
       setEvents(d.events || [])
       setSchedule(d.schedule || [])
@@ -465,13 +458,7 @@ export function ConditionLineDetailPage() {
     if (!window.confirm("この文書リンクを解除します（文書は残ります）。よろしいですか？")) return
     setBusy(true)
     try {
-      const r = await fetch(`/api/condition-events/${eventId}/void`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reason: "manual unlink" }),
-      })
-      const d = await r.json()
-      if (!r.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${r.status}`)
+      await conditionClient.voidEvent(eventId, { reason: "manual unlink" })
       await load()
     } catch (e: any) {
       alert("解除に失敗しました: " + (e?.message || e))

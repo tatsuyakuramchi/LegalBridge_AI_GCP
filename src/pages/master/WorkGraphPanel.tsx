@@ -16,6 +16,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useDocumentSession } from "@/src/context/AppDataContext"
+import { conditionClient } from "@/src/lib/api/conditionClient"
 import {
   FinancialConditionTable,
   calcMethodFromType,
@@ -351,12 +352,7 @@ export function WorkGraphPanel() {
 
   const linkEdge = async (edgeId: number, patch: any) => {
     try {
-      const r = await fetch(`/api/condition-lines/${edgeId}/graph-link`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await conditionClient.setGraphLink(edgeId, patch)
       await loadGraph(workId)
     } catch (e) {
       console.error("linkEdge failed", e)
@@ -800,12 +796,7 @@ export function WorkGraphPanel() {
       const body = assign
         ? { source_work_id: Number(workId), source_material_id: mid }
         : { source_material_id: null }
-      const r = await fetch(`/api/condition-lines/${line.id}/graph-link`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await conditionClient.setGraphLink(line.id, body)
       await Promise.all([loadMatConds(mid), loadGraph(workId), recallByDoc()])
     } catch (e) {
       console.error("assignRecalled failed", e)

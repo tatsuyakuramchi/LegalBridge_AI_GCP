@@ -2,6 +2,7 @@ import * as React from "react"
 import { Search, Download, X } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
+import { conditionClient } from "@/src/lib/api/conditionClient"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -95,9 +96,7 @@ export function ConditionsPanel() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch("/api/conditions/search?" + buildParams(f).toString())
-      if (!res.ok) throw new Error("HTTP " + res.status)
-      const data = await res.json()
+      const data: any = await conditionClient.search(buildParams(f))
       const list: Row[] = data.rows || []
       setRows(list)
       setTotal(typeof data.total === "number" ? data.total : null)
