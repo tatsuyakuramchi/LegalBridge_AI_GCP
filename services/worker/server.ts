@@ -737,7 +737,7 @@ async function startServer() {
       if (status === "draft") { sentAt = null; completedAt = null; }
       // 契約番号なら capability に紐付ける。
       const capRow = await query(
-        `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+        `SELECT id FROM documents WHERE document_number = $1 LIMIT 1`,
         [docNumber]
       );
       const capId = capRow.rows[0]?.id ?? null;
@@ -790,7 +790,7 @@ async function startServer() {
               (cl.delivery_date IS NOT NULL AND cl.delivery_date <= CURRENT_DATE) AS overdue
          FROM condition_lines cl
          JOIN condition_line_status_v s ON s.id = cl.id
-         LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+         LEFT JOIN documents cc ON cc.id = cl.capability_id
          LEFT JOIN vendors v ON v.id = cc.vendor_id
         WHERE s.status IN ('open','partially_fulfilled')
           AND cl.payment_scheme IN ('lump_sum','per_unit','installment')
@@ -952,7 +952,7 @@ async function startServer() {
                   cc.document_number, cc.record_type, cc.contract_title,
                   v.vendor_name
              FROM condition_lines cl
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
             WHERE cl.transaction_kind IS NULL
             ORDER BY cl.id LIMIT 50`),
@@ -1006,7 +1006,7 @@ async function startServer() {
       // この番号の capability 配下の条件明細
       const clq = await client.query(
         `SELECT cl.id, cl.amount_ex_tax
-           FROM contract_capabilities cc
+           FROM documents cc
            JOIN condition_lines cl ON cl.capability_id = cc.id
           WHERE cc.document_number = $1`,
         [docNumber]
@@ -1077,7 +1077,7 @@ async function startServer() {
                   ORDER BY created_at DESC LIMIT 1) AS drive_link,
                 (SELECT template_type FROM documents d WHERE d.document_number = cc.document_number
                   ORDER BY created_at DESC LIMIT 1) AS template_type
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.id = $1`,
         [capId]
@@ -1218,7 +1218,7 @@ async function startServer() {
         `SELECT d.id, d.document_number, d.template_type, d.form_data, d.drive_link, d.issue_key,
                 d.matter_id, cc.vendor_id, v.vendor_name
            FROM documents d
-           LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+           LEFT JOIN documents cc ON cc.document_number = d.document_number
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE d.document_number = $1
           ORDER BY cc.is_primary DESC NULLS LAST
@@ -1382,7 +1382,7 @@ async function startServer() {
                 ap.staff_name AS approver_name, ap.email AS approver_email,
                 so.staff_name AS stamp_name,    so.email AS stamp_email,
                 mg.staff_name AS manager_name,  mg.email AS manager_email
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN legal_requests lr ON lr.backlog_issue_key = cc.backlog_issue_key
            LEFT JOIN staff s  ON s.slack_user_id = lr.slack_user_id
            LEFT JOIN department_workflow_rules dwr ON dwr.department = COALESCE(s.department, lr.dept)
@@ -1438,7 +1438,7 @@ async function startServer() {
       let vendor: any = null;
       const v = await query(
         `SELECT v.vendor_name, vc.contact_name, vc.email
-           FROM contract_capabilities cc
+           FROM documents cc
            JOIN vendors v ON v.id = cc.vendor_id
            LEFT JOIN LATERAL (
              SELECT contact_name, email FROM vendor_contacts
@@ -1487,7 +1487,7 @@ async function startServer() {
         const d = await query(
           `SELECT d.document_number, d.template_type, d.drive_link, v.vendor_name
              FROM documents d
-             LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+             LEFT JOIN documents cc ON cc.document_number = d.document_number
              LEFT JOIN vendors v ON v.id = cc.vendor_id
             WHERE d.document_number = $1 ORDER BY d.created_at DESC LIMIT 1`,
           [dn]
@@ -1542,7 +1542,7 @@ async function startServer() {
         [...titleVendors, ...titleDocNumbers].join(", ") ||
         `${key} まとめ送信（${docs.length}件）`;
       const capRow = await query(
-        `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+        `SELECT id FROM documents WHERE document_number = $1 LIMIT 1`,
         [docs[0].document_number]
       );
       const capId = capRow.rows[0]?.id ?? null;
@@ -4010,7 +4010,7 @@ ${details}
            cc.backlog_issue_key,
            (cli.delivery_date - CURRENT_DATE) AS days_until
          FROM capability_line_items cli
-         JOIN contract_capabilities cc
+         JOIN documents cc
            ON cc.id = cli.capability_id
           AND cc.record_type = 'purchase_order'
          WHERE cli.delivery_date IS NOT NULL
@@ -4067,7 +4067,7 @@ ${details}
     try {
       const contracts = await query(
         `SELECT *
-           FROM contract_capabilities
+           FROM documents
           WHERE expiration_date IS NOT NULL
             AND auto_renewal = TRUE
             AND renewal_notice_months IS NOT NULL
@@ -4158,7 +4158,7 @@ ${details}
          cli.id, cli.line_no, cli.item_name, cli.delivery_date,
          cc.backlog_issue_key
        FROM capability_line_items cli
-       JOIN contract_capabilities cc
+       JOIN documents cc
          ON cc.id = cli.capability_id
         AND cc.record_type = 'purchase_order'
        WHERE cli.id = $1`,
@@ -4358,7 +4358,7 @@ ${details}
                   AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
              ) AS accepted
            FROM capability_line_items cli
-           JOIN contract_capabilities cc
+           JOIN documents cc
              ON cc.id = cli.capability_id
             AND cc.record_type = 'purchase_order'
           WHERE cc.backlog_issue_key = $1
@@ -4417,7 +4417,7 @@ ${details}
         }
         if (capId == null) {
           r = await query(
-            `SELECT id FROM contract_capabilities WHERE id = $1 LIMIT 1`,
+            `SELECT id FROM documents WHERE id = $1 LIMIT 1`,
             [idNum]
           );
           if (r.rows[0]) capId = Number(r.rows[0].id);
@@ -4478,7 +4478,7 @@ ${details}
       }));
 
       const hdr = await query(
-        `SELECT amount_ex_tax, tax_rate FROM contract_capabilities WHERE id = $1`,
+        `SELECT amount_ex_tax, tax_rate FROM documents WHERE id = $1`,
         [capId]
       );
       res.json({
@@ -4839,7 +4839,7 @@ ${details}
     const itemsRes = await query(
       `SELECT cli.id, cli.line_no, cli.item_name, cli.delivery_date
          FROM capability_line_items cli
-         JOIN contract_capabilities cc
+         JOIN documents cc
            ON cc.id = cli.capability_id
           AND cc.record_type = 'purchase_order'
         WHERE cc.backlog_issue_key = $1
@@ -7142,7 +7142,7 @@ ${details}
           ]
         );
         const capRes = await query(
-          `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+          `SELECT id FROM documents WHERE document_number = $1 LIMIT 1`,
           [docNo]
         );
         const capId = capRes.rows[0]?.id ? Number(capRes.rows[0].id) : null;
@@ -7922,7 +7922,7 @@ ${details}
             .json({ ok: false, error: "from_document_number is required" });
         }
         const master = await query(
-          `SELECT document_number FROM contract_capabilities WHERE id = $1`,
+          `SELECT document_number FROM documents WHERE id = $1`,
           [id]
         );
         const target = String(master.rows[0]?.document_number || "").trim();
@@ -8041,7 +8041,7 @@ ${details}
                   COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder,
                   (SELECT cc2.document_number
                      FROM condition_lines cl2
-                     JOIN contract_capabilities cc2 ON cc2.id = cl2.capability_id
+                     JOIN documents cc2 ON cc2.id = cl2.capability_id
                     WHERE cl2.source_material_id = wm.id
                       AND cl2.transaction_kind = 'license'
                       AND COALESCE(cc2.source_system,'') <> 'master_register'
@@ -8191,7 +8191,7 @@ ${details}
       // Phase 23: license_contracts → contract_capabilities (license)
       const refs = await query(
         `SELECT COUNT(*)::int AS c
-           FROM contract_capabilities
+           FROM documents
           WHERE contract_category = 'license'
             AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
             AND ledger_ref_id = $1`,
@@ -8607,7 +8607,7 @@ ${details}
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
            LEFT JOIN condition_lines cl
              ON cl.source_material_id = wm.id AND cl.transaction_kind = 'license'
-           LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN documents dcap ON dcap.id = cl.capability_id
            LEFT JOIN works ow ON ow.id = cl.work_id AND COALESCE(ow.kind,'own') = 'own'
           ORDER BY l.ledger_code, wm.material_no NULLS LAST, cl.id NULLS LAST`
@@ -8767,7 +8767,7 @@ ${details}
       // 参照あれば拒否 (Phase 23: license_contracts → contract_capabilities)
       const refs = await query(
         `SELECT COUNT(*)::int AS c
-           FROM contract_capabilities
+           FROM documents
           WHERE contract_category = 'license'
             AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
             AND material_ref_id = $1`,
