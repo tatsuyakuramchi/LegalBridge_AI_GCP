@@ -159,7 +159,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
         },
         `SELECT COUNT(*)::int AS n
            FROM documents d
-           JOIN contract_capabilities cc
+           JOIN documents cc
              ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
           WHERE d.issue_key IS NOT NULL
             AND cc.backlog_issue_key IS NOT NULL
@@ -170,7 +170,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                 cc.id AS capability_id,
                 cc.backlog_issue_key AS capability_issue_key
            FROM documents d
-           JOIN contract_capabilities cc
+           JOIN documents cc
              ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
           WHERE d.issue_key IS NOT NULL
             AND cc.backlog_issue_key IS NOT NULL
@@ -188,7 +188,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
         },
         `SELECT COUNT(*)::int AS n
            FROM documents d
-           LEFT JOIN contract_capabilities cc
+           LEFT JOIN documents cc
              ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
            LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
           WHERE d.template_type IN ${contractingTemplates}
@@ -200,7 +200,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                 d.template_type,
                 cc.id AS capability_id
            FROM documents d
-           LEFT JOIN contract_capabilities cc
+           LEFT JOIN documents cc
              ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
            LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
           WHERE d.template_type IN ${contractingTemplates}
@@ -280,8 +280,8 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                 doc_vendor.id AS document_vendor_id,
                 doc_vendor.vendor_name AS document_vendor_name
            FROM condition_lines cl
-           LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
-           LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
+           LEFT JOIN documents cc ON cc.id = cl.capability_id
+           LEFT JOIN documents parent_cc ON parent_cc.id = cc.parent_capability_id
            LEFT JOIN documents d ON d.document_number = cc.document_number
            LEFT JOIN legal_requests lr ON lr.backlog_issue_key = COALESCE(cc.backlog_issue_key, d.issue_key)
            LEFT JOIN vendors cv ON cv.id = cc.vendor_id
@@ -343,7 +343,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
              WHERE COALESCE(is_primary, TRUE) = FALSE
                AND COALESCE(lifecycle_status, 'final') = 'final'
             UNION ALL
-            SELECT id FROM contract_capabilities
+            SELECT id FROM documents
              WHERE COALESCE(is_primary, TRUE) = FALSE
                AND COALESCE(lifecycle_status, 'final') = 'final'
           )
@@ -363,7 +363,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                    document_number,
                    backlog_issue_key AS issue_key,
                    record_type
-              FROM contract_capabilities
+              FROM documents
              WHERE COALESCE(is_primary, TRUE) = FALSE
                AND COALESCE(lifecycle_status, 'final') = 'final'
           )
@@ -379,7 +379,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
         },
         `SELECT COUNT(*)::int AS n
            FROM documents d
-           LEFT JOIN contract_capabilities cc
+           LEFT JOIN documents cc
              ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
            LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
           WHERE d.template_type = 'pub_license_terms'
@@ -390,7 +390,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                 d.issue_key,
                 cc.id AS capability_id
            FROM documents d
-           LEFT JOIN contract_capabilities cc
+           LEFT JOIN documents cc
              ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
            LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
           WHERE d.template_type = 'pub_license_terms'
@@ -473,14 +473,14 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
         },
         `SELECT COUNT(DISTINCT s.id)::int AS n
            FROM condition_line_status_v s
-           JOIN contract_capabilities cc ON cc.id = s.capability_id
+           JOIN documents cc ON cc.id = s.capability_id
            JOIN issue_workflows iw ON iw.backlog_issue_key = cc.backlog_issue_key
           WHERE s.status IN ('fulfilled','expired')
             AND COALESCE(iw.current_status_name, '') NOT IN ('完了','終結','キャンセル','差戻し')`,
         `SELECT s.line_code, s.status, cc.backlog_issue_key,
                 iw.current_status_name
            FROM condition_line_status_v s
-           JOIN contract_capabilities cc ON cc.id = s.capability_id
+           JOIN documents cc ON cc.id = s.capability_id
            JOIN issue_workflows iw ON iw.backlog_issue_key = cc.backlog_issue_key
           WHERE s.status IN ('fulfilled','expired')
             AND COALESCE(iw.current_status_name, '') NOT IN ('完了','終結','キャンセル','差戻し')
@@ -592,13 +592,13 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             WHERE d.template_type = 'purchase_order'
               AND COALESCE(d.is_primary, TRUE) = TRUE
               AND COALESCE(d.lifecycle_status, 'final') = 'final'
-              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc
+              AND NOT EXISTS (SELECT 1 FROM documents cc
                                WHERE cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number))`,
           `SELECT d.document_number, d.issue_key FROM documents d
             WHERE d.template_type = 'purchase_order'
               AND COALESCE(d.is_primary, TRUE) = TRUE
               AND COALESCE(d.lifecycle_status, 'final') = 'final'
-              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc
+              AND NOT EXISTS (SELECT 1 FROM documents cc
                                WHERE cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number))
             ORDER BY d.created_at DESC LIMIT 8`
         ),
@@ -611,14 +611,14 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               "final/正本の空 contract_capabilities(条件明細なし)に対応する documents が無い。PDF/編集できない孤立 capability の候補。(除外: 合成 MLC- 登録器 source_system='master_register' / superseded 旧版 / condition_lines を持つ登録条件=文書なしが正常)",
             repair_action: null,
           },
-          `SELECT COUNT(*)::int AS n FROM contract_capabilities cc
+          `SELECT COUNT(*)::int AS n FROM documents cc
             WHERE cc.document_number IS NOT NULL
               AND COALESCE(cc.source_system, '') <> 'master_register'
               AND COALESCE(cc.is_primary, TRUE) = TRUE
               AND COALESCE(cc.lifecycle_status, 'final') = 'final'
               AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id)
               AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.document_number = cc.document_number)`,
-          `SELECT cc.id, cc.document_number, cc.record_type FROM contract_capabilities cc
+          `SELECT cc.id, cc.document_number, cc.record_type FROM documents cc
             WHERE cc.document_number IS NOT NULL
               AND COALESCE(cc.source_system, '') <> 'master_register'
               AND COALESCE(cc.is_primary, TRUE) = TRUE
@@ -775,7 +775,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                           ELSE NULL
                         END AS suggested_transaction_kind
                    FROM condition_lines cl
-                   LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+                   LEFT JOIN documents cc ON cc.id = cl.capability_id
                   WHERE cl.transaction_kind IS NULL
                   ORDER BY cl.id
                   LIMIT $1
@@ -793,8 +793,8 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                  SELECT cl.id,
                         COALESCE(cc.vendor_id, parent_cc.vendor_id, doc_vendor.id) AS suggested_counterparty_vendor_id
                    FROM condition_lines cl
-                   LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
-                   LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
+                   LEFT JOIN documents cc ON cc.id = cl.capability_id
+                   LEFT JOIN documents parent_cc ON parent_cc.id = cc.parent_capability_id
                    LEFT JOIN documents d ON d.document_number = cc.document_number
                    LEFT JOIN legal_requests lr ON lr.backlog_issue_key = COALESCE(cc.backlog_issue_key, d.issue_key)
                    LEFT JOIN LATERAL (
@@ -861,7 +861,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                       d.template_type,
                       cc.id AS capability_id
                  FROM documents d
-                 LEFT JOIN contract_capabilities cc
+                 LEFT JOIN documents cc
                    ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
                  LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
                 WHERE d.template_type = ANY($1::text[])
@@ -1078,7 +1078,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               `UPDATE documents cc
                   SET lifecycle_status = 'superseded',
                       superseded_by = COALESCE(NULLIF(cc.superseded_by, ''), p.document_number)
-                 FROM contract_capabilities p
+                 FROM documents p
                 WHERE COALESCE(cc.is_primary, TRUE) = FALSE
                   AND COALESCE(cc.lifecycle_status, 'final') = 'final'
                   AND cc.base_document_number IS NOT NULL
@@ -1101,7 +1101,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             residualCapabilities = Number(
               (
                 await client.query(
-                  `SELECT COUNT(*)::int AS n FROM contract_capabilities
+                  `SELECT COUNT(*)::int AS n FROM documents
                     WHERE COALESCE(is_primary, TRUE) = FALSE
                       AND COALESCE(lifecycle_status, 'final') = 'final'`
                 )
