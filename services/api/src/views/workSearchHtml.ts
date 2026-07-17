@@ -63,6 +63,37 @@ const STYLE = `
 .wk-pager { display: flex; justify-content: center; gap: 10px; align-items: center; margin: 16px 0; }
 .wk-pager button { padding: 7px 14px; border: 1px solid var(--line, #d1d5db); border-radius: 10px; background: var(--card, #fff); color: inherit; cursor: pointer; font-size: 12px; }
 .wk-pager button[disabled] { opacity: .4; cursor: not-allowed; }
+
+/* 権利ツリー (詳細内) */
+.rt { border: 1px solid var(--line, #e5e7eb); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--panel-2, #fafafc); }
+.rt-title { font-size: 12px; font-weight: 800; margin-bottom: 8px; }
+.rt-kpis { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.rt-k { font-size: 11px; font-family: var(--mono); border: 1px solid var(--line); border-radius: 8px; padding: 2px 9px; }
+.rt-k.own { color: #6c5ce7; border-color: #c9bdff; } .rt-k.out { color: #d97316; border-color: #f4c4a2; } .rt-k.in { color: #1f9d5b; border-color: #a5dcbb; }
+.rt-branch { margin-top: 8px; }
+.rt-bh { font-size: 12px; font-weight: 700; margin: 6px 0; }
+.rt-bh.out { color: #d97316; } .rt-bh.in { color: #1f9d5b; }
+.rt-leaf { display: flex; gap: 9px; align-items: stretch; border: 1px solid var(--line); border-radius: 10px; background: var(--card, #fff); padding: 7px 10px; margin: 5px 0 5px 12px; }
+.rt-stripe { width: 4px; border-radius: 3px; flex: none; }
+.rt-leaf.st-own .rt-stripe { background: #6c5ce7; } .rt-leaf.st-in .rt-stripe { background: #1f9d5b; } .rt-leaf.st-out .rt-stripe { background: #d97316; }
+.rt-h { font-size: 12.5px; font-weight: 650; }
+.rt-party { font-size: 11px; color: var(--muted, #6b7280); font-weight: 400; }
+.rt-badge { font-size: 9.5px; font-weight: 700; border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; color: var(--muted); }
+.rt-badge.own { color: #6c5ce7; border-color: #c9bdff; background: #efeaff; }
+.rt-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.rt-mc { font-size: 11px; border: 1px solid var(--line); border-radius: 7px; padding: 1px 8px; background: var(--panel-2); }
+.rt-mc b { font-size: 9px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 3px; }
+.rt-mc.rt-own { color: #6c5ce7; border-color: #c9bdff; background: #efeaff; font-family: var(--mono); font-weight: 650; }
+.rt-mc.rt-in { color: #1f9d5b; border-color: #a5dcbb; font-family: var(--mono); } .rt-mc.rt-out { color: #d97316; border-color: #f4c4a2; font-family: var(--mono); }
+.rt-sum { border: 1px dashed #a5dcbb; background: #e7f6ec; border-radius: 10px; padding: 8px 11px; margin: 4px 0 6px 12px; }
+.rt-sum-h { font-size: 11px; font-weight: 800; color: #1f9d5b; margin-bottom: 4px; }
+.rt-srow { font-size: 12px; padding: 3px 0; border-top: 1px dashed #a5dcbb; }
+.rt-srow:first-of-type { border-top: none; }
+.rt-srow b { min-width: 76px; display: inline-block; }
+.rt-lang { font-family: var(--mono); font-size: 11px; border: 1px solid #a5dcbb; border-radius: 6px; padding: 0 6px; background: #fff; }
+.rt-via { color: var(--muted); font-size: 11px; }
+.rt-warn { margin-top: 6px; font-size: 11px; color: #d97316; background: #fdeadf; border: 1px solid #f4c4a2; border-radius: 8px; padding: 4px 9px; }
+.rt-empty { font-size: 11px; color: var(--muted); margin-left: 12px; }
 `;
 
 export function workSearchPage(opts: {
@@ -163,15 +194,57 @@ export function workSearchPage(opts: {
     if (!h) h = '<div style="color:var(--muted,#9ca3af);">製品・素材・契約の紐づけはありません。</div>';
     return h;
   }
+  // 権利ツリー(契約構造の金銭イン/アウト・買い切り・許諾地域サマリー)。
+  function rtLeaf(r){
+    var meta='';
+    if (r.type==='own'){
+      meta = '<span class="rt-mc rt-own">💴 一時金 '+esc(r.amount_label||'')+'</span><span class="rt-mc"><b>期間</b>永続（買い切り）</span>';
+    } else {
+      if (r.calc) meta += '<span class="rt-mc rt-'+r.dir+'"><b>計算条件</b>'+esc(r.calc)+'</span>';
+      if (r.territory) meta += '<span class="rt-mc"><b>許諾地域</b>'+esc(r.territory)+'</span>';
+      if (r.language) meta += '<span class="rt-mc"><b>許諾言語</b>'+esc(r.language)+'</span>';
+    }
+    var badge = r.type==='own' ? '<span class="rt-badge own">買い切り ∞</span>' : r.type==='free' ? '<span class="rt-badge">無償</span>' : '';
+    var st = r.type==='own' ? 'own' : (r.dir==='in' ? 'in' : 'out');
+    return '<div class="rt-leaf st-'+st+'"><span class="rt-stripe"></span><div style="min-width:0;">'
+      +'<div class="rt-h">'+esc(r.name)+' <span class="rt-party">· '+esc(r.party)+'</span> '+badge+'</div>'
+      +'<div class="rt-meta">'+meta+'</div></div></div>';
+  }
+  function renderRightsTree(rt){
+    if (!rt || rt.ok===false) return '';
+    var acq = (rt.acquired||[]).map(rtLeaf).join('') || '<div class="rt-empty">なし</div>';
+    var grn = (rt.granted||[]).map(rtLeaf).join('') || '<div class="rt-empty">なし</div>';
+    var sum='';
+    (rt.territorySummary||[]).forEach(function(s){
+      sum += '<div class="rt-srow"><b>'+esc(s.territory)+'</b> <span class="rt-lang">'+esc((s.languages||[]).join('・')||'—')+'</span> <span class="rt-via">'+esc((s.rights||[]).join(' / '))+'</span></div>';
+    });
+    var warn = (rt.overlaps && rt.overlaps.length) ? '<div class="rt-warn">⚠ '+esc(rt.overlaps.join('、'))+' は広域許諾と範囲が重複します。媒体・独占条件をご確認ください。</div>' : '';
+    var sumBlock = sum ? '<div class="rt-sum"><div class="rt-sum-h">🌐 許諾地域サマリー</div>'+sum+warn+'</div>' : '';
+    var t = rt.totals||{};
+    return '<div class="rt">'
+      +'<div class="rt-title">契約・権利ツリー（金銭イン/アウト・買い切り）</div>'
+      +'<div class="rt-kpis">'
+        +'<span class="rt-k own">◆ 買い切り '+(t.buyout_count||0)+'件 / ¥'+((t.buyout_amount||0).toLocaleString('ja-JP'))+'</span>'
+        +'<span class="rt-k out">▼ 取得 '+(t.acquired_count||0)+'件</span>'
+        +'<span class="rt-k in">▲ 許諾 '+(t.granted_count||0)+'件</span>'
+      +'</div>'
+      +'<div class="rt-branch"><div class="rt-bh out">▼ 取得した権利（当社が支払・保有）</div>'+acq+'</div>'
+      +'<div class="rt-branch"><div class="rt-bh in">▲ 許諾した権利（当社が受領）</div>'+sumBlock+grn+'</div>'
+      +'</div>';
+  }
   function toggleDetail(cardEl){
     var box = cardEl.querySelector('.wk-detail');
     if (box.style.display !== 'none'){ box.style.display='none'; return; }
     if (box.getAttribute('data-loaded')){ box.style.display='block'; return; }
     box.style.display='block'; box.innerHTML = '読み込み中…';
-    fetch('/api/v3/works/'+encodeURIComponent(cardEl.getAttribute('data-id')), { credentials:'same-origin' })
-      .then(function(r){ return r.json(); })
-      .then(function(d){ box.innerHTML = detailHtml(d); box.setAttribute('data-loaded','1'); })
-      .catch(function(e){ box.innerHTML = '<span style="color:#b91c1c;">詳細の取得に失敗しました</span>'; });
+    var id = encodeURIComponent(cardEl.getAttribute('data-id'));
+    Promise.all([
+      fetch('/api/v3/works/'+id, { credentials:'same-origin' }).then(function(r){ return r.json(); }).catch(function(){ return {}; }),
+      fetch('/api/v3/works/'+id+'/rights-tree', { credentials:'same-origin' }).then(function(r){ return r.json(); }).catch(function(){ return null; })
+    ]).then(function(res){
+      box.innerHTML = renderRightsTree(res[1]) + detailHtml(res[0]);
+      box.setAttribute('data-loaded','1');
+    }).catch(function(){ box.innerHTML = '<span style="color:#b91c1c;">詳細の取得に失敗しました</span>'; });
   }
   function render(data){
     total = data.total||0;

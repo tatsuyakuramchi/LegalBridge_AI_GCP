@@ -498,6 +498,119 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // ── 権利ツリー(金銭イン/アウト＋買い切り＋許諾地域サマリー)──────────────
+  //   作品を根に condition_lines を直読みし、取得(payable)/許諾(receivable)へ分岐。
+  //   買い切り = 固定額(rate/mg なし・amount_ex_tax あり) → 金額表示。
+  //   ランニング = 計算条件(印税/MG) ＋ region_territory / region_language を表示。
+  //   許諾側は region_territory で地域サマリーを集計(言語ロールアップ＋重複検知)。
+  app.get("/api/v3/works/:id/rights-tree", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const w = await query(
+        `SELECT id, work_code, title, work_type, status FROM works WHERE id = $1`,
+        [id]
+      );
+      if (w.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+
+      const cl = await query(
+        `SELECT cl.id, cl.direction, cl.payment_scheme, cl.calc_method,
+                cl.rate_pct, cl.mg_amount, cl.amount_ex_tax, cl.currency,
+                cl.region_territory, cl.region_language, cl.formula_text,
+                COALESCE(NULLIF(cl.condition_name,''), NULLIF(cl.subject,''), '(無題)') AS name,
+                COALESCE(v.vendor_name, dv.vendor_name) AS party,
+                d.document_number
+           FROM condition_lines cl
+           LEFT JOIN vendors v   ON v.id  = cl.counterparty_vendor_id
+           LEFT JOIN documents d ON d.id  = cl.document_id
+           LEFT JOIN vendors dv  ON dv.id = d.vendor_id
+          WHERE cl.work_id = $1
+            AND cl.void_reason IS NULL
+          ORDER BY cl.direction, cl.line_no NULLS LAST, cl.id`,
+        [id]
+      );
+
+      const isRunning = (r: any) => {
+        const scheme = String(r.payment_scheme || "").toLowerCase();
+        const cm = String(r.calc_method || "").toUpperCase();
+        return (
+          ["royalty", "subscription", "per_unit", "installment"].includes(scheme) ||
+          ["ROYALTY", "SUBSCRIPTION", "PER_UNIT", "INSTALLMENT"].includes(cm) ||
+          r.rate_pct != null ||
+          (r.mg_amount != null && Number(r.mg_amount) > 0)
+        );
+      };
+      const yen = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP");
+      const calcLabel = (r: any) => {
+        const rate = r.rate_pct != null ? Number(r.rate_pct) : null;
+        const mg = r.mg_amount != null && Number(r.mg_amount) > 0 ? Number(r.mg_amount) : null;
+        if (rate != null && rate !== 0) return mg ? `MG ${yen(mg)} ＋ ${rate}%` : `印税 ${rate}%`;
+        if (mg) return `MG ${yen(mg)}`;
+        if (r.formula_text) return String(r.formula_text);
+        if (String(r.payment_scheme || "").toLowerCase() === "subscription") return "定期課金";
+        return "計算条件あり";
+      };
+
+      const rights = cl.rows.map((r: any) => {
+        const running = isRunning(r);
+        const amount = r.amount_ex_tax != null ? Number(r.amount_ex_tax) : null;
+        const type = running ? "run" : amount && amount > 0 ? "own" : "free";
+        return {
+          id: r.id,
+          direction: r.direction, // payable / receivable
+          dir: r.direction === "receivable" ? "in" : "out",
+          type, // own(買い切り) / run(ランニング) / free(無償)
+          name: r.name,
+          party: r.party || "(取引先未設定)",
+          amount,
+          amount_label: amount != null ? yen(amount) : null,
+          calc: type === "run" ? calcLabel(r) : type === "free" ? "無償" : null,
+          territory: r.region_territory || null,
+          language: r.region_language || null,
+          document_number: r.document_number || null,
+        };
+      });
+
+      const acquired = rights.filter((r) => r.direction === "payable");
+      const granted = rights.filter((r) => r.direction === "receivable");
+
+      // 許諾地域サマリー: region_territory ごとに言語ロールアップ＋対象権利。
+      const map: Record<string, { territory: string; languages: string[]; rights: string[] }> = {};
+      const order: string[] = [];
+      for (const g of granted) {
+        const t = g.territory || "（地域未設定）";
+        if (!map[t]) { map[t] = { territory: t, languages: [], rights: [] }; order.push(t); }
+        String(g.language || "—").split(/[・,\/／]/).map((s) => s.trim()).filter(Boolean).forEach((l) => {
+          if (!map[t].languages.includes(l)) map[t].languages.push(l);
+        });
+        map[t].rights.push(g.name);
+      }
+      // 「全世界」的な広域許諾と特定地域で同一言語が重なる場合は重複候補として返す。
+      const WORLD = ["全世界", "世界", "worldwide", "global", "all"];
+      const worldKey = order.find((t) => WORLD.some((w2) => t.toLowerCase().includes(w2.toLowerCase())));
+      const overlaps: string[] = [];
+      if (worldKey) {
+        for (const t of order) {
+          if (t === worldKey) continue;
+          for (const l of map[t].languages) {
+            if (map[worldKey].languages.includes(l)) overlaps.push(`${t}（${l}）`);
+          }
+        }
+      }
+      const territorySummary = order.map((t) => map[t]);
+
+      const buyouts = acquired.filter((r) => r.type === "own");
+      const totals = {
+        buyout_count: buyouts.length,
+        buyout_amount: buyouts.reduce((s, r) => s + (r.amount || 0), 0),
+        acquired_count: acquired.length,
+        granted_count: granted.length,
+      };
+
+      res.json({ ok: true, work: w.rows[0], acquired, granted, territorySummary, overlaps, totals });
+    } catch (e) { fail(res, e); }
+  });
+
   // ── 契約(新モデル)────────────────────────────────────────
   app.get("/api/v3/contracts", ...requireRead, async (_req, res) => {
     try {
