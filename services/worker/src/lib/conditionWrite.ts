@@ -33,6 +33,10 @@ export interface ConditionInput {
   calc_type?: string | null; fixed_kind?: string | null; subscription_cycle?: string | null;
   guarantee_type?: string | null;
   region_territory?: string | null; region_language?: string | null;
+  // 0133: 選択式・国名単位・複数(1対N)。子テーブル condition_line_regions/languages へ保存。
+  //   未指定(undefined)なら子テーブルは触らない。配列指定(空配列含む)なら置換。
+  regions?: Array<{ code?: string | null; name?: string | null }> | null;
+  languages?: Array<{ code?: string | null; name?: string | null }> | null;
   formula_text?: string | null; payment_terms?: string | null; payment_method?: string | null;
   payment_date?: string | null; delivery_date?: string | null;
   term_start?: string | null; term_end?: string | null; cycle?: string | null; billing_day?: any;
@@ -53,6 +57,51 @@ const num = (v: any): number | null => {
 };
 const str = (v: any): string | null =>
   v == null || String(v).trim() === "" ? null : String(v);
+
+// 0133: 許諾地域/言語の 1対N 子テーブルへ置換保存する。
+//   配列(regions/languages)を優先。undefined かつ結合文字列も無ければ何もしない
+//   (部分更新時に既存の子行を消さない安全側)。配列 or 文字列があれば DELETE→INSERT。
+function normalizeRL(
+  arr: Array<{ code?: string | null; name?: string | null }> | null | undefined,
+  strVal: string | null | undefined
+): Array<{ code: string | null; name: string }> {
+  if (Array.isArray(arr)) {
+    return arr
+      .map((x) => ({ code: (x?.code ?? null) as string | null, name: String(x?.name ?? "").trim() }))
+      .filter((x) => x.name !== "");
+  }
+  const s = String(strVal ?? "").trim();
+  if (!s) return [];
+  return s
+    .split(/[・、,\/／]/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((name) => ({ code: null, name }));
+}
+async function writeRegionLanguageChildren(db: CondDb, lineId: number, c: ConditionInput): Promise<void> {
+  if (c.regions !== undefined || (c.region_territory !== undefined && c.region_territory !== null)) {
+    const regions = normalizeRL(c.regions, c.region_territory);
+    await db.query(`DELETE FROM condition_line_regions WHERE condition_line_id = $1`, [lineId]);
+    for (let i = 0; i < regions.length; i++) {
+      await db.query(
+        `INSERT INTO condition_line_regions (condition_line_id, country_code, country_name, sort_order)
+         VALUES ($1, $2, $3, $4)`,
+        [lineId, regions[i].code, regions[i].name, i]
+      );
+    }
+  }
+  if (c.languages !== undefined || (c.region_language !== undefined && c.region_language !== null)) {
+    const languages = normalizeRL(c.languages, c.region_language);
+    await db.query(`DELETE FROM condition_line_languages WHERE condition_line_id = $1`, [lineId]);
+    for (let i = 0; i < languages.length; i++) {
+      await db.query(
+        `INSERT INTO condition_line_languages (condition_line_id, language_code, language_name, sort_order)
+         VALUES ($1, $2, $3, $4)`,
+        [lineId, languages[i].code, languages[i].name, i]
+      );
+    }
+  }
+}
 
 /** payment_scheme 導出: 明示優先、無ければ料率ありで royalty / それ以外 lump_sum。 */
 function derivePaymentScheme(c: ConditionInput): string {
@@ -207,7 +256,11 @@ export async function upsertDocumentConditions(
        RETURNING id`,
       vals
     );
-    lineIds.push(Number(ins.rows[0].id));
+    const lineId = Number(ins.rows[0].id);
+    lineIds.push(lineId);
+    // 0133: 許諾地域/言語の子テーブル(1対N)を置換保存。regions/languages 配列を優先し、
+    //   無ければ region_territory/region_language の結合文字列を区切って name のみで展開。
+    await writeRegionLanguageChildren(db, lineId, c);
   }
 
   // 不要CL削除（新セットに無い line_no で、実績/作品参照を持たない CL のみ）。
