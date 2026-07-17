@@ -1103,12 +1103,12 @@ export async function initDb() {
        CREATE TEMP TABLE _cc_winners ON COMMIT DROP AS
          SELECT DISTINCT ON (document_number)
                 document_number, id AS winner_id
-           FROM contract_capabilities
+           FROM documents
           WHERE document_number IS NOT NULL
           ORDER BY document_number, updated_at DESC NULLS LAST, id DESC;
        CREATE TEMP TABLE _cc_losers ON COMMIT DROP AS
          SELECT cc.id AS loser_id, w.winner_id
-           FROM contract_capabilities cc
+           FROM documents cc
            JOIN _cc_winners w ON w.document_number = cc.document_number
           WHERE cc.id <> w.winner_id;
        SELECT COUNT(*) INTO loser_count FROM _cc_losers;
@@ -1391,7 +1391,7 @@ export async function initDb() {
          UPDATE royalty_calculations rc
             SET capability_id = cc.id
            FROM license_contracts lc
-           JOIN contract_capabilities cc
+           JOIN documents cc
              ON cc.document_number = COALESCE(lc.contract_number, lc.ledger_number, lc.work_id)
           WHERE rc.license_contract_id = lc.id
             AND rc.capability_id IS NULL
