@@ -11,9 +11,9 @@
  * の両方が同一の変換ルールを使うことで、移行データと新規データの整合を保つ。
  *
  * payment_scheme 判定マッピング表 (⚠ 実データの calc_method 値域は
- *   `SELECT DISTINCT calc_method FROM capability_line_items` 等で要確認):
+ *   condition_lines(legacy_role='cli') の payment_scheme 等で要確認):
  *
- *   capability_line_items:
+ *   line item (cli):
  *     calc_method='SUBSCRIPTION'                  → subscription
  *     cycle あり / billing_day あり               → subscription
  *     quantity あり かつ unit_price あり          → per_unit

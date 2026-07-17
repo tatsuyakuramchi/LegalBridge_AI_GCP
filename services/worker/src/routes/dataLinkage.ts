@@ -573,10 +573,10 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           },
           `SELECT COUNT(*)::int AS n FROM delivery_line_items dli
             WHERE dli.capability_line_item_id IS NOT NULL
-              AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = dli.capability_line_item_id)`,
+              AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.id = dli.capability_line_item_id AND cl.legacy_role = 'cli')`,
           `SELECT dli.id, dli.delivery_event_id, dli.capability_line_item_id FROM delivery_line_items dli
             WHERE dli.capability_line_item_id IS NOT NULL
-              AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = dli.capability_line_item_id)
+              AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.id = dli.capability_line_item_id AND cl.legacy_role = 'cli')
             ORDER BY dli.id DESC LIMIT 8`
         ),
         // ⑥ capability の無い発注書(documents) — 連結欠落(検出のみ)
@@ -739,7 +739,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             const d = await client.query(
               `UPDATE delivery_line_items dli SET capability_line_item_id = NULL
                 WHERE dli.capability_line_item_id IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = dli.capability_line_item_id)`
+                  AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.id = dli.capability_line_item_id AND cl.legacy_role = 'cli')`
             );
             await client.query("COMMIT");
             return res.json({

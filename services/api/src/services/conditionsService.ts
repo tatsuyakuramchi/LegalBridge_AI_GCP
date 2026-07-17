@@ -57,6 +57,45 @@ const COMMON_JOINS = `
     OR s.staff_name = d.created_by
 `;
 
+// G3b: 互換VIEW capability_line_items(cli) と同一射影のインラインサブクエリ。
+//   VIEW 定義(0101)に依存せず condition_lines を直読みする(VIEW 撤去に備える)。
+const CLI_SRC = `(SELECT
+    cl0.id AS id,
+    cl0.capability_id AS capability_id,
+    (cl0.line_no-1000) AS line_no,
+    cl0.category AS category,
+    cl0.condition_name AS item_name,
+    cl0.spec AS spec,
+    CASE cl0.payment_scheme WHEN 'subscription' THEN 'SUBSCRIPTION' ELSE 'FIXED' END AS calc_method,
+    cl0.payment_method AS payment_method,
+    cl0.payment_terms AS payment_terms,
+    cl0.quantity::numeric AS quantity,
+    cl0.unit_price AS unit_price,
+    cl0.amount_ex_tax AS amount_ex_tax,
+    cl0.delivery_date AS delivery_date,
+    cl0.payment_date AS payment_date,
+    cl0.cycle AS cycle,
+    cl0.billing_day AS billing_day,
+    cl0.term_start AS term_start,
+    cl0.term_end AS term_end,
+    cl0.created_at AS created_at,
+    cl0.updated_at AS updated_at,
+    NULL::numeric(15,2) AS inspected_amount_ex_tax,
+    NULL::timestamp with time zone AS last_alert_at,
+    NULL::integer AS alert_count,
+    NULL::integer AS source_ip_id,
+    cl0.source_work_id AS work_id,
+    NULL::integer AS master_contract_id,
+    NULL::integer AS ringi_id,
+    cl0.status_flags AS status_flags,
+    cl0.is_inbound AS is_inbound,
+    CASE cl0.direction WHEN 'receivable' THEN 'out' ELSE 'in' END AS flow_direction,
+    NULL::character varying(20) AS fee_type,
+    cl0.rate_pct AS rate_pct,
+    cl0.deliverable_ownership AS deliverable_ownership,
+    NULL::text AS royalty_calc_basis
+  FROM condition_lines cl0 WHERE cl0.legacy_role = 'cli')`;
+
 function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
   const where: string[] = [];
   const params: any[] = [];
@@ -121,7 +160,7 @@ export async function listConditions(
   //   そちらから採る(新優先)。id は常に cli.id(= cl.source_line_item_id)に固定。
   const { sql: whereSql, params } = buildWhere(f);
 
-  const fromJoins = `FROM capability_line_items cli
+  const fromJoins = `FROM ${CLI_SRC} cli
        JOIN documents cc ON cc.id = cli.capability_id
        LEFT JOIN condition_lines cl ON cl.source_line_item_id = cli.id
        LEFT JOIN condition_line_status_v sv ON sv.id = cl.id ${COMMON_JOINS}`;
@@ -530,7 +569,7 @@ export async function autoLinkConditions(opts: {
     `SELECT cli.id, cli.item_name, cli.spec,
             cli.source_ip_id, cli.work_id, cli.master_contract_id, cli.ringi_id,
             cc.vendor_id, cc.document_number, cc.contract_title, cc.contract_category
-       FROM capability_line_items cli
+       FROM ${CLI_SRC} cli
        JOIN documents cc ON cc.id = cli.capability_id
       WHERE 1=1 ${idsClause}
       ORDER BY cli.id`,
@@ -741,7 +780,7 @@ export async function autoStatusConditions(opts: {
               AND COALESCE(cli.inspected_amount_ex_tax, 0) >= cli.amount_ex_tax - 0.5,
               false
             ) AS ev_insp
-       FROM capability_line_items cli
+       FROM ${CLI_SRC} cli
        JOIN documents cc ON cc.id = cli.capability_id
       WHERE 1=1 ${idsClause}
       ORDER BY cli.id`,

@@ -9,6 +9,7 @@
 //     contract-check/purposes, imports/legalon-csv/template
 
 import type { Express } from "express";
+import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.js";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 
@@ -320,12 +321,12 @@ export function registerSharedReads(
                              )
                         FROM condition_lines cl
                        WHERE cl.source_condition_id IN (
-                               SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id)
+                               SELECT id FROM condition_lines WHERE legacy_role = 'cfc' AND capability_id = cc.id)
                          AND (SELECT COUNT(*) FROM condition_lines x
                                WHERE x.source_condition_id IN (
-                                 SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id))
-                             = (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id)
-                         AND (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id) > 0
+                                 SELECT id FROM condition_lines WHERE legacy_role = 'cfc' AND capability_id = cc.id))
+                             = (SELECT COUNT(*) FROM condition_lines y WHERE y.legacy_role = 'cfc' AND y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM condition_lines y WHERE y.legacy_role = 'cfc' AND y.capability_id = cc.id) > 0
                     ),
                     (
                       SELECT json_agg(
@@ -347,7 +348,7 @@ export function registerSharedReads(
                                )
                                ORDER BY cfc.condition_no ASC
                              )
-                        FROM capability_financial_conditions cfc
+                        FROM (${CFC_VIEW_SQL}) cfc
                        WHERE cfc.capability_id = cc.id
                     ),
                     '[]'::json
@@ -380,8 +381,8 @@ export function registerSharedReads(
                        WHERE cl.capability_id = cc.id AND cl.source_line_item_id IS NOT NULL
                          AND (SELECT COUNT(*) FROM condition_lines x
                                WHERE x.capability_id = cc.id AND x.source_line_item_id IS NOT NULL)
-                             = (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id)
-                         AND (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id) > 0
+                             = (SELECT COUNT(*) FROM condition_lines y WHERE y.legacy_role = 'cli' AND y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM condition_lines y WHERE y.legacy_role = 'cli' AND y.capability_id = cc.id) > 0
                     ),
                     (
                       SELECT json_agg(
@@ -406,7 +407,7 @@ export function registerSharedReads(
                                )
                                ORDER BY cli.line_no ASC
                              )
-                        FROM capability_line_items cli
+                        FROM (${CLI_VIEW_SQL}) cli
                        WHERE cli.capability_id = cc.id
                     ),
                     '[]'::json
