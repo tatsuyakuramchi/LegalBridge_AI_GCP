@@ -1010,6 +1010,26 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           左サイドバーの <strong>Master · Context → Staff</strong> で担当者を選び、
           上の <strong>Sync Staff</strong> ボタンで一括反映できます (手入力も可)。
         </p>
+        <div className="mb-3 space-y-1">
+          <Label className="text-[10px] font-mono opacity-70">
+            担当者を検索して補完（サイドバー選択なしでも可）
+          </Label>
+          <EntitySearchSelect
+            entity="staff"
+            onSelect={(o) => {
+              const s = o?.raw
+              if (!s) return
+              setFormData({
+                ...formData,
+                STAFF_NAME: s.staff_name || s.name || "",
+                STAFF_DEPARTMENT: s.department || "",
+                STAFF_PHONE: s.phone || "",
+                STAFF_EMAIL: s.email || "",
+              })
+            }}
+            placeholder="担当者を検索（氏名 / 部署 / メール）"
+          />
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-[11px] font-mono">担当者氏名</Label>

@@ -156,14 +156,16 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     })
   }
 
-  const fillStaff = () => {
-    if (!selectedStaff) return
+  const fillStaff = () => fillStaffFrom(selectedStaff)
+  // 任意のスタッフ s から担当欄を充填(Sync Staff ボタンと staff 検索の双方から使う)。
+  const fillStaffFrom = (s: any) => {
+    if (!s) return
     setFormData({
       ...formData,
-      STAFF_NAME: selectedStaff.staff_name || "",
-      STAFF_DEPARTMENT: selectedStaff.department || "",
-      STAFF_PHONE: selectedStaff.phone || "",
-      STAFF_EMAIL: selectedStaff.email || "",
+      STAFF_NAME: s.staff_name || s.name || "",
+      STAFF_DEPARTMENT: s.department || "",
+      STAFF_PHONE: s.phone || "",
+      STAFF_EMAIL: s.email || "",
     })
   }
 
@@ -313,6 +315,16 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         {renderField("PARTY_A_REP")}
         <div className="col-span-full mt-3 pt-3 border-t border-dashed border-input text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
           担当スタッフ
+        </div>
+        <div className="col-span-full space-y-1">
+          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            担当者を検索して充填（サイドバー選択なしでも可）
+          </label>
+          <EntitySearchSelect
+            entity="staff"
+            onSelect={(o) => o && fillStaffFrom(o.raw)}
+            placeholder="担当者を検索（氏名 / 部署 / メール）"
+          />
         </div>
         {renderField("STAFF_NAME")}
         {renderField("STAFF_DEPARTMENT")}

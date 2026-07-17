@@ -88,14 +88,16 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
   }
   const fillCounterpartyFromPartner = () => fillCounterpartyFrom(activeVendor)
 
-  const fillInspectorFromStaff = () => {
-    if (!selectedStaff) return
+  const fillInspectorFromStaff = () => fillInspectorFrom(selectedStaff)
+  // 任意のスタッフ s から検収者欄を充填(Sync Staff ボタンと staff 検索の双方から使う)。
+  const fillInspectorFrom = (s: any) => {
+    if (!s) return
     setFormData({
       ...formData,
-      inspectorDept: selectedStaff.department || "",
-      inspectorName: selectedStaff.staff_name || "",
+      inspectorDept: s.department || "",
+      inspectorName: s.staff_name || s.name || "",
       // Phase 9b: みなし同意ブロックの連絡先用
-      inspectorEmail: selectedStaff.email || "",
+      inspectorEmail: s.email || "",
     })
   }
 
@@ -574,6 +576,17 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           icon={<User className="w-4 h-4" />}
           headerActions={sideButton("Sync Staff", fillInspectorFromStaff, !selectedStaff)}
         >
+          {/* 統一検索モジュール: サイドバー選択なしでも担当者を直接検索補完。 */}
+          <div className="col-span-full space-y-1">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              担当者を検索して検収者を充填（DB検索補完）
+            </label>
+            <EntitySearchSelect
+              entity="staff"
+              onSelect={(o) => o && fillInspectorFrom(o.raw)}
+              placeholder="担当者を検索（氏名 / 部署 / メール）"
+            />
+          </div>
           {renderGroup("III. 検収者 (自社)")}
         </FormSection>
 
