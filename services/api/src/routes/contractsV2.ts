@@ -226,7 +226,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
                AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
           ) AS nearest_line_delivery_date,
           (cc.backlog_issue_key LIKE 'IMPORT-%') AS is_imported
-        FROM contract_capabilities cc
+        FROM documents cc
         LEFT JOIN vendors v ON v.id = cc.vendor_id
         ${whereSql}
         ORDER BY cc.updated_at DESC NULLS LAST, cc.id DESC
@@ -312,11 +312,11 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         return res.status(400).json({ error: "invalid id" });
       }
       const header = await deps.query(
-        `SELECT cc.*, v.vendor_code, v.vendor_name, v.entity_type AS vendor_entity_type,
+        `SELECT cc.id, cc.vendor_id, cc.external_asset_id, cc.record_type, cc.contract_category, cc.contract_type, cc.contract_title, cc.document_number, cc.contract_status, cc.effective_date, cc.expiration_date, cc.auto_renewal, cc.source_system, cc.legalon_url, cc.cloudsign_url, cc.drive_url, cc.document_url, cc.purpose_codes, cc.purchase_order_allowed, cc.license_condition_allowed, cc.publication_contract_allowed, cc.publication_condition_allowed, cc.condition_number, cc.original_work, cc.work_name, cc.product_name, cc.media, cc.territory, cc.language, cc.scope, cc.covered_service_categories, cc.covered_works, cc.covered_products, cc.covered_media, cc.covered_territory, cc.covered_language, cc.sublicense_allowed, cc.overseas_allowed, cc.translation_allowed, cc.ebook_allowed, cc.merchandising_allowed, cc.video_adaptation_allowed, cc.game_adaptation_allowed, cc.risk_flags, cc.legal_review_required, cc.scope_confidence, cc.reason_template, cc.caution_note, cc.created_at, cc.updated_at, cc.base_document_number, cc.revision, cc.is_primary, cc.superseded_by, cc.lifecycle_status, cc.is_active, cc.additional_parties, cc.renewal_notice_months, cc.alert_lead_months, cc.last_renewal_alert_at, cc.alert_slack_channels, cc.alert_slack_mentions, cc.ledger_code, cc.ledger_ref_id, cc.material_ref_id, cc.tax_rate, cc.amount_ex_tax, cc.amount_inc_tax, cc.tax_amount, cc.due_date, cc.issue_date_po, cc.legal_request_id, cc.backlog_issue_key, cc.flow_direction, cc.deliverable_ownership, cc.structural_role, cc.parent_capability_id, cc.template_family, v.vendor_code, v.vendor_name, v.entity_type AS vendor_entity_type,
                 v.bank_name, v.branch_name, v.account_type, v.account_number,
                 v.account_holder_kana, v.invoice_registration_number,
                 v.withholding_enabled, v.is_invoice_issuer, v.vendor_rep
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.id = $1`,
         [id]
@@ -754,7 +754,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
                  cc.contract_category, cc.record_type,
                  v.vendor_name, v.vendor_code
             FROM capability_financial_conditions cfc
-            JOIN contract_capabilities cc ON cc.id = cfc.capability_id
+            JOIN documents cc ON cc.id = cfc.capability_id
             LEFT JOIN vendors v ON v.id = cc.vendor_id
            WHERE ${where.join(" AND ")}
            ORDER BY cc.updated_at DESC NULLS LAST, cc.id DESC, cfc.condition_no ASC

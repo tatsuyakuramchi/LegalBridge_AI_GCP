@@ -3224,7 +3224,7 @@ async function startServer() {
       let result: any;
       try {
         result = await query(
-          `SELECT cc.*, v.vendor_name,
+          `SELECT cc.id, cc.vendor_id, cc.external_asset_id, cc.record_type, cc.contract_category, cc.contract_type, cc.contract_title, cc.document_number, cc.contract_status, cc.effective_date, cc.expiration_date, cc.auto_renewal, cc.source_system, cc.legalon_url, cc.cloudsign_url, cc.drive_url, cc.document_url, cc.purpose_codes, cc.purchase_order_allowed, cc.license_condition_allowed, cc.publication_contract_allowed, cc.publication_condition_allowed, cc.condition_number, cc.original_work, cc.work_name, cc.product_name, cc.media, cc.territory, cc.language, cc.scope, cc.covered_service_categories, cc.covered_works, cc.covered_products, cc.covered_media, cc.covered_territory, cc.covered_language, cc.sublicense_allowed, cc.overseas_allowed, cc.translation_allowed, cc.ebook_allowed, cc.merchandising_allowed, cc.video_adaptation_allowed, cc.game_adaptation_allowed, cc.risk_flags, cc.legal_review_required, cc.scope_confidence, cc.reason_template, cc.caution_note, cc.created_at, cc.updated_at, cc.base_document_number, cc.revision, cc.is_primary, cc.superseded_by, cc.lifecycle_status, cc.is_active, cc.additional_parties, cc.renewal_notice_months, cc.alert_lead_months, cc.last_renewal_alert_at, cc.alert_slack_channels, cc.alert_slack_mentions, cc.ledger_code, cc.ledger_ref_id, cc.material_ref_id, cc.tax_rate, cc.amount_ex_tax, cc.amount_inc_tax, cc.tax_amount, cc.due_date, cc.issue_date_po, cc.legal_request_id, cc.backlog_issue_key, cc.flow_direction, cc.deliverable_ownership, cc.structural_role, cc.parent_capability_id, cc.template_family, v.vendor_name,
                   v.vendor_code AS vendor_code,
                   v.entity_type AS vendor_entity_type,
                   v.bank_name AS vendor_bank_name,
@@ -3406,7 +3406,7 @@ async function startServer() {
                     ),
                     '[]'::json
                   ) AS other_fees
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON cc.vendor_id = v.id
            ORDER BY cc.id DESC`
         );
@@ -3417,7 +3417,7 @@ async function startServer() {
               "worker を再デプロイして migration を実行してください。フォールバックで空配列を返します。"
           );
           result = await query(
-            `SELECT cc.*, v.vendor_name,
+            `SELECT cc.id, cc.vendor_id, cc.external_asset_id, cc.record_type, cc.contract_category, cc.contract_type, cc.contract_title, cc.document_number, cc.contract_status, cc.effective_date, cc.expiration_date, cc.auto_renewal, cc.source_system, cc.legalon_url, cc.cloudsign_url, cc.drive_url, cc.document_url, cc.purpose_codes, cc.purchase_order_allowed, cc.license_condition_allowed, cc.publication_contract_allowed, cc.publication_condition_allowed, cc.condition_number, cc.original_work, cc.work_name, cc.product_name, cc.media, cc.territory, cc.language, cc.scope, cc.covered_service_categories, cc.covered_works, cc.covered_products, cc.covered_media, cc.covered_territory, cc.covered_language, cc.sublicense_allowed, cc.overseas_allowed, cc.translation_allowed, cc.ebook_allowed, cc.merchandising_allowed, cc.video_adaptation_allowed, cc.game_adaptation_allowed, cc.risk_flags, cc.legal_review_required, cc.scope_confidence, cc.reason_template, cc.caution_note, cc.created_at, cc.updated_at, cc.base_document_number, cc.revision, cc.is_primary, cc.superseded_by, cc.lifecycle_status, cc.is_active, cc.additional_parties, cc.renewal_notice_months, cc.alert_lead_months, cc.last_renewal_alert_at, cc.alert_slack_channels, cc.alert_slack_mentions, cc.ledger_code, cc.ledger_ref_id, cc.material_ref_id, cc.tax_rate, cc.amount_ex_tax, cc.amount_inc_tax, cc.tax_amount, cc.due_date, cc.issue_date_po, cc.legal_request_id, cc.backlog_issue_key, cc.flow_direction, cc.deliverable_ownership, cc.structural_role, cc.parent_capability_id, cc.template_family, v.vendor_name,
                     v.vendor_code AS vendor_code,
                     v.entity_type AS vendor_entity_type,
                     v.bank_name AS vendor_bank_name,
@@ -3431,7 +3431,7 @@ async function startServer() {
                     '[]'::json AS line_items,
                     '[]'::json AS expenses,
                     '[]'::json AS other_fees
-             FROM contract_capabilities cc
+             FROM documents cc
              LEFT JOIN vendors v ON cc.vendor_id = v.id
              ORDER BY cc.id DESC`
           );
