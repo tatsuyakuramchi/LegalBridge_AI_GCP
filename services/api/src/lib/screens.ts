@@ -28,6 +28,7 @@ export type NavSection = "console" | "browse";
 
 export type ScreenKey =
   | "search-vendor"
+  | "search-work"
   | "ringi"
   | "template-preview"
   | "conditions"
@@ -81,6 +82,9 @@ export const SCREENS: Screen[] = [
 
   // ── Search & Browse (viewer 可) ───────────────────────────
   { key: "search-vendor",    path: "/search/vendor",     label: "取引先・契約検索", icon: "⌕",  section: "browse", minRole: "viewer", nav: true },
+  // 作品検索 (専用画面): works を DB 直結の /api/v3/works/search で横断検索する
+  //   ネイティブ検索。従来の作品モデルは admin-ui の iframe 埋め込みで使いにくかった。
+  { key: "search-work",      path: "/search/work",       label: "作品検索",         icon: "🎬", section: "browse", minRole: "viewer", nav: true },
   // 法務ガイドポータル(viewer 可)。各ガイド /g/:key・カテゴリ /c/:cat は動的(nav 非表示)。
   { key: "guide-portal",     path: "/portal",            label: "法務ガイド",       icon: "📖", section: "browse", minRole: "viewer", nav: true },
   { key: "template-preview", path: "/templates/preview", label: "ひな型プレビュー", icon: "📄", section: "browse", minRole: "viewer", nav: true },

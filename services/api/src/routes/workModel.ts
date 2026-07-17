@@ -311,6 +311,72 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 作品検索(DB直結): title / title_kana / work_code / alternative_titles を横断 ILIKE。
+  //   任意フィルタ type/status/division、ページング(limit/offset)、総件数付き。
+  //   専用画面(ポータル /search/work ・ admin-ui 作品検索)の共通データ源。
+  //   ※ /:id より前に登録しないと "search" が :id にキャプチャされる。
+  app.get("/api/v3/works/search", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const type = String(req.query.type ?? "").trim();
+      const status = String(req.query.status ?? "").trim();
+      const division = String(req.query.division ?? "").trim();
+      const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+      const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+      const where: string[] = ["COALESCE(w.kind, 'own') = 'own'"];
+      const params: any[] = [];
+      if (q) {
+        params.push(`%${q}%`);
+        const p = `$${params.length}`;
+        where.push(
+          `(w.title ILIKE ${p} OR w.title_kana ILIKE ${p} OR w.work_code ILIKE ${p}
+            OR EXISTS (SELECT 1 FROM unnest(w.alternative_titles) alt WHERE alt ILIKE ${p}))`
+        );
+      }
+      if (type) { params.push(type); where.push(`w.work_type = $${params.length}`); }
+      if (status) { params.push(status); where.push(`w.status = $${params.length}`); }
+      if (division) { params.push(division); where.push(`$${params.length} = ANY(w.division)`); }
+      const whereSql = where.join(" AND ");
+
+      const cnt = await query(
+        `SELECT COUNT(*)::int AS total FROM works w WHERE ${whereSql}`,
+        params
+      );
+      const total = Number(cnt.rows[0]?.total ?? 0);
+
+      // 関連度: 完全一致 > 前方一致 > 部分一致。q 無しは id 降順。
+      const relParams = [...params];
+      let orderSql = "w.id DESC";
+      if (q) {
+        relParams.push(q);
+        const eq = `$${relParams.length}`;
+        relParams.push(`${q}%`);
+        const pre = `$${relParams.length}`;
+        orderSql =
+          `CASE WHEN w.title ILIKE ${eq} OR w.work_code ILIKE ${eq} THEN 0 ` +
+          `WHEN w.title ILIKE ${pre} THEN 1 ELSE 2 END, w.id DESC`;
+      }
+      relParams.push(limit);
+      const limP = `$${relParams.length}`;
+      relParams.push(offset);
+      const offP = `$${relParams.length}`;
+
+      const rows = await query(
+        `SELECT w.id, w.work_code, w.title, w.title_kana, w.alternative_titles,
+                w.division, w.work_type, w.status, w.is_original, w.is_active,
+                (SELECT COUNT(*) FROM products p WHERE p.work_id = w.id)        AS product_count,
+                (SELECT COUNT(*) FROM work_materials wm WHERE wm.work_id = w.id) AS material_count
+           FROM works w
+          WHERE ${whereSql}
+          ORDER BY ${orderSql}
+          LIMIT ${limP} OFFSET ${offP}`,
+        relParams
+      );
+      res.json({ ok: true, total, limit, offset, rows: rows.rows });
+    } catch (e) { fail(res, e); }
+  });
+
   app.get("/api/v3/works/:id", ...requireRead, async (req, res) => {
     try {
       const id = Number(req.params.id);

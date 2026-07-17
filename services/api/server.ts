@@ -291,6 +291,7 @@ import { masterContractsPage } from "./src/views/masterContractsHtml.ts";
 import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
 import { workModelEmbedPage } from "./src/views/workModelHtml.ts";
+import { workSearchPage } from "./src/views/workSearchHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
 import {
   getWorkDistribution,
@@ -3736,6 +3737,22 @@ async function startServer() {
       res.type("html").send(workModelEmbedPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/work-model failed:", error);
+      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+
+  // 作品検索(専用画面): works を DB 直結(/api/v3/works/search)で横断検索する
+  //   ポータルネイティブ検索。従来の作品モデル iframe より軽く使いやすい。viewer 可。
+  app.get("/search/work", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "search-work", renderErrorPage }), (req, res) => {
+    try {
+      res.type("html").send(
+        workSearchPage({
+          role: (req as any).userRole as Role,
+          q: String(req.query.q || "").trim(),
+        })
+      );
+    } catch (error) {
+      console.error("/search/work failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
     }
   });
