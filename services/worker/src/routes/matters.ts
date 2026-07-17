@@ -48,6 +48,15 @@ export interface MatterDeps {
     toFolderId: string;
     fromMatterCode?: string | null;
   }) => Promise<{ link: string; name: string }>;
+  /**
+   * LB-08 修復: 案件フォルダの後付け作成時に、案件フォルダ外にある生成済み
+   * "はぐれPDF"(documents.drive_link)を 04_Final 配下へ移動する。
+   * 省略時は移動をスキップ(単体テスト・Drive 無効環境)。best-effort。
+   */
+  relocateDocsToFinal?: (
+    matterFolderId: string,
+    driveLinks: string[]
+  ) => Promise<{ moved: number; skipped: number; failed: number }>;
 }
 
 const s = (v: any): string | null =>
@@ -84,7 +93,7 @@ async function nextMatterCode(query: MatterDeps["query"]): Promise<string> {
 }
 
 export function registerMatters(app: Express, deps: MatterDeps): void {
-  const { query, createMatterFolder } = deps;
+  const { query, createMatterFolder, relocateDocsToFinal } = deps;
   const json = express.json({ limit: "1mb" });
 
   // LB-08: Drive 案件フォルダを作成して matters に保存する(best-effort)。
@@ -362,10 +371,32 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
           .status(502)
           .json({ ok: false, error: folder.error || "Drive フォルダを作成できませんでした" });
       }
+      // LB-08 修復: フォルダ確保後、案件に紐づく生成済み PDF(drive_link)で案件
+      //   フォルダ外にある "はぐれPDF" を 04_Final 配下へ移動する(best-effort)。
+      let relocated: { moved: number; skipped: number; failed: number } | undefined;
+      if (relocateDocsToFinal) {
+        try {
+          const docs = await query(
+            `SELECT drive_link FROM documents
+              WHERE matter_id = $1 AND drive_link IS NOT NULL AND drive_link <> ''`,
+            [id]
+          );
+          const links = docs.rows.map((r) => String(r.drive_link)).filter(Boolean);
+          if (links.length) {
+            relocated = await relocateDocsToFinal(folder.drive_folder_id, links);
+          }
+        } catch (relErr: any) {
+          console.warn(
+            "[matters] relocate stray PDFs failed (non-fatal):",
+            relErr?.message || relErr
+          );
+        }
+      }
       res.json({
         ok: true,
         drive_folder_id: folder.drive_folder_id,
         drive_folder_url: folder.drive_folder_url,
+        relocated: relocated || { moved: 0, skipped: 0, failed: 0 },
       });
     } catch (e: any) {
       console.error("[matters] drive-folder failed:", e?.message || e);
