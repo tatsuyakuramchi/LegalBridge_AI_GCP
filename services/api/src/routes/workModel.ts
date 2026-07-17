@@ -209,7 +209,7 @@ async function ensureMasterLicenseCapability(query: Query, sw: any): Promise<num
              updated_at = now()`,
     [`原作利用許諾条件(マスター登録): ${sw.title}`, docNo, sw.rights_holder_vendor_id ?? null, sw.title ?? null]
   );
-  const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [docNo]);
+  const r = await query(`SELECT id FROM documents WHERE document_number = $1`, [docNo]);
   return r.rows[0].id as number;
 }
 
@@ -399,7 +399,7 @@ export function registerWorkModelRoutes(
                   sw.work_code AS source_work_code, sw.title AS source_work_title,
                   wm.material_code AS source_material_code, wm.material_name AS source_material_name
              FROM condition_lines cl
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
              LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN works sw ON sw.id = cl.source_work_id
              LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
@@ -413,7 +413,7 @@ export function registerWorkModelRoutes(
           `SELECT ${edgeCols},
                   p.product_code, p.product_name
              FROM condition_lines cl
-             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN documents cc ON cc.id = cl.capability_id
              LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN products p ON p.id = cl.product_id
              LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
@@ -1310,7 +1310,7 @@ export function registerWorkModelRoutes(
                 cli.line_no, cli.item_name, cli.amount_ex_tax,
                 cli.deliverable_ownership, cli.calc_method
            FROM capability_line_items cli
-           JOIN contract_capabilities cc ON cc.id = cli.capability_id
+           JOIN documents cc ON cc.id = cli.capability_id
           WHERE cli.work_id = $1
           ORDER BY cc.document_number NULLS LAST, cli.line_no`,
         [id]
@@ -1321,7 +1321,7 @@ export function registerWorkModelRoutes(
                 cl.line_no, cl.subject, cfc.condition_name, cfc.condition_no,
                 cl.payment_scheme, cl.rate_pct, cl.amount_ex_tax, cl.calc_method
            FROM condition_lines cl
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
           WHERE cl.work_id = $1
           ORDER BY cc.document_number NULLS LAST, cl.line_no`,
@@ -1568,7 +1568,7 @@ export function registerWorkModelRoutes(
                 cc.document_number, cc.contract_title,
                 w.work_code AS current_work_code, w.title AS current_work_title
            FROM condition_lines cl
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN works w ON w.id = cl.work_id
            LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
           WHERE cc.document_number ILIKE '%' || $1 || '%'
@@ -1635,7 +1635,7 @@ export function registerWorkModelRoutes(
                    WHERE wcl.condition_line_id = cl.id AND wc.work_id = $2
                 ) AS linked_here
            FROM condition_lines cl
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
            LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
           WHERE cl.source_work_id = $1
@@ -1663,7 +1663,7 @@ export function registerWorkModelRoutes(
                 cc.document_number, cc.contract_title, cc.source_system,
                 cfc.region_territory, cfc.region_language, cfc.region_language_label
            FROM condition_lines cl
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
           WHERE cl.source_work_id = $1 AND cl.source_material_id = $2
           ORDER BY cl.line_no, cl.id`,
@@ -1689,7 +1689,7 @@ export function registerWorkModelRoutes(
       const clr = await query(
         `SELECT cl.id, cl.source_condition_id, cl.capability_id, cc.source_system
            FROM condition_lines cl
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
           WHERE cl.id = $1`,
         [id]
       );
@@ -1789,7 +1789,7 @@ export function registerWorkModelRoutes(
                   cfc.mg_amount, cfc.ag_amount, cfc.applies_scope
              FROM condition_lines cl
              JOIN work_materials wm ON wm.id = cl.source_material_id
-             JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             JOIN documents cc ON cc.id = cl.capability_id
              JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN works w ON w.id = wm.work_id
             WHERE wm.material_code = $1${excludeClause}
@@ -1831,7 +1831,7 @@ export function registerWorkModelRoutes(
                   NULL::text AS item_name, NULL::text AS deliverable_ownership,
                   cc.document_number, cc.contract_title, cc.record_type
              FROM condition_lines cl
-             JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             JOIN documents cc ON cc.id = cl.capability_id
              JOIN work_materials wm ON wm.id = cl.source_material_id
              LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN vendors vh ON vh.id = wm.rights_holder_vendor_id
@@ -1858,7 +1858,7 @@ export function registerWorkModelRoutes(
                   cc.document_number, cc.contract_title, cc.record_type,
                   TRUE                          AS unlinked
              FROM condition_lines cl
-             JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             JOIN documents cc ON cc.id = cl.capability_id
             WHERE cc.document_number ILIKE '%' || $1 || '%'
               AND cl.transaction_kind = 'license'
               AND cl.source_material_id IS NULL
@@ -1881,7 +1881,7 @@ export function registerWorkModelRoutes(
                   COALESCE(cli.deliverable_ownership, '発注者') AS deliverable_ownership,
                   cc.document_number, cc.contract_title, cc.record_type
              FROM capability_line_items cli
-             JOIN contract_capabilities cc
+             JOIN documents cc
                ON cc.id = cli.capability_id AND cc.record_type = 'purchase_order'
             WHERE cc.document_number ILIKE '%' || $1 || '%'
             ORDER BY cli.line_no, cli.id`,
@@ -1932,7 +1932,7 @@ export function registerWorkModelRoutes(
       }
       const r = await query(
         `SELECT cc.id, cc.document_number, cc.contract_title, cc.record_type
-           FROM contract_capabilities cc
+           FROM documents cc
           WHERE ${where}
           ORDER BY cc.id DESC
           LIMIT 100`,
@@ -1956,7 +1956,7 @@ export function registerWorkModelRoutes(
                 cl.region_territory, cl.region_language, cl.condition_name AS region_language_label,
                 cc.document_number, cc.contract_title, cc.record_type
            FROM condition_lines cl
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
           WHERE cc.document_number ILIKE '%' || $1 || '%'
             AND cl.transaction_kind = 'license'
             AND cl.source_material_id IS NULL
@@ -1984,7 +1984,7 @@ export function registerWorkModelRoutes(
                 cl.region_territory, cl.region_language, cl.condition_name AS region_language_label,
                 cc.id AS capability_id, cc.document_number, cc.contract_title, cc.record_type
            FROM condition_lines cl
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
           WHERE ${where}
           ORDER BY cc.document_number NULLS LAST, cl.line_no, cl.id
           LIMIT 500`,
@@ -2086,7 +2086,7 @@ export function registerWorkModelRoutes(
           return res.status(400).json({ ok: false, error: "invalid capability_id" });
         }
         const cap = await query(
-          `SELECT id, document_number FROM contract_capabilities
+          `SELECT id, document_number FROM documents
             WHERE id = $1
               AND (contract_category IN ('license','publication')
                    OR record_type = 'purchase_order')`,
@@ -2102,7 +2102,7 @@ export function registerWorkModelRoutes(
         // 発注書(受託者帰属の成果物には利用許諾条件が付く)も器として受け付ける。
         //   受注者帰属条件は lc-candidates(CL引用)で参照でき、器＝発注書 capability に紐づく。
         const cap = await query(
-          `SELECT id, document_number FROM contract_capabilities
+          `SELECT id, document_number FROM documents
             WHERE document_number = $1
               AND (contract_category IN ('license','publication')
                    OR record_type = 'purchase_order')`,
@@ -2186,7 +2186,7 @@ export function registerWorkModelRoutes(
             CAT,
           ]
         );
-        const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [newNo]);
+        const r = await query(`SELECT id FROM documents WHERE document_number = $1`, [newNo]);
         capabilityId = r.rows[0].id as number;
         lineCodePrefix = newNo;
       }
@@ -2349,7 +2349,7 @@ export function registerWorkModelRoutes(
       if (chosenCap != null) {
         if (!Number.isFinite(chosenCap)) return res.status(400).json({ ok: false, error: "invalid capability_id" });
         // 利用許諾/出版に加え、発注書(受託者帰属の利用許諾条件付き)も器として受け付ける。
-        const cap = await query(`SELECT id, document_number FROM contract_capabilities WHERE id = $1 AND (contract_category IN ('license','publication') OR record_type = 'purchase_order')`, [chosenCap]);
+        const cap = await query(`SELECT id, document_number FROM documents WHERE id = $1 AND (contract_category IN ('license','publication') OR record_type = 'purchase_order')`, [chosenCap]);
         if (cap.rows.length === 0) return res.status(400).json({ ok: false, error: "選択した条件書(器)が見つかりません(利用許諾/出版/発注書)" });
         capabilityId = cap.rows[0].id; lineCodePrefix = cap.rows[0].document_number || `CAP-${capabilityId}`;
       } else {
@@ -2437,7 +2437,7 @@ export function registerWorkModelRoutes(
         // 表から外された行: MLC マスター登録の器配下のみ物理削除。実在の利用許諾条件書由来は
         //   文書データ保護のためリンク解除(source_material_id=NULL)のみ。
         const cap = await query(
-          `SELECT cc.source_system FROM condition_lines cl JOIN contract_capabilities cc ON cc.id = cl.capability_id WHERE cl.id = $1`,
+          `SELECT cc.source_system FROM condition_lines cl JOIN documents cc ON cc.id = cl.capability_id WHERE cl.id = $1`,
           [eid]
         );
         if (cap.rows[0]?.source_system === "master_register") {
@@ -2536,7 +2536,7 @@ export function registerWorkModelRoutes(
     const cl = await query(
       `SELECT cl.id, cl.line_code, cl.subject, cc.document_number
          FROM condition_lines cl
-         JOIN contract_capabilities cc ON cc.id = cl.capability_id
+         JOIN documents cc ON cc.id = cl.capability_id
         WHERE cl.source_material_id = $1
         ORDER BY cl.id`,
       [mid]
@@ -2711,7 +2711,7 @@ export function registerWorkModelRoutes(
                   ELSE 'partial'
                 END AS inspection_status
            FROM capability_line_items cli
-           JOIN contract_capabilities cc ON cc.id = cli.capability_id
+           JOIN documents cc ON cc.id = cli.capability_id
            LEFT JOIN vendors v ON v.id = cc.vendor_id
            LEFT JOIN LATERAL (
              SELECT SUM(d.inspected_amount_ex_tax) AS inspected_amount
