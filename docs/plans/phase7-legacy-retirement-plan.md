@@ -29,8 +29,8 @@
 |---|---|---|---|
 | G2 | INSTEAD OF トリガ(tg_cc_ins/tg_cfc_*/tg_cli_*/tg_exp_*/tg_fee_*)と その関数を DROP。書込みゼロ(G1)が前提。VIEW と cl_* ヘルパは残す | 第1弾(migration 0131) | 実装済(2026-07-16) |
 | G3a | `contract_capabilities` 読取り 165 を `documents` 直読みへ(1:1 passthrough のため原則リネーム) | 第2〜9弾(ファイル単位) | **完了(2026-07-16)**: 165→0。全体 reads 282→117(残は capability_* のみ)。第8弾 contractCheckService(8)+lc.*(2)→125、第9弾 sharedReads/contractsV2/api-server の cc.* 5箇所を互換view列(78列)へ明示展開 + named 3箇所 rename →117。view(subset)→documents(superset)は列参照を壊さず、cc.* は form_data 等の余分列混入を避けるため明示展開した。ratchet 117。 |<br>※ dataLinkage の documents-vs-cc ドリフトprobe は cc==documents のため自己比較(版family)に等価化。件数挙動は不変だが、将来 probe 自体の要否を見直す(TODO) |
-| G3b | `capability_*` 読取り 117 を `condition_lines`(legacy_role + 列マッピング)直読みへ | 第3弾以降 | **保留(2026-07-16 判断)**: capability_* view は読取り専用で無害(G2 で書込みトリガ撤去済み)。117箇所の列リマップ書換は高リスク・大工数のため当面据え置き。将来 conditionLineMapper へ集約して段階移行 |
-| G4 | 読取りゼロ達成 + 本番クエリログで一定期間アクセス無しを確認し VIEW を DROP | 最終 | 未着手(G3b 完了後) |
+| G3b | `capability_*` 読取り 117 を `condition_lines`(legacy_role + 列マッピング)直読みへ | 第1〜3弾 | **完了(2026-07-17)**: 117→0。第1弾 expenses/other_fees(8)→109。第2弾 小中ファイル(conditionSync 到達不能コード削除/importsV2/dataLinkage/conditionsService/receivableMapService/sharedReads)→80、cfc/cli 互換射影を worker `src/lib/compatViewSql.ts` に共有化。receivableMapService は cfc view が NULL 固定していた `condition_kind`/`source_ip_id` を実体列直読みへ是正(0116/0064 の設計意図・workModel 前例に準拠、再許諾受領マップの潜在バグ解消)。第3弾 大ファイル(workModel/worker server/api server/contractsV2)80→0、api 側にも compatViewSql 配置、派生テーブル別名欠落6件是正。formReadRoutes は生成元乖離のため直接手修正。ratchet 0。 |
+| G4 | 読取りゼロ達成 + 本番クエリログで一定期間アクセス無しを確認し VIEW を DROP | 最終(migration 0134) | **準備完了・ソーク待ち(2026-07-17)**: `migrations/0134_drop_compat_views.sql` 作成(互換VIEW 5本を RESTRICT で DROP、可逆)。稼働サービス参照 0・DB依存 0 を確認済み。G3b デプロイ後の本番で一定期間 VIEW アクセス無しを確認してから merge/デプロイする。cl_* ヘルパは残す |
 | — | 旧起動DDL(RUN_INIT_DB/initDb)ブロック削除 | 仕上げ(第10弾) | **完了(2026-07-16)**: worker/api の initDb()(計2320行の起動時レガシー DDL)と worker の RUN_INIT_DB 分岐・import を撤去。schema は migrations/ が単一所有。0101 以降 contract_capabilities は VIEW のため旧 ALTER 群は死コードだった |
 | — | cl_* ヘルパのインライン化検討、旧設計書(runbook/manual)の Matter 中心更新 | 仕上げ(残) | 未着手 |
 
