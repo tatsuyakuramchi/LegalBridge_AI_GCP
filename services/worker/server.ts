@@ -10672,6 +10672,14 @@ ${details}
     query,
     // LB-08 (§7): 案件作成時の Drive 案件フォルダ自動生成。
     createMatterFolder: (m) => googleDriveService.createMatterFolder(m),
+    // Phase 6 (案件統合): 統合元フォルダを統合先フォルダ配下へ移動する。
+    //   統合元だと分かるよう名前に "[統合元] " を前置する。
+    moveMatterFolder: (o) =>
+      googleDriveService.moveFolderUnder(
+        o.fromFolderId,
+        o.toFolderId,
+        `[統合元${o.fromMatterCode ? ` ${o.fromMatterCode}` : ""}] `
+      ),
   });
 
   // 関連当事者取引 判定 (/rpt/*): RPT.gs の書込 (法人/役員/株主構成/議案)。読取は search-API。

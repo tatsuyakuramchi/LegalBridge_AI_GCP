@@ -377,6 +377,46 @@ export class GoogleDriveService {
   }
 
   /**
+   * Phase 6 (案件統合): フォルダ(またはファイル)を別の親フォルダ配下へ移動する。
+   *   Drive の parents を addParents/removeParents で付け替える(中身は移動しない=
+   *   フォルダごと移すので配下ファイルは保持される)。renamePrefix 指定時は
+   *   既存名の先頭に付与して統合元だと分かるようにする。失敗は throw(呼び出し側 best-effort)。
+   */
+  async moveFolderUnder(
+    folderId: string,
+    newParentId: string,
+    renamePrefix?: string
+  ): Promise<{ id: string; link: string; name: string }> {
+    const cur = await this.drive.files.get({
+      fileId: folderId,
+      fields: "id, name, parents",
+      supportsAllDrives: true,
+    });
+    const prevParents = (cur.data.parents || []).join(",");
+    const curName = cur.data.name || "";
+    const requestBody: Record<string, any> = {};
+    if (renamePrefix && !curName.startsWith(renamePrefix)) {
+      requestBody.name = `${renamePrefix}${curName}`;
+    }
+    const updated = await this.drive.files.update({
+      fileId: folderId,
+      addParents: newParentId,
+      removeParents: prevParents || undefined,
+      requestBody,
+      fields: "id, name, webViewLink",
+      supportsAllDrives: true,
+    });
+    const id = updated.data.id || folderId;
+    return {
+      id,
+      name: updated.data.name || curName,
+      link:
+        updated.data.webViewLink ||
+        `https://drive.google.com/drive/folders/${id}`,
+    };
+  }
+
+  /**
    * Phase 3 (欠損検査): ファイルの実在・状態を確認する。
    *   ok / missing(404 or ゴミ箱) / forbidden(403) / error を返す(throw しない)。
    */
