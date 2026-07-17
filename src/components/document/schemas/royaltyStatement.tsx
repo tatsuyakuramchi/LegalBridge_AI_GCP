@@ -14,6 +14,7 @@ import { useAppData } from "@/src/context/AppDataContext"
 import { FormSection } from "../FormSection"
 import { UnifiedContractPicker } from "../UnifiedContractPicker"
 import { FinancialConditionPicker } from "../FinancialConditionPicker"
+import { EntitySearchSelect } from "../../search/EntitySearch"
 import { RoyaltyPreviewPanel } from "../RoyaltyPreviewPanel"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -218,6 +219,47 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
   // ---- イベントハンドラ -------------------------------------------
   // 契約マスタを選ぶと、当事者 / 原作 / 金銭条件配列 / デフォルト通貨を一括 auto-fill。
+  // インボイス番号の先頭 T を除去(表示は T 無しで統一。テンプレ側で付す)。
+  const stripLeadingT = (s?: string | null): string =>
+    String(s || "").replace(/^[Tt]/, "")
+  // 取引先の法人/個人 判定(発注書 fillVendorFrom と同一ロジック)。
+  const isCorporation = (v: any) => {
+    const et = String(v?.entity_type || v?.vendor_entity_type || "")
+      .trim()
+      .toLowerCase()
+    if (et === "individual" || et === "個人") return false
+    if (et.includes("corp") || et.includes("法人")) return true
+    if (String(v?.corporate_number || "").trim()) return true
+    return /株式会社|有限会社|合同会社|合名会社|合資会社|相互会社|社団法人|財団法人|学校法人|医療法人|宗教法人|協同組合|（株）|（有）|㈱|㈲|株式會社/.test(
+      String(v?.vendor_name || "")
+    )
+  }
+  // 取引先マスタからライセンサー(取引先)を直接補完(契約未紐付けでも使える)。
+  //   発注書の fillVendorFrom と同等: 名称/敬称/代表者/銀行/インボイス/源泉。
+  const fillLicensorFromVendor = (v: any) => {
+    if (!v) return
+    const isCorp = isCorporation(v)
+    const rep = v.vendor_rep || v.contact_name || ""
+    setFormData({
+      ...formData,
+      VENDOR_CODE: v.vendor_code || "",
+      licensor: v.vendor_name || "",
+      LICENSOR_SUFFIX: isCorp ? "御中" : "様",
+      LICENSOR_IS_CORPORATION: isCorp ? "法人" : "個人",
+      VENDOR_REPRESENTATIVE_SAMA: isCorp && rep ? `${rep} 様` : "",
+      VENDOR_WITHHOLDING_ENABLED: !!v.withholding_enabled,
+      bankName: v.bank_name || "",
+      branchName: v.branch_name || "",
+      accountType: v.account_type || "",
+      accountNo: v.account_number || "",
+      accountHolder: v.account_holder_kana || "",
+      invoiceRegistrationNumber: stripLeadingT(v.invoice_registration_number),
+    })
+  }
+  // 自社プロファイルからライセンシー(自社)名を補完。
+  const fillLicenseeFromSelf = () =>
+    setFormData({ ...formData, licensee: companyProfile?.name || formData.licensee || "" })
+
   const selectMasterContract = (id: number, fromDetail?: any) => {
     const c =
       licenseMasters.find((x: any) => Number(x.id) === id) ||
@@ -572,12 +614,32 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               </div>
             )}
 
-          {/* ③ 当事者 (read-only display) */}
-          {selectedContract && (
+          {/* ③ 当事者。契約紐付け時は自動入力、未紐付けでも取引先/自社から手動補完可。 */}
+          <div className="space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+              <div className="flex-1 space-y-1">
+                <Label className="text-[10px] font-mono opacity-70">
+                  取引先を検索してライセンサーを補完（契約を紐付けない場合もこちらから）
+                </Label>
+                <EntitySearchSelect
+                  entity="vendor"
+                  onSelect={(o) => o && fillLicensorFromVendor(o.raw)}
+                  placeholder="取引先を検索（名称 / コード）"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={fillLicenseeFromSelf}
+                className="text-[11px] font-mono px-3 py-1.5 border border-input rounded-sm bg-background hover:bg-accent flex-shrink-0"
+                title="自社プロファイルからライセンシー(自社)名を補完"
+              >
+                自社を引用
+              </button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-[10px] font-mono opacity-70">
-                  ライセンサー (取引先 — 自動入力)
+                  ライセンサー (取引先)
                 </Label>
                 <div className="flex items-center gap-1.5">
                   <Input
@@ -627,7 +689,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                 />
               </div>
             </div>
-          )}
+          </div>
 
           {/* ④ 原著作物 (ledger 由来) */}
           {selectedContract && (
