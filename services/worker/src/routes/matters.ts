@@ -57,6 +57,13 @@ export interface MatterDeps {
     matterFolderId: string,
     driveLinks: string[]
   ) => Promise<{ moved: number; skipped: number; failed: number }>;
+  /**
+   * LB-08 連動: 案件フォルダ配下(直下＋標準サブフォルダ1階層)の実ファイルを列挙する。
+   * 人が Drive に直接入れたファイルも含めて案件画面に見せるための取得。省略時は空配列扱い。
+   */
+  listMatterFolderFiles?: (
+    folderId: string
+  ) => Promise<Array<{ id: string; name: string; link: string; mimeType: string; modifiedTime: string; folder: string; isFolder: boolean }>>;
 }
 
 const s = (v: any): string | null =>
@@ -93,7 +100,7 @@ async function nextMatterCode(query: MatterDeps["query"]): Promise<string> {
 }
 
 export function registerMatters(app: Express, deps: MatterDeps): void {
-  const { query, createMatterFolder, relocateDocsToFinal } = deps;
+  const { query, createMatterFolder, relocateDocsToFinal, listMatterFolderFiles } = deps;
   const json = express.json({ limit: "1mb" });
 
   // LB-08: Drive 案件フォルダを作成して matters に保存する(best-effort)。
@@ -564,6 +571,24 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
     }
   });
 
+  // ── Drive 案件フォルダの実ファイル一覧(連動: 人が直接入れたファイルも見せる) ──────
+  app.get("/api/matters/:id/drive-files", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const m = await query(`SELECT drive_folder_id, drive_folder_url FROM matters WHERE id = $1`, [id]);
+      if (!m.rows[0]) return res.status(404).json({ ok: false, error: "案件が見つかりません" });
+      const folderId = m.rows[0].drive_folder_id as string | null;
+      if (!folderId || !listMatterFolderFiles) {
+        return res.json({ ok: true, folder_url: m.rows[0].drive_folder_url ?? null, files: [] });
+      }
+      const files = await listMatterFolderFiles(folderId);
+      res.json({ ok: true, folder_url: m.rows[0].drive_folder_url ?? null, files });
+    } catch (e: any) {
+      console.error("[matters] drive-files failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // ── 文書の紐付け / 解除 ──────────────────────────────────────────────────────
   app.post("/api/matters/:id/documents", json, async (req, res) => {
     try {
@@ -572,13 +597,25 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
       const docId = b.document_id != null ? Number(b.document_id) : null;
       const docNum = s(b.document_number);
       const r = docId
-        ? await query(`UPDATE documents SET matter_id = $1 WHERE id = $2 RETURNING id, document_number`, [id, docId])
+        ? await query(`UPDATE documents SET matter_id = $1 WHERE id = $2 RETURNING id, document_number, drive_link`, [id, docId])
         : docNum
-          ? await query(`UPDATE documents SET matter_id = $1 WHERE document_number = $2 RETURNING id, document_number`, [id, docNum])
+          ? await query(`UPDATE documents SET matter_id = $1 WHERE document_number = $2 RETURNING id, document_number, drive_link`, [id, docNum])
           : { rows: [] as any[] };
       if (!r.rows[0]) return res.status(404).json({ ok: false, error: "文書が見つかりません" });
       await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [id]);
-      res.json({ ok: true, document: r.rows[0] });
+      // LB-08 連動: 紐付けた文書の正本PDFを案件フォルダ 04_Final へ移動(best-effort)。
+      //   これで「案件に文書を追加 → フォルダにも入る」が成立する。
+      let relocated: { moved: number; skipped: number; failed: number } | undefined;
+      if (relocateDocsToFinal && r.rows[0].drive_link) {
+        try {
+          const mf = await query(`SELECT drive_folder_id FROM matters WHERE id = $1`, [id]);
+          const folderId = mf.rows[0]?.drive_folder_id as string | null;
+          if (folderId) relocated = await relocateDocsToFinal(folderId, [String(r.rows[0].drive_link)]);
+        } catch (relErr: any) {
+          console.warn("[matters] attach relocate failed (non-fatal):", relErr?.message || relErr);
+        }
+      }
+      res.json({ ok: true, document: { id: r.rows[0].id, document_number: r.rows[0].document_number }, relocated });
     } catch (e: any) {
       console.error("[matters] attach doc failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });

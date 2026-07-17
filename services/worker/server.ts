@@ -10692,6 +10692,8 @@ ${details}
       }
       return { moved, skipped, failed };
     },
+    // LB-08 連動: 案件フォルダ配下の実ファイル一覧(人が直接入れたファイルも含む)。
+    listMatterFolderFiles: (folderId) => googleDriveService.listFolderFiles(folderId),
   });
 
   // 関連当事者取引 判定 (/rpt/*): RPT.gs の書込 (法人/役員/株主構成/議案)。読取は search-API。
