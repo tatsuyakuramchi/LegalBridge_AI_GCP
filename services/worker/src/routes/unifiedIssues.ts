@@ -46,7 +46,7 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
            SELECT cc.id, cc.document_number, cc.contract_title, cc.record_type,
                   cc.contract_category, cc.vendor_id, cc.backlog_issue_key,
                   cc.effective_date, cc.expiration_date
-             FROM contract_capabilities cc
+             FROM documents cc
             WHERE COALESCE(cc.is_primary, TRUE) = TRUE
               AND COALESCE(cc.lifecycle_status, 'final') = 'final'
               AND COALESCE(cc.source_system, '') <> 'master_register'
@@ -134,7 +134,7 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
           WHERE NULLIF(lr.merged_into_issue_key, '') IS NULL
             AND COALESCE(lr.contract_type, '') NOT IN
                 ('delivery_inspec','license_calc','legal_consult','legal_request')
-            AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc
+            AND NOT EXISTS (SELECT 1 FROM documents cc
                              WHERE cc.backlog_issue_key = lr.backlog_issue_key)
             AND NOT EXISTS (SELECT 1 FROM documents d
                              WHERE d.issue_key = lr.backlog_issue_key)
@@ -193,7 +193,7 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
         `SELECT cc.id, cc.document_number, cc.contract_title, cc.record_type,
                 cc.contract_category, cc.backlog_issue_key, cc.effective_date,
                 cc.expiration_date, v.vendor_name
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.id = $1`,
         [capabilityId]
@@ -248,7 +248,7 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
       const issuesRes = await query(
         `WITH issue_keys AS (
            SELECT cc.backlog_issue_key AS issue_key, 'contracting'::text AS phase
-             FROM contract_capabilities cc
+             FROM documents cc
             WHERE cc.id = $1 AND NULLIF(cc.backlog_issue_key,'') IS NOT NULL
            UNION
            SELECT ce.backlog_issue_key AS issue_key, 'payment'::text AS phase
@@ -275,7 +275,7 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
         `WITH doc_ids AS (
            SELECT d.id
              FROM documents d
-             JOIN contract_capabilities cc
+             JOIN documents cc
                ON cc.document_number = COALESCE(NULLIF(d.base_document_number,''), d.document_number)
             WHERE cc.id = $1
            UNION
@@ -351,7 +351,7 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
       const result = await query(
         `SELECT DISTINCT cc.id AS capability_id, cc.document_number,
                 cc.contract_title, cc.record_type, v.vendor_name
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.backlog_issue_key = $1
             AND COALESCE(cc.source_system, '') <> 'master_register'
@@ -361,7 +361,7 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
                 cc.contract_title, cc.record_type, v.vendor_name
            FROM condition_events ce
            JOIN condition_lines cl ON cl.id = ce.condition_line_id
-           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE ce.backlog_issue_key = $1
             AND ce.voided_at IS NULL

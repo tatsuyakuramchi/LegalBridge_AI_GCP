@@ -61,12 +61,12 @@ export function registerFormReadRoutes(
       // Phase 7b: 発注書テンプレなら既存 capability_line_items を items[] として
       // プリセットする (フォーム側の LineItemTable がそのまま使える shape)。
       // Phase 22.21.82: planning_purchase_order テンプレ削除に伴い分岐から除去
-      // Phase 23: order_items → contract_capabilities (record_type='purchase_order'),
+      // Phase 23: order_items → documents (record_type='purchase_order'),
       //   order_line_items → capability_line_items に置換。
       if (template === "purchase_order") {
         const orderHeader = await query(
           `SELECT id, amount_ex_tax, tax_rate
-             FROM contract_capabilities
+             FROM documents
             WHERE backlog_issue_key = $1
               AND record_type = 'purchase_order'`,
           [key]
@@ -134,9 +134,9 @@ export function registerFormReadRoutes(
       if (template === "inspection_certificate") {
         // Phase 7c: 親 PO の明細 + 検収累計を取得 (Backlog 親子 issue 経由)。
         //   1. この issue の parentIssueId を Backlog から拾う
-        //   2. parentIssueKey → contract_capabilities (record_type='purchase_order') を見つける
+        //   2. parentIssueKey → documents (record_type='purchase_order') を見つける
         //   3. capability_line_items を inspection availability 付きで返す
-        // Phase 23: order_items → contract_capabilities, order_line_items → capability_line_items,
+        // Phase 23: order_items → documents, order_line_items → capability_line_items,
         //   delivery_line_items.order_line_item_id → capability_line_item_id に置換。
         try {
           const fullIssue = await backlogService.getIssue(key);
@@ -152,13 +152,13 @@ export function registerFormReadRoutes(
             }
           }
           if (parentKey) {
-            // Phase 23.6.12: contract_capabilities には description 列が無い
+            // Phase 23.6.12: documents には description 列が無い
             //   (旧 order_items の名残)。下流の poRow.description 参照箇所も
             //   無いので SELECT から削除。これで PG が 500 で死ぬのを防ぐ。
             const poHeader = await query(
               `SELECT id, amount_ex_tax, tax_rate, backlog_issue_key,
                       contract_title, due_date, created_at
-                 FROM contract_capabilities
+                 FROM documents
                 WHERE backlog_issue_key = $1
                   AND record_type = 'purchase_order'`,
               [parentKey]
@@ -226,7 +226,7 @@ export function registerFormReadRoutes(
               //   - 発注番号 ← documents.template_type=purchase_order の最新行
               //   - 業務名 ← capability_line_items 1 行目の item_name
               //   - 仕様   ← capability_line_items 1 行目の spec
-              //   - 発注日 ← contract_capabilities.created_at (due_date 優先)
+              //   - 発注日 ← documents.created_at (due_date 優先)
               const docRow = await query(
                 `SELECT document_number, form_data FROM documents
                   WHERE issue_key = $1
@@ -332,9 +332,9 @@ export function registerFormReadRoutes(
         // Phase 22.21.78: vendor_rep カラムは Phase 22.13 で正式に追加済み。
         //   空のときだけ contact_name にフォールバックする COALESCE で取得し、
         //   PO 帳票 / 検収書の代表者欄に正しい値が出るようにする。
-        // Phase 23: order_items → contract_capabilities (record_type='purchase_order'),
+        // Phase 23: order_items → documents (record_type='purchase_order'),
         //   delivery_events.order_item_id → capability_id に置換。
-        // Phase 23.6.12: contract_capabilities には amount / description / spec /
+        // Phase 23.6.12: documents には amount / description / spec /
         //   vendor_code は無い (旧 order_items の名残)。
         //   - oi.amount        → oi.amount_ex_tax
         //   - oi.description   → oi.contract_title
@@ -359,7 +359,7 @@ export function registerFormReadRoutes(
                       AND d.template_type LIKE '%purchase_order%'
                     ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number
           FROM delivery_events de
-          LEFT JOIN contract_capabilities oi
+          LEFT JOIN documents oi
                  ON de.capability_id = oi.id
                 AND oi.record_type = 'purchase_order'
           LEFT JOIN vendors v ON v.id = oi.vendor_id
@@ -442,10 +442,10 @@ export function registerFormReadRoutes(
         template === "license_master" ||
         template === "intl_purchase_order"
       ) {
-        // Phase 23: license_contracts → contract_capabilities (contract_category='license') に置換。
+        // Phase 23: license_contracts → documents (contract_category='license') に置換。
         // royalty_payments / manufacturing_events 側の license_contract_id は worker 担当の
         // マイグレーションで capability_id に置換予定だが、過渡期は alias で受ける想定で
-        // ここでは contract_capabilities 側のみ切替える。
+        // ここでは documents 側のみ切替える。
         const royaltyQuery = `
           SELECT lc.*, rp.total_amount as last_payment_amount, rp.period as last_period, me.product_name, me.msrp,
                  v.vendor_name, v.address as vendor_address, v.email as vendor_email, v.contact_name as vendor_contact,
@@ -560,7 +560,7 @@ export function registerFormReadRoutes(
       // - royalty_statement: 計算対象の condition を選ぶドロップダウン用
       // 既存の {{金銭条件1_*}} flat field 群は上の royaltyQuery 分岐で
       // 既に埋まっているので、こちらは追加情報。
-      // Phase 23: license_contracts → contract_capabilities (contract_category='license'),
+      // Phase 23: license_contracts → documents (contract_category='license'),
       //   license_financial_conditions → capability_financial_conditions に置換。
       if (
         template === "individual_license_terms" ||
@@ -574,7 +574,7 @@ export function registerFormReadRoutes(
           try {
             lc = await query(
               `SELECT id, ledger_ref_id, material_ref_id, work_id
-                 FROM contract_capabilities
+                 FROM documents
                 WHERE backlog_issue_key = $1
                   AND contract_category = 'license'`,
               [key]
@@ -582,7 +582,7 @@ export function registerFormReadRoutes(
           } catch (colErr: any) {
             if (colErr && colErr.code === "42703") {
               lc = await query(
-                `SELECT id FROM contract_capabilities
+                `SELECT id FROM documents
                   WHERE backlog_issue_key = $1
                     AND contract_category = 'license'`,
                 [key]
@@ -828,15 +828,15 @@ export function registerFormReadRoutes(
         });
       });
 
-      // Phase 23: order_items → contract_capabilities (record_type='purchase_order') に置換。
-      // Phase 23.6.12: 旧 order_items.item_no / .amount は contract_capabilities
+      // Phase 23: order_items → documents (record_type='purchase_order') に置換。
+      // Phase 23.6.12: 旧 order_items.item_no / .amount は documents
       //   には存在しない。document_number / contract_title / amount_ex_tax で
       //   置き換える。1 issue に複数 PO がぶら下がるケースのために id 順を
       //   line_no 代替として使う。
       const orders = await query(
         `SELECT id, document_number, contract_title, amount_ex_tax,
                 created_at
-           FROM contract_capabilities
+           FROM documents
           WHERE backlog_issue_key = $1
             AND record_type = 'purchase_order'
           ORDER BY created_at ASC`,
@@ -854,13 +854,13 @@ export function registerFormReadRoutes(
         });
       });
 
-      // Phase 23: order_items → contract_capabilities, delivery_events.order_item_id → capability_id に置換。
+      // Phase 23: order_items → documents, delivery_events.order_item_id → capability_id に置換。
       // Phase 23.6.12: oi.item_no は存在しないので document_number を表示用に使う。
       const deliveries = await query(
         `
         SELECT de.*, oi.document_number AS po_document_number
         FROM delivery_events de
-        LEFT JOIN contract_capabilities oi
+        LEFT JOIN documents oi
                ON de.capability_id = oi.id
               AND oi.record_type = 'purchase_order'
         WHERE de.backlog_issue_key = $1 OR oi.backlog_issue_key = $2
