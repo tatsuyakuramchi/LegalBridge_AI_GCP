@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins, Unlink, Receipt, FileUp } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins, Unlink, Receipt, FileUp, Search } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils"
 const tabs = [
   { to: "/master/contracts", label: "Contracts", icon: FileText },
   { to: "/master/vendors", label: "Vendors", icon: Building2 },
+  // 作品検索(専用画面): DB 直結 /api/v3/works/search でサーバ側検索(全件ロードしない)
+  { to: "/master/work-search", label: "作品検索", icon: Search },
   // 作品/原作 登録(works own / source_ips licensed_in)
   { to: "/master/work-entry", label: "Works (作品/原作)", icon: BookMarked },
   // 原作マテリアル登録(work_materials + 固定3種 金銭条件 + 文書欄)
