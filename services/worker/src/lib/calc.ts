@@ -135,7 +135,7 @@ export async function recalculateCapabilityTotal(
   let taxRate = taxRateOverride;
   if (taxRate === undefined || taxRate === null) {
     const headerRes = await query(
-      "SELECT tax_rate FROM contract_capabilities WHERE id = $1",
+      "SELECT tax_rate FROM documents WHERE id = $1",
       [capabilityId]
     );
     taxRate = Number(headerRes.rows[0]?.tax_rate) || 10;

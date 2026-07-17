@@ -78,7 +78,7 @@ export async function syncConditionLinesForCapability(
       `SELECT id, record_type, structural_role, contract_category, contract_type,
               contract_title, vendor_id, effective_date, expiration_date,
               template_family, backlog_issue_key
-         FROM contract_capabilities WHERE id = $1`,
+         FROM documents WHERE id = $1`,
       [capabilityId]
     )
   ).rows[0];
@@ -158,7 +158,7 @@ async function resolveTermsCapability(db: Db, cap: any): Promise<number> {
   if (role !== "master") return cap.id;
 
   const existing = await db.query(
-    `SELECT id FROM contract_capabilities
+    `SELECT id FROM documents
       WHERE parent_capability_id = $1 AND contract_title LIKE $2
       ORDER BY id LIMIT 1`,
     [cap.id, IMPLICIT_PREFIX + "%"]

@@ -146,7 +146,7 @@ export async function listPaymentDocuments(
             d.excel_issued_at, d.drive_link,
             cc.document_number AS cap_po_number
        FROM documents d
-       LEFT JOIN contract_capabilities cc
+       LEFT JOIN documents cc
          ON (d.form_data->>'parent_po_id') ~ '^[0-9]+$'
         AND cc.id = (d.form_data->>'parent_po_id')::bigint
       WHERE ${DOC_BASE_WHERE}
@@ -290,7 +290,7 @@ export async function resolveVendorForExcel(formData: any): Promise<any> {
       `SELECT v.vendor_code, v.vendor_name, v.entity_type,
               v.account_holder_kana, v.withholding_enabled,
               v.invoice_registration_number
-         FROM contract_capabilities cc
+         FROM documents cc
          LEFT JOIN vendors v ON v.id = cc.vendor_id
         WHERE cc.id = $1 LIMIT 1`,
       [masterId]
@@ -305,7 +305,7 @@ export async function resolveVendorForExcel(formData: any): Promise<any> {
         `SELECT v.vendor_code, v.vendor_name, v.entity_type,
                 v.account_holder_kana, v.withholding_enabled,
                 v.invoice_registration_number
-           FROM contract_capabilities cc
+           FROM documents cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.id = $1 AND cc.record_type = 'purchase_order'
           LIMIT 1`,
@@ -413,7 +413,7 @@ export async function buildExportBundle(
     `SELECT d.document_number, d.template_type, d.form_data, d.drive_link,
             cc.document_number AS cap_po_number
        FROM documents d
-       LEFT JOIN contract_capabilities cc
+       LEFT JOIN documents cc
          ON (d.form_data->>'parent_po_id') ~ '^[0-9]+$'
         AND cc.id = (d.form_data->>'parent_po_id')::bigint
       WHERE d.document_number = ANY($1) AND ${DOC_BASE_WHERE}`,
