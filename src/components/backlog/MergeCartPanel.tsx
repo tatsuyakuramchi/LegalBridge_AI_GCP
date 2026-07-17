@@ -12,6 +12,7 @@ import { IssuePicker } from "@/src/components/IssuePicker"
 import { EntitySearchSelect } from "@/src/components/search/EntitySearch"
 import { useAppData } from "@/src/context/AppDataContext"
 import { useMergeCart } from "@/src/context/MergeCartContext"
+import { matterClient } from "@/src/lib/api/matterClient"
 
 // 課題統合カート(フローティングパネル)。AppShell に常駐し、どの画面からでも
 //   籠に入れた課題を確認しながら統合できる。
@@ -118,17 +119,11 @@ export function MergeCartPanel() {
     relation: "primary" | "related"
   ): Promise<string | null> => {
     try {
-      const res = await fetch(`/api/matters/${matterId}/issues`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          backlog_issue_key: it.issueKey,
-          relation,
-          summary_snapshot: it.summary || null,
-        }),
+      await matterClient.addIssue(matterId, {
+        backlog_issue_key: it.issueKey,
+        relation,
+        summary_snapshot: it.summary || null,
       })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${res.status}`)
       return null
     } catch {
       return it.issueKey
@@ -145,13 +140,7 @@ export function MergeCartPanel() {
     if (!primaryKey) return
     setLinking(true)
     try {
-      const res = await fetch("/api/matters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, primary_issue_key: primaryKey, status: "open" }),
-      })
-      const d = await res.json()
-      if (!res.ok || !d?.ok) throw new Error(d?.error || "案件の作成に失敗しました")
+      const d: any = await matterClient.create({ title, primary_issue_key: primaryKey, status: "open" })
       const matterId = Number(d.matter.id)
       // 主要課題以外を関連課題として紐づけ。
       const others = enriched.filter((i) => i.issueKey !== primaryKey)

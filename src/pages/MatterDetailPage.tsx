@@ -44,6 +44,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { useAppData } from "@/src/context/AppDataContext"
+import { matterClient } from "@/src/lib/api/matterClient"
+import { apiRequest } from "@/src/lib/api/httpClient"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { IssuePicker } from "@/src/components/IssuePicker"
 import {
@@ -185,9 +187,7 @@ export function MatterDetailPage() {
   const load = React.useCallback(async () => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/matters/${matterId}`)
-      const json = await res.json()
-      if (!json?.ok) throw new Error(json?.error || "取得失敗")
+      const json: any = await matterClient.get(matterId)
       setData(json)
       setEdit({
         title: json.matter.title || "",
@@ -215,10 +215,10 @@ export function MatterDetailPage() {
     load()
   }, [load])
 
-  async function call(path: string, opts?: RequestInit, okMsg?: string) {
-    const res = await fetch(path, opts)
-    const json = await res.json().catch(() => ({}))
-    if (!json?.ok) throw new Error(json?.error || `${res.status}`)
+  // matterClient を呼び、成功時に okMsg をトーストする薄いラッパ。
+  //   (旧 call(path, opts, okMsg) の okMsg 表示挙動を踏襲する。)
+  async function run<T>(p: Promise<T>, okMsg?: string): Promise<T> {
+    const json = await p
     if (okMsg) push(okMsg, "success")
     return json
   }
@@ -226,11 +226,7 @@ export function MatterDetailPage() {
   async function saveHeader() {
     setSaving(true)
     try {
-      await call(`/api/matters/${matterId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(edit),
-      }, "案件を更新しました")
+      await run(matterClient.update(matterId, edit), "案件を更新しました")
       setEditOpen(false)
       await load()
     } catch (e: any) {
@@ -243,11 +239,7 @@ export function MatterDetailPage() {
   // ヘッダーのステータスはその場で即保存(編集フォームを開かずに変えたいケースが大半)。
   async function changeStatus(next: string) {
     try {
-      await call(`/api/matters/${matterId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
-      }, "ステータスを更新しました")
+      await run(matterClient.update(matterId, { status: next }), "ステータスを更新しました")
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -257,11 +249,7 @@ export function MatterDetailPage() {
   // LB-04: 工程(lifecycle_stage)もヘッダーから即保存で切り替える。空 = 未設定。
   async function changeStage(next: string) {
     try {
-      await call(`/api/matters/${matterId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lifecycle_stage: next || null }),
-      }, "工程を更新しました")
+      await run(matterClient.update(matterId, { lifecycle_stage: next || null }), "工程を更新しました")
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -274,11 +262,7 @@ export function MatterDetailPage() {
   async function createDriveFolder() {
     setCreatingFolder(true)
     try {
-      await call(
-        `/api/matters/${matterId}/drive-folder`,
-        { method: "POST" },
-        "Drive 案件フォルダを作成しました"
-      )
+      await run(matterClient.createDriveFolder(matterId), "Drive 案件フォルダを作成しました")
       await load()
     } catch (e: any) {
       push(`フォルダ作成に失敗: ${e?.message || e}`, "error")
@@ -292,16 +276,12 @@ export function MatterDetailPage() {
     if (!newTask.title.trim()) return push("タスク名を入力してください", "error")
     setTaskSaving(true)
     try {
-      await call(`/api/matters/${matterId}/tasks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: newTask.title.trim(),
-          assignee_staff_id: newTask.assignee_staff_id,
-          due_at: newTask.due_at || null,
-          is_primary: newTask.is_primary,
-        }),
-      }, "タスクを追加しました")
+      await run(matterClient.addTask(matterId, {
+        title: newTask.title.trim(),
+        assignee_staff_id: newTask.assignee_staff_id,
+        due_at: newTask.due_at || null,
+        is_primary: newTask.is_primary,
+      }), "タスクを追加しました")
       setNewTask({ title: "", assignee_staff_id: null, due_at: "", is_primary: false })
       setTaskFormOpen(false)
       await load()
@@ -314,11 +294,7 @@ export function MatterDetailPage() {
 
   async function updateTask(taskId: number, patch: Record<string, any>, okMsg?: string) {
     try {
-      await call(`/api/matters/${matterId}/tasks/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      }, okMsg)
+      await run(matterClient.updateTask(matterId, taskId, patch), okMsg)
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -328,7 +304,7 @@ export function MatterDetailPage() {
   async function deleteTask(taskId: number) {
     if (!window.confirm("このタスクを削除します。よろしいですか？")) return
     try {
-      await call(`/api/matters/${matterId}/tasks/${taskId}`, { method: "DELETE" })
+      await matterClient.deleteTask(matterId, taskId)
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -338,14 +314,10 @@ export function MatterDetailPage() {
   async function addIssue() {
     if (!newIssue.backlog_issue_key.trim()) return push("Request を選択してください", "error")
     try {
-      await call(`/api/matters/${matterId}/issues`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...newIssue,
-          summary_snapshot: issueByKey[newIssue.backlog_issue_key]?.summary || null,
-        }),
-      }, "課題を束ねました")
+      await run(matterClient.addIssue(matterId, {
+        ...newIssue,
+        summary_snapshot: issueByKey[newIssue.backlog_issue_key]?.summary || null,
+      }), "課題を束ねました")
       setNewIssue({ backlog_issue_key: "", relation: "related" })
       await load()
     } catch (e: any) {
@@ -355,7 +327,7 @@ export function MatterDetailPage() {
 
   async function removeIssue(key: string) {
     try {
-      await call(`/api/matters/${matterId}/issues/${encodeURIComponent(key)}`, { method: "DELETE" })
+      await matterClient.removeIssue(matterId, key)
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -365,11 +337,7 @@ export function MatterDetailPage() {
   async function attachDocument() {
     if (!attachDoc.trim()) return push("文書番号を入力してください", "error")
     try {
-      await call(`/api/matters/${matterId}/documents`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document_number: attachDoc.trim() }),
-      }, "文書を紐付けました")
+      await run(matterClient.attachDocument(matterId, { document_number: attachDoc.trim() }), "文書を紐付けました")
       setAttachDoc("")
       await load()
     } catch (e: any) {
@@ -385,9 +353,9 @@ export function MatterDetailPage() {
       fd.append("file", attachFile)
       fd.append("docKind", attachKind)
       if (attachTitle.trim()) fd.append("title", attachTitle.trim())
-      // call() は fetch をそのまま呼ぶだけなので、Content-Type は付けず FormData を渡す
+      // FormData を渡すと httpClient は Content-Type を付けない
       // (ブラウザが multipart boundary を設定する)。
-      await call(`/api/matters/${matterId}/attachments`, { method: "POST", body: fd }, "契約書を格納しました")
+      await run(matterClient.uploadAttachment(matterId, fd), "契約書を格納しました")
       setAttachFile(null)
       setAttachTitle("")
       if (fileInputRef.current) fileInputRef.current.value = ""
@@ -401,7 +369,7 @@ export function MatterDetailPage() {
 
   async function detachDocument(docId: number) {
     try {
-      await call(`/api/matters/${matterId}/documents/${docId}`, { method: "DELETE" })
+      await matterClient.detachDocument(matterId, docId)
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -413,11 +381,7 @@ export function MatterDetailPage() {
     if (!from) return push("取り込む案件IDを入力してください", "error")
     if (!window.confirm(`案件 #${from} の課題・文書・送信履歴をこの案件へ取り込み、#${from} を削除します。よろしいですか？`)) return
     try {
-      await call(`/api/matters/${matterId}/absorb`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromMatterId: from }),
-      }, "案件を統合しました")
+      await run(matterClient.absorb(matterId, { fromMatterId: from }), "案件を統合しました")
       setAbsorbId("")
       await load()
     } catch (e: any) {
@@ -440,16 +404,15 @@ export function MatterDetailPage() {
     if (sources.length === 0) return push("統合元がありません(統合先と同じものは除外されます)", "error")
     setMerging(true)
     try {
-      const json = await call(`/api/backlog/issues/merge-bulk`, {
+      const json: any = await apiRequest(`/api/backlog/issues/merge-bulk`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           target_key: t,
           source_keys: sources,
           mode,
           move_data: moveData,
           reason: reason.trim() || undefined,
-        }),
+        },
       })
       push(
         `${json.merged}/${json.total} 件を ${t} へ統合しました${json.failed ? `（失敗 ${json.failed} 件）` : ""}`,
@@ -498,9 +461,9 @@ export function MatterDetailPage() {
       const cc = emailCc.split(",").map((s) => s.trim()).filter(Boolean)
       if (to.length) body.to = to
       if (cc.length) body.cc = cc
-      const json = await call(
+      const json: any = await apiRequest(
         `/api/documents/${encodeURIComponent(emailDoc.document_number)}/email/send`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+        { method: "POST", body }
       )
       push(
         `メール送信しました: ${(json.to || []).join(", ")}` +
@@ -520,7 +483,7 @@ export function MatterDetailPage() {
   async function deleteMatter() {
     if (!window.confirm("この案件を削除します（課題の束ねは解除、文書は案件から外れます）。よろしいですか？")) return
     try {
-      await call(`/api/matters/${matterId}`, { method: "DELETE" })
+      await matterClient.remove(matterId)
       push("案件を削除しました", "success")
       navigate("/matters")
     } catch (e: any) {

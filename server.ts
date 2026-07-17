@@ -24,6 +24,7 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
+import { randomUUID } from "node:crypto";
 import { resolveApiTarget } from "./src/lib/apiRoutingRules.ts";
 
 dotenv.config();
@@ -159,12 +160,19 @@ async function startServer() {
         return res.status(403).json({ ok: false, error: "forbidden (admin only)" });
       }
     }
+    // 相関ID(§8): クライアント(httpClient)が付けた X-Request-Id を引き継ぎ、
+    //   無ければ採番する。上流へ転送し、レスポンスにも echo し、ログにも出す。
+    //   これで admin-ui / search-api / worker のログを 1 リクエストで突き合わせられる。
+    const reqId =
+      String(req.headers["x-request-id"] || "").trim() || randomUUID();
+
     let base: string;
+    let target: "read" | "write";
     try {
-      const target = resolveApiTarget(req.method, req.originalUrl, READS_TO_WORKER);
+      target = resolveApiTarget(req.method, req.originalUrl, READS_TO_WORKER);
       base = target === "read" ? SEARCH_API_URL : DOCUMENT_WORKER_URL;
     } catch (err) {
-      console.error("[api-proxy] target resolution failed:", err);
+      console.error(`[api-proxy] rid=${reqId} target resolution failed:`, err);
       return res.status(502).json({ ok: false, error: "proxy target resolution failed" });
     }
     const url = new URL(base.replace(/\/+$/, "") + req.originalUrl);
@@ -176,6 +184,7 @@ async function startServer() {
       if (HOP_BY_HOP.has(lk) || lk === "host") continue;
       headers[k] = v;
     }
+    headers["x-request-id"] = reqId;
     // 内部認証: サーバ側 env の共有シークレットを付与(クライアント指定は上書き)。
     // search-api の requireIapUser が portal_secret fallback として受け入れる。
     if (process.env.LB_PORTAL_SECRET) {
@@ -195,13 +204,17 @@ async function startServer() {
           if (v == null || HOP_BY_HOP.has(k.toLowerCase())) continue;
           res.setHeader(k, v as any);
         }
+        res.setHeader("x-request-id", reqId);
         up.pipe(res);
       }
     );
     // Cloud Run の admin-ui timeout(300s)より僅かに短く上流を打ち切る。
     upstream.setTimeout(290_000, () => upstream.destroy(new Error("upstream timeout")));
     upstream.on("error", (err) => {
-      console.error(`[api-proxy] ${req.method} ${req.originalUrl} → ${url.host} failed:`, err);
+      console.error(
+        `[api-proxy] rid=${reqId} ${req.method} ${req.originalUrl} → ${target}(${url.host}) failed:`,
+        err
+      );
       if (!res.headersSent) {
         res.status(502).json({ ok: false, error: "upstream request failed" });
       } else {

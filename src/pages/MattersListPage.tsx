@@ -31,6 +31,7 @@ import { useAppData } from "@/src/context/AppDataContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { IssuePicker } from "@/src/components/IssuePicker"
 import { STAGE_LABEL } from "@/src/components/matter/matterStages"
+import { matterClient } from "@/src/lib/api/matterClient"
 
 // 案件管理 一覧。1行 = 1案件。Backlog課題(重複/部分)・文書・送信・条件明細を束ねる。
 //   API: GET /api/matters (matter_overview_v)。詳細は /matters/:id。
@@ -101,11 +102,7 @@ export function MattersListPage() {
   const refresh = React.useCallback(async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (status) params.set("status", status)
-      if (q.trim()) params.set("q", q.trim())
-      const res = await fetch(`/api/matters?${params.toString()}`)
-      const json = await res.json()
+      const json: any = await matterClient.list({ status, q: q.trim() })
       setRows(Array.isArray(json?.matters) ? json.matters : [])
     } catch (e) {
       push("案件一覧の取得に失敗しました", "error")
@@ -125,13 +122,7 @@ export function MattersListPage() {
     }
     setSaving(true)
     try {
-      const res = await fetch("/api/matters", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      })
-      const json = await res.json()
-      if (!json?.ok) throw new Error(json?.error || "作成に失敗しました")
+      const json: any = await matterClient.create(form)
       push("案件を作成しました", "success")
       setOpenCreate(false)
       setForm({ title: "", counterparty: "", vendor_id: null, vendor_code: "", primary_issue_key: "", status: "open" })
