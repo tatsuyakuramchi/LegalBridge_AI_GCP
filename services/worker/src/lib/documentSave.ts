@@ -47,10 +47,11 @@ export interface FinancialConditionLike {
   // 0133: 許諾地域/言語の選択式(1対N)。子テーブルへ保存。
   regions?: any;
   languages?: any;
-  // 再許諾/アウトライセンス: 種別・親ライセンス条件・相手方。
+  // 再許諾/アウトライセンス: 種別・親ライセンス条件・相手方・対象作品。
   condition_kind?: any;
   parent_license_condition_id?: any;
   counterparty_vendor_id?: any;
+  source_work_id?: any;
 }
 
 export interface MasterContractInput {
@@ -222,6 +223,10 @@ function toConditionInput(
     counterparty_vendor_id:
       fc.counterparty_vendor_id != null && fc.counterparty_vendor_id !== ""
         ? Number(fc.counterparty_vendor_id)
+        : undefined,
+    source_work_id:
+      fc.source_work_id != null && fc.source_work_id !== ""
+        ? Number(fc.source_work_id)
         : undefined,
   };
 }

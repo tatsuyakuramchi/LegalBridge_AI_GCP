@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>再許諾条件書 - {{条件書番号}}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 20mm 22mm 25mm;
+      @bottom-center {
+        content: "- " counter(page) " -";
+        font-size: 8.5pt;
+        font-family: "Noto Serif CJK JP", "IPAMincho", serif;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Noto Serif CJK JP", "IPAMincho", "MS Mincho", serif;
+      font-size: 10pt; line-height: 1.75; color: #000; background:#fff;
+    }
+    .contract-document { max-width: 210mm; margin: 0 auto; padding: 0; }
+    .doc-header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:.5em; font-size:8.5pt; color:#555; letter-spacing:.05em; }
+    .doc-header .header-no { font-size:10pt; font-weight:bold; color:#1a1a1a; letter-spacing:.1em; }
+    h1.contract-title { text-align:center; font-size:15pt; font-weight:bold; letter-spacing:.3em; margin:1.2em 0 1.4em; }
+    .lead { margin: 0 0 1.1em; }
+    .parties { margin: 0 0 1.2em; }
+    .party-row { margin:.15em 0; }
+    .party-label { display:inline-block; min-width:6.5em; color:#333; }
+    h2.clause { font-size:10.5pt; font-weight:bold; margin:1.1em 0 .3em; }
+    .clause-body { margin:0 0 .2em; }
+    table.terms { width:100%; border-collapse:collapse; margin:.5em 0 1em; font-size:9.5pt; }
+    table.terms th, table.terms td { border:1px solid #333; padding:5px 7px; vertical-align:top; text-align:left; }
+    table.terms th { background:#f2f2f2; white-space:nowrap; }
+    .review-note { border:1px dashed #b45309; background:#fff7ed; color:#9a3412; font-size:8.5pt; padding:6px 9px; margin:1.2em 0; }
+    .sign-block { margin-top:2.4em; }
+    .sign-row { display:flex; justify-content:space-between; gap:2em; margin-top:1.4em; }
+    .sign-col { width:48%; }
+    .sign-col .role { font-weight:bold; margin-bottom:.3em; }
+    .sign-line { border-bottom:1px solid #000; height:1.6em; margin-top:1.2em; }
+    .date-line { text-align:center; margin:2em 0 .4em; }
+  </style>
+</head>
+<body>
+  <div class="contract-document">
+    <div class="doc-header">
+      <span class="header-no">{{条件書番号}}</span>
+      <span class="header-right">{{#if 契約締結日}}締結日: {{契約締結日}}{{/if}}</span>
+    </div>
+
+    <h1 class="contract-title">再許諾条件書</h1>
+
+    <p class="lead">
+      {{#if 契約名称}}{{契約名称}}<br>{{/if}}
+      株式会社アークライト（以下「甲」という。）と下記の被許諾者（以下「乙」という。）は、
+      甲が第三者より許諾を受けた著作物等につき、甲が乙に対して再許諾（サブライセンス）する条件を、
+      本条件書のとおり定める。
+    </p>
+
+    <div class="parties">
+      <div class="party-row"><span class="party-label">甲（許諾者）</span>株式会社アークライト</div>
+      <div class="party-row"><span class="party-label">乙（被許諾者）</span>{{被許諾者名}}{{#if 被許諾者種別}}（{{被許諾者種別}}）{{/if}}</div>
+      {{#if 被許諾者住所}}<div class="party-row"><span class="party-label">乙 住所</span>{{被許諾者住所}}</div>{{/if}}
+      <div class="party-row"><span class="party-label">対象作品</span>{{対象作品名}}</div>
+      {{#if 親ライセンス表示}}<div class="party-row"><span class="party-label">再許諾元</span>{{親ライセンス表示}}</div>{{/if}}
+    </div>
+
+    <h2 class="clause">第1条（再許諾の対象・範囲）</h2>
+    <p class="clause-body">
+      甲は乙に対し、対象作品について、本条件書の許諾地域・許諾言語の範囲で利用することを再許諾する。
+      〔許諾範囲の詳細条項は法務レビューにより確定する。〕
+    </p>
+
+    <h2 class="clause">第2条（対価・料率）</h2>
+    <p class="clause-body">乙は甲に対し、次の条件により対価を支払う。</p>
+    <table class="terms">
+      <thead>
+        <tr><th>名称</th><th>計算方式</th><th>料率/金額</th><th>MG</th><th>AG</th><th>許諾地域</th><th>許諾言語</th><th>通貨</th></tr>
+      </thead>
+      <tbody>
+        {{#each financial_conditions}}
+        <tr>
+          <td>{{this.condition_name}}</td>
+          <td>{{this.calc_type}}</td>
+          <td>{{#if this.rate_pct}}{{this.rate_pct}}%{{else}}{{this.base_price_label}}{{/if}}</td>
+          <td>{{this.mg_amount}}</td>
+          <td>{{this.ag_amount}}</td>
+          <td>{{this.region_language_label}}{{#unless this.region_language_label}}{{this.region_territory}}{{/unless}}</td>
+          <td>{{this.region_language}}</td>
+          <td>{{#if this.currency}}{{this.currency}}{{else}}JPY{{/if}}</td>
+        </tr>
+        {{/each}}
+      </tbody>
+    </table>
+
+    <h2 class="clause">第3条（許諾期間）</h2>
+    <p class="clause-body">
+      本再許諾の期間は、{{許諾開始日}}から{{#if 許諾終了日}}{{許諾終了日}}まで{{else}}別途甲乙協議して定める日まで{{/if}}とする。
+    </p>
+
+    <h2 class="clause">第4条（利用報告・支払）</h2>
+    <p class="clause-body">〔利用報告の方法・締め・支払期日等は法務レビューにより確定する。〕</p>
+
+    <h2 class="clause">第5条（その他）</h2>
+    <p class="clause-body">〔再許諾禁止・秘密保持・契約解除・準拠法・協議条項等は法務レビューにより確定する。〕</p>
+
+    <div class="review-note">
+      ※ 本テンプレートは条件明細（再許諾条件）を文書起点で登録するための雛形です。
+      条項本文（第1・4・5条ほか）は暫定のプレースホルダであり、締結前に法務レビューで確定してください。
+    </div>
+
+    <div class="date-line">{{#if 契約締結日}}{{契約締結日}}{{/if}}</div>
+    <div class="sign-block">
+      <div class="sign-row">
+        <div class="sign-col">
+          <div class="role">甲（許諾者）</div>
+          <div>株式会社アークライト</div>
+          <div class="sign-line"></div>
+        </div>
+        <div class="sign-col">
+          <div class="role">乙（被許諾者）</div>
+          <div>{{被許諾者名}}</div>
+          <div class="sign-line"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

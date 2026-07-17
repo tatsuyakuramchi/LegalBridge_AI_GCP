@@ -21,6 +21,9 @@ export interface ConditionInput {
   // 原作マテリアル結線（どちらか）
   material_code?: string | null;   // work_materials.material_code で解決
   material_id?: number | null;
+  // 対象作品を直接指定（再許諾/アウトライセンス等、素材経由でない自社作品を結線する場合）。
+  //   material 解決で work が決まらないときのフォールバックに使う。
+  source_work_id?: number | null;
   // 向き・種別
   direction?: string | null;            // payable(当社支払) / receivable(当社受取)
   transaction_kind?: string | null;     // license / product / service
@@ -156,6 +159,10 @@ export async function upsertDocumentConditions(
         materialId = Number(r.rows[0].id);
         sourceWorkId = Number(r.rows[0].work_id);
       }
+    }
+    // 素材経由で work が決まらない場合、明示指定の source_work_id を採用（再許諾等）。
+    if (sourceWorkId == null && c.source_work_id != null && String(c.source_work_id) !== "") {
+      sourceWorkId = Number(c.source_work_id);
     }
 
     const scheme = derivePaymentScheme(c);
