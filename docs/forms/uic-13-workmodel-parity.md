@@ -58,7 +58,11 @@
 **段階 B（WorkModel 全廃）— ✅ 完了（2026-07-18）**
 4. 依存の解消を確認: 契約＝`ContractsPanel`（/master/contracts, 正準 CRUD）で冗長／CSV 取込＝本番 30 日 **使用実績 0**（`/api/v3/import/` ログ 0 件）で撤去可／作品・派生＝段階A で /works へ移植済み／原作IP＝閲覧冗長。
 5. ✅ `work-model` を `/works` へ計測付きリダイレクト（`DeprecatedRedirect`）＋ `WorkModelPanel.tsx`（1772 行）物理削除。
-   - 補足: `/api/v3/import/:type`（worker）は UI 消費者ゼロになった（UI 側は撤去済み）。バックエンドの当該ルート／`genericImport` とは別物で、worker のルート撤去は別 PR（worker デプロイ）で扱う。
+   - 補足: バックエンド撤去は **`api` サービス**（worker ではない）。`services/api/src/routes/workModel.ts` の
+     `POST /api/v3/import/:entity` ＋ `GET .../template.csv` と、その実装 `workModelImportService.ts`、
+     未ルーティングの死活 SSR `workModelHtml.ts` を撤去（別 PR、`release/api` FF でデプロイ）。
+     **注意**: 同ファイルの他 60 ルート（`/api/v3/works`・`source-ips`・`graph`・`materials`・`component-lines` 等）は
+     新 `/works` React UI が現用のため**保持**。撤去は import 2 ルートのみ。
 
 ### 段階 B 依存-2: CSV 取込（UIC-17）後継確認の結果（2026-07-18）
 
