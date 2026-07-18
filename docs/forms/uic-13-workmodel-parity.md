@@ -44,9 +44,11 @@
 ## 推奨する段取り
 
 **段階 A（UIC-13 本体・移植）— admin-ui のみ / バックエンド変更なし / 中規模**
-1. `WorkGraphPanel` の作品基本情報 編集に **派生設定（parent_work_id / derivation_type）編集 UI** を追加（GAP 2c）。
-2. `WorksListPanel`（自社作品）に **親→派生ツリー表示** を追加（GAP 2d、`WorkTree` 移植）。
-3. 上記で「作品ツリー・派生設定」の Works 側パリティが成立 → この時点で **設計 UIC-13 の記述（作品ツリー・派生設定の移植）は達成**。
+1. ✅ **完了**: `WorkGraphPanel` の作品基本情報 編集に **派生設定（parent_work_id / derivation_type）編集 UI** を追加（GAP 2c）。
+   - `DERIV_CHOICES`/`DERIV_LABEL` を移植、編集フォームに派生元 `WorkPicker`（own＋licensed_in、自身除外）＋派生種別 select を追加、
+     `saveEdit` を form 値送信へ（PUT works は既に両フィールドを送っていたため**バックエンド変更なし**）、非編集ビューに系譜の読み取り表示を追加。
+2. ⬜ **残**: `WorksListPanel`（自社作品）に **親→派生ツリー表示** を追加（GAP 2d、`WorkTree` 移植）。
+3. 上記 2 点で「作品ツリー・派生設定」の Works 側パリティが成立 → この時点で **設計 UIC-13 の記述（作品ツリー・派生設定の移植）は達成**。
 
 **段階 B（WorkModel 全廃・後続）— UIC-15 / UIC-17 と連動**
 4. 契約タブ撤去（`ContractsPanel` へ集約＝UIC-15）、CSV 取込の後継確認（UIC-17）。
