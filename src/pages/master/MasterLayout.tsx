@@ -1,30 +1,26 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, ClipboardCheck, Boxes, BookMarked, BookOpen, Coins } from "lucide-react"
+import { RefreshCw, Building2, Users, GitBranch, ClipboardCheck } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
+// UIC-19(設計 v1.4 §5.3 / Phase E): /master は「参照マスターのランディング」。4 項目に限定。
+//   契約=/contracts(UIC-15) / 金銭=/finance(UIC-16) / 保守=/data-maintenance(UIC-17) /
+//   作品=/works(UIC-10) はそれぞれ独立モジュールへ移設済み。
 const tabs = [
-  // UIC-15(設計 v1.4 Phase E): 契約台帳は top-level /contracts へ移設(ここからは撤去)。
-  { to: "/master/vendors", label: "Vendors", icon: Building2 },
-  // UIC-10(設計 v1.4 Phase D): 作品/原作 登録は Works 統一一覧(/works)へ統合。
-  { to: "/works", label: "Works (作品/原作)", icon: BookMarked },
-  // 原作マテリアル登録(work_materials + 固定3種 金銭条件 + 文書欄)
-  { to: "/master/materials", label: "Materials (原作素材)", icon: Boxes },
-  // UIC-17(設計 v1.4 Phase E): 保守系(一括インポート / ID統合 / 未リンクCL / Drafts)は
-  //   Data Maintenance(/data-maintenance)へ集約。ここからは撤去。
-  // UIC-11(設計 v1.4 Phase D): 作品×原作素材 紐づけは Works 詳細(/works/:id)の結線 UI へ統合したため
-  //   独立ナビは撤去(作品を選んでから紐づける文脈内操作へ一本化)。
-  // UIC-12: 出版利用許諾条件は Document Editor(pub_license_terms)で直接起票。旧パネルは廃止し文書フォームへ誘導。
-  { to: "/documents/new?template=pub_license_terms", label: "出版条件書を作成", icon: BookOpen },
-  // Phase 22.20-C: サブライセンシー マスター
-  { to: "/master/sublicense-conditions", label: "再許諾条件登録", icon: Coins },
-  // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
-  { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
-  { to: "/master/staff", label: "Staff", icon: Users },
-  { to: "/master/rules", label: "Routing", icon: GitBranch },
+  { to: "/master/vendors", label: "取引先 (Vendors)", icon: Building2 },
+  { to: "/master/staff", label: "担当者 (Staff)", icon: Users },
+  { to: "/master/ringi", label: "稟議 (Ringi)", icon: ClipboardCheck },
+  { to: "/master/rules", label: "ルーティング (Routing)", icon: GitBranch },
+]
+
+// UIC-19: 参照マスターではないが /master 配下に残す管理面は「その他」として控えめに導線を残す。
+//   将来 素材は作品管理へ、再許諾条件登録は独立データ入力(/data-entry)へ移設予定。
+const secondary = [
+  { to: "/master/materials", label: "原作素材" },
+  { to: "/master/sublicense-conditions", label: "再許諾条件登録" },
 ]
 
 export function MasterLayout() {
@@ -40,20 +36,16 @@ export function MasterLayout() {
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
-          <p className="retro-tag mb-1.5">MST · INDEX</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight">Master Systems</h2>
+          <p className="retro-tag mb-1.5">MST · 参照マスター</p>
+          <h2 className="text-2xl font-mono font-bold tracking-tight">参照マスター</h2>
           <p className="text-xs font-mono text-muted-foreground mt-1.5">
-            Reference data — vendors, staff, contracts, and workflow routing.
+            取引先・担当者・稟議・ルーティングの参照データ。契約は /contracts、金銭は /finance、保守は /data-maintenance へ移設済み。
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={refreshAll}>
             <RefreshCw />
             Sync all
-          </Button>
-          <Button size="sm">
-            <Upload />
-            CSV bulk import
           </Button>
         </div>
       </header>
@@ -80,6 +72,25 @@ export function MasterLayout() {
           )
         })}
       </nav>
+
+      {/* UIC-19: 参照マスター外の管理面への控えめな導線。 */}
+      <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
+        <span className="uppercase tracking-wider">その他</span>
+        {secondary.map((s) => (
+          <NavLink
+            key={s.to}
+            to={s.to}
+            className={({ isActive }) =>
+              cn(
+                "underline-offset-2 hover:text-foreground hover:underline",
+                isActive && "text-foreground font-bold"
+              )
+            }
+          >
+            {s.label}
+          </NavLink>
+        ))}
+      </div>
 
       <Outlet />
     </div>
