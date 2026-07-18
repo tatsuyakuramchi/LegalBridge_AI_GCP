@@ -948,11 +948,13 @@ export function registerWorkModelRoutes(
       const r = await query(
         // 0114: parent_license_condition_id は cfc ビューに無い(実体は condition_lines)。
         //   cfc.id = condition_lines.id の 1:1 なので JOIN して読み出す。
-        `SELECT cfc.*, cl.parent_license_condition_id,
+        `SELECT cfc.*, cl.parent_license_condition_id, cl.condition_kind,
+                cl.document_id, dd.document_number,
                 sw.title AS source_work_title, sw.work_code AS source_work_code,
                 sm.material_name AS source_material_name
            FROM (${CFC_VIEW_SQL}) cfc
            LEFT JOIN condition_lines cl ON cl.id = cfc.id
+           LEFT JOIN documents dd ON dd.id = cl.document_id
            LEFT JOIN works sw ON sw.id = cfc.source_work_id
            LEFT JOIN work_materials sm ON sm.id = cfc.source_material_id
           WHERE cfc.work_id = $1
