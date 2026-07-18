@@ -2377,7 +2377,11 @@ export function DocumentEditorPage() {
             {/* Body — Phase 23.2: Split preview 廃止により常に縦並び。
                 LB-F12 (§5.5.7): xl 以上では左にセクションナビ(完了/未入力状態 +
                 アンカー移動)を置く3ペインの中核。ナビはスクロールに追従(sticky)。 */}
-            <div className="flex flex-col overflow-hidden">
+            {/* UIC-04(設計 v1.4 Phase B): 下部アクションバーを sticky 化するため、この段の
+                overflow-hidden を外す。アプリは body スクロール(AppShell が min-h-screen)なので、
+                overflow-hidden があるとバーの position:sticky が body スクロールを参照できず固定されない。
+                外すことでバーの sticky bottom-0 がビューポート下端に追従する(短いフォームでは自然位置)。 */}
+            <div className="flex flex-col">
               <div
                 ref={formBodyRef}
                 className="flex-1 overflow-y-auto custom-scrollbar p-6"
@@ -2656,7 +2660,7 @@ export function DocumentEditorPage() {
                 必須項目充足・最終保存時刻に連動させる(§5.5.11 / LB-F10 の一部)。
                 例外・管理操作(DB登録のみ / 単独契約 / ラインID読込 / 全消去)は
                 下の「その他の操作」へ隔離する(LB-F05, §5.5.10)。 */}
-            <div className="border-t border-border bg-muted/40">
+            <div className="sticky bottom-0 z-20 border-t border-border bg-card/95 backdrop-blur-sm supports-[backdrop-filter]:bg-card/80">
               <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-4 px-5 py-3">
                 {/* 実状態: 必須項目の充足 / 最終保存 */}
                 <div className="flex items-center gap-4 min-w-0">
