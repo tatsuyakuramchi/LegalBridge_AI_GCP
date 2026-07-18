@@ -25,7 +25,6 @@ import { LedgersPanel } from "./pages/master/LedgersPanel" // Phase 22.18
 import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ReceivableMapPanel } from "./pages/master/ReceivableMapPanel" // 統合 P3-4
-import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
 import { MaterialEntryPanel } from "./pages/master/MaterialEntryPanel" // 原作マテリアル登録
 import { SublicenseConditionPanel } from "./pages/master/SublicenseConditionPanel" // 再許諾条件登録
 import { UnlinkedConditionsPanel } from "./pages/master/UnlinkedConditionsPanel" // 未リンクCL 棚卸し
@@ -100,7 +99,10 @@ export default function App() {
                   {/* データ構造刷新: 条件明細 横断検索は条件明細ハブの検索タブへ集約(旧URL温存) */}
                   <Route path="conditions" element={<DeprecatedRedirect from="/master/conditions" to="/condition-lines?tab=search" />} />
                   <Route path="receivable-map" element={<ReceivableMapPanel />} />{/* 統合 P3-4 */}
-                  <Route path="work-model" element={<WorkModelPanel />} />{/* 統合 P3-5 */}
+                  {/* UIC-13(設計 v1.4 Phase D 段階B): WorkModelPanel を廃止。作品/派生は /works へ移植済み
+                      (段階A)、契約は /master/contracts(ContractsPanel)、CSV取込は本番30日 未使用のため撤去。
+                      旧 URL は計測付き互換リダイレクトで温存(CLEAN-06)。 */}
+                  <Route path="work-model" element={<DeprecatedRedirect from="/master/work-model" to="/works" />} />{/* 作品モデル → Works */}
                   {/* 統合 増分④: 3カードエディタは /works/:id へ移設。旧URLは温存リダイレクト */}
                   <Route path="work-graph" element={<DeprecatedRedirect from="/master/work-graph" to="/works" />} />
                   <Route path="staff" element={<StaffPanel />} />
