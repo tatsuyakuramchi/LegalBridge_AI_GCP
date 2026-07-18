@@ -212,11 +212,21 @@ export function MattersListPage() {
             </div>
           ) : (
             rows.map((m) => (
-              <button
+              // UIC-07(設計 v1.4 Phase B): ネストした interactive control(button 内 role=button)を解消。
+              //   行コンテナは非インタラクティブな div にし、遷移は単一の overlay button で担う
+              //   (行全体をクリック可・キーボード可)。統合カートは overlay の上に載る独立 button。
+              //   [&>*]:pointer-events-none で行内テキストのクリックを overlay へ透過させる。
+              <div
                 key={m.id}
-                onClick={() => navigate(`/matters/${m.id}`)}
-                className="grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-y-1 md:gap-2 px-3 py-2.5 border-b border-border/60 items-center text-left hover:bg-muted/40 transition-colors w-full"
+                className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-y-1 md:gap-2 px-3 py-2.5 border-b border-border/60 items-center text-left hover:bg-muted/40 transition-colors w-full [&>*]:pointer-events-none"
               >
+                {/* 行全体を案件詳細へ(単一のインタラクティブ要素)。 */}
+                <button
+                  type="button"
+                  onClick={() => navigate(`/matters/${m.id}`)}
+                  aria-label={`案件 ${m.matter_code || `#${m.id}`}${m.title ? ` ${m.title}` : ""} を開く`}
+                  className="absolute inset-0 z-0 pointer-events-auto rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
                 {/* 案件 / 相手方 */}
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
@@ -293,10 +303,10 @@ export function MattersListPage() {
                   <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
                     {fmtShortDate(m.updated_at)}
                   </span>
-                  <span
-                    role="button"
-                    tabIndex={0}
+                  <button
+                    type="button"
                     title={mergeCart.has(m.id) ? "統合カートから外す" : "統合カートに追加"}
+                    aria-pressed={mergeCart.has(m.id)}
                     onClick={(e) => {
                       e.stopPropagation()
                       e.preventDefault()
@@ -307,17 +317,17 @@ export function MattersListPage() {
                           { openPanel: true }
                         )
                     }}
-                    className={`inline-flex items-center justify-center h-6 w-6 rounded-sm border transition-colors ${
+                    className={`relative z-10 pointer-events-auto inline-flex items-center justify-center h-6 w-6 rounded-sm border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       mergeCart.has(m.id)
                         ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40"
                         : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
                     }`}
                   >
                     <GitMerge className="h-3.5 w-3.5" />
-                  </span>
+                  </button>
                 </span>
                 <ChevronRight className="h-4 w-4 text-muted-foreground hidden md:block" />
-              </button>
+              </div>
             ))
           )}
         </CardContent>
