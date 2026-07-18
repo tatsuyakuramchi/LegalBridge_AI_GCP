@@ -1,0 +1,45 @@
+name: E2E (Playwright)
+
+# 手動実行専用。デプロイ済み admin-ui の URL を入力してスモーク E2E を回す。
+# admin-ui は --allow-unauthenticated なので URL だけで実行できる（認証情報不要）。
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "対象 admin-ui の URL (例: https://legalbridge-admin-ui-xxxx.a.run.app)"
+        required: true
+        type: string
+      allow_mutation:
+        description: "破壊的テスト(UIC-05 下書き作成)を有効化する"
+        required: false
+        default: false
+        type: boolean
+      matter_id_no_issue:
+        description: "UIC-05 用: 課題の無い案件の matter_id (allow_mutation=true のとき)"
+        required: false
+        type: string
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run E2E
+        env:
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          E2E_ALLOW_MUTATION: ${{ inputs.allow_mutation && '1' || '' }}
+          E2E_MATTER_ID_NO_ISSUE: ${{ inputs.matter_id_no_issue }}
+        run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
