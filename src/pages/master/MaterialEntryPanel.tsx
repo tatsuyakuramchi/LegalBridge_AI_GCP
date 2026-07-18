@@ -29,7 +29,6 @@ import { Input } from "@/components/ui/input"
 import { WorkPicker, toWorkPickerItem, type WorkPickerItem } from "@/src/components/work/WorkPicker"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { DocumentNumberLookup, type LookedUpDocument } from "@/src/components/document/DocumentNumberLookup"
-import { V3_FIXED_DEALS, V3_CALC_MODELS } from "@/src/components/document/V3LicenseMatrix"
 import { MATERIAL_GENRES, normalizeGenre } from "@/lib/materialVocab"
 
 // 種別(ジャンル)は正準語彙 MATERIAL_GENRES(lib/materialVocab)を使う(ゲームデザイン等を含む)。
@@ -41,40 +40,8 @@ const MATERIAL_ROLES: Array<{ v: string; label: string }> = [
 const RIGHTS_TYPES = ["owned", "copyright_assignment", "license", "joint"]
 const ACQUISITION_TYPES = ["", "license", "buyout_commission", "in_house"]
 
-const calcLabel = (t?: string) => V3_CALC_MODELS.find((m) => m.value === t)?.label || t || ""
-
-// 出版文脈での取引形態の別名(紙自社出版=①/電子出版=②/紙他社出版=③)。
-const PUB_DEAL_HINT: Record<number, string> = {
-  1: "紙・自社出版",
-  2: "電子出版",
-  3: "紙・他社出版",
-}
-const dealOptionLabel = (dealId: number, i: number, name: string, isPub: boolean) =>
-  `${["①", "②", "③"][i] || ""} ${isPub && PUB_DEAL_HINT[dealId] ? `${PUB_DEAL_HINT[dealId]}（${name}）` : name}`
-
-type CondRow = {
-  key: string
-  /** 既存条件明細の id(編集時の読み込み由来)。新規行は undefined。PUT で更新対象を突合する。 */
-  __clid?: number
-  dealId: number
-  rate_pct: string
-  mg_amount: string
-  ag_amount: string
-  currency: string
-  region_territory: string
-  region_language: string
-}
-let _rowSeq = 0
-const newCondRow = (dealId = 1): CondRow => ({
-  key: `c${++_rowSeq}`,
-  dealId,
-  rate_pct: "",
-  mg_amount: "",
-  ag_amount: "",
-  currency: "JPY",
-  region_territory: "全世界",
-  region_language: "全言語",
-})
+// UIC-03: 金銭条件エディタ(固定3種の CondRow/取引形態ラベル/計算モデル表示)は撤去。
+//   条件値の作成・修正は文書フォームへ一本化したため、関連の定数・型はここでは持たない。
 
 type Refs = { condition_lines: number; documents: number }
 
@@ -126,12 +93,9 @@ export function MaterialEntryPanel() {
   const [territory, setTerritory] = React.useState("")
   const [language, setLanguage] = React.useState("")
 
-  const [conds, setConds] = React.useState<CondRow[]>([newCondRow(1)])
-  // 編集時: フォームで扱わない非 royalty 条件(一括/従量 等)は素通しで保持し、PUT でそのまま送り返して保全する。
-  const [passthroughConds, setPassthroughConds] = React.useState<any[]>([])
-  // 編集時: 既存条件の読み込みが成功したか。失敗/未完了のまま保存すると PUT が条件を消しかねないため、
-  //   true のときだけ PUT(全置換)を行う(false のときは条件を触らず属性のみ保存)。
-  const [condsLoaded, setCondsLoaded] = React.useState(true)
+  // UIC-03: 編集時に既存条件を read-only 表示するための状態(書込みはしない)。
+  const [existingConds, setExistingConds] = React.useState<any[]>([])
+  const [existingLoading, setExistingLoading] = React.useState(false)
 
   const [pickedDoc, setPickedDoc] = React.useState<LookedUpDocument | null>(null)
   const [fileLink, setFileLink] = React.useState("")
@@ -143,8 +107,6 @@ export function MaterialEntryPanel() {
   // 文書種別: license=個別利用許諾条件書(ARC-ILT) / publication=出版等利用許諾条件書(ARC-PUBT)。
   //   固定3種の取引形態は出版にも流用(紙自社出版=①/電子出版=②/紙他社出版=③)。器のカテゴリと採番だけ切替。
   const [docKind, setDocKind] = React.useState<"license" | "publication">("license")
-  // PDF出力あり: DB登録のみ(condition-lines)ではなく、文書作成フォームへ prefill して遷移し PDF を出力。
-  const [pdfOutput, setPdfOutput] = React.useState(false)
   // 出版の基本契約書(ARC-PUB): 条件書は基本契約番号を参照する。既存を検索して紐づけるか、無ければ先に作成。
   const [pubBaseDoc, setPubBaseDoc] = React.useState<LookedUpDocument | null>(null)
   const [pubBaseType, setPubBaseType] = React.useState<"individual" | "corporate">("individual")
@@ -168,11 +130,6 @@ export function MaterialEntryPanel() {
     [sources]
   )
   const selectedSource = React.useMemo(() => sources.find((s) => String(s.id) === workId) || null, [sources, workId])
-
-  const addCond = () => setConds((cs) => [...cs, newCondRow(1)])
-  const removeCond = (key: string) => setConds((cs) => cs.filter((c) => c.key !== key))
-  const patchCond = (key: string, patch: Partial<CondRow>) =>
-    setConds((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)))
 
   // CL引用: 選んだ文書配下の「未リンクの利用許諾CL」を取得(発注書の受託者帰属条件など)。
   React.useEffect(() => {
@@ -216,9 +173,8 @@ export function MaterialEntryPanel() {
     setRightsVendorCode(""); setRightsVendorId(null); setRightsHolderLabel("")
     setIsRoyaltyBearing(true); setScope(""); setRemarks("")
     setTerritory(""); setLanguage("")
-    setConds([newCondRow(1)])
-    setPassthroughConds([]); setCondsLoaded(true)
-    setPickedDoc(null); setFileLink(""); setDocKind("license"); setPdfOutput(false)
+    setExistingConds([]); setExistingLoading(false)
+    setPickedDoc(null); setFileLink(""); setDocKind("license")
     setPubBaseDoc(null); setPubBaseType("individual")
   }
 
@@ -275,9 +231,8 @@ export function MaterialEntryPanel() {
     setRemarks(m.remarks || "")
     setTerritory(m.territory || "")
     setLanguage(m.language || "")
-    // 既存の金銭条件を読み込んで編集可能にする(読み込み完了までは空 → 誤保存で条件を消さないよう condsLoaded=false)。
-    setConds([]); setPassthroughConds([]); setCondsLoaded(false)
-    void loadCondsForEdit(m.id)
+    // UIC-03: 既存の金銭条件は read-only 表示のみ(このフォームでは編集しない)。
+    setExistingConds([]); void loadExistingConds(m.id)
     setPickedDoc(null); setFileLink("")
     setView("form")
   }
@@ -313,144 +268,24 @@ export function MaterialEntryPanel() {
     }
   }
 
-  // 編集: マテリアルの既存金銭条件を読み込み、フォーム(固定3種 royalty)へ写像する。
-  //   royalty は編集可能な CondRow に、その他スキーム(一括/従量 等)は passthrough として素通し保持。
-  //   dealId は subject(取引形態名) → calc_method の順で固定3種へ逆引き。読み込み成功時のみ PUT 全置換を許可。
-  const loadCondsForEdit = async (mid: number) => {
+  // UIC-03(設計 v1.4 Phase C): 条件の作成(postConditions)・全置換(putConditions)は撤去。
+  //   条件値は「利用許諾条件書」文書フォーム(Document Command)でのみ作成・修正する。
+  //   この画面は素材属性の CRUD と、既存条件の閲覧(read-only)＋既存CLのリンクに専念する。
+  //   編集時の既存条件は read-only 表示のみ(GET は残置。書込みはしない)。
+  const loadExistingConds = async (mid: number) => {
+    setExistingLoading(true)
     try {
       const r = await fetch(
         `/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`
       )
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const rows = await r.json()
-      const arr: any[] = Array.isArray(rows) ? rows : []
-      const editable: CondRow[] = []
-      const passthrough: any[] = []
-      for (const cl of arr) {
-        if ((cl.payment_scheme || "royalty") !== "royalty") { passthrough.push(cl); continue }
-        const deal =
-          V3_FIXED_DEALS.find((d) => d.name === cl.subject) ||
-          V3_FIXED_DEALS.find((d) => d.calc_type === cl.calc_method) ||
-          V3_FIXED_DEALS[0]
-        editable.push({
-          ...newCondRow(deal.id),
-          __clid: Number(cl.id),
-          rate_pct: cl.rate_pct != null ? String(cl.rate_pct) : "",
-          mg_amount: cl.mg_amount != null && Number(cl.mg_amount) > 0 ? String(cl.mg_amount) : "",
-          ag_amount: cl.ag_amount != null && Number(cl.ag_amount) > 0 ? String(cl.ag_amount) : "",
-          currency: cl.currency || "JPY",
-          region_territory: cl.region_territory || "",
-          region_language: cl.region_language || "",
-        })
-      }
-      setConds(editable)
-      setPassthroughConds(passthrough)
-      setCondsLoaded(true)
+      setExistingConds(Array.isArray(rows) ? rows : [])
     } catch {
-      // 読み込み失敗: 条件は触らない(PUT しない)。属性のみ編集可能な状態で継続。
-      setConds([]); setPassthroughConds([]); setCondsLoaded(false)
+      setExistingConds([])
+    } finally {
+      setExistingLoading(false)
     }
-  }
-
-  // 編集 CondRow → PUT 行(固定3種 royalty)。__clid 保持で既存行を in-place 更新。
-  const condRowToPutRow = (c: CondRow): Record<string, any> => {
-    const deal = V3_FIXED_DEALS.find((d) => d.id === c.dealId) || V3_FIXED_DEALS[0]
-    return {
-      __clid: c.__clid,
-      payment_scheme: "royalty",
-      subject: deal.name,
-      calc_method: deal.calc_type,
-      base_price_label: deal.basePrice || null,
-      rate_pct: c.rate_pct || null,
-      mg_amount: c.mg_amount || null,
-      ag_amount: c.ag_amount || null,
-      currency: c.currency || "JPY",
-      region_territory: c.region_territory || null,
-      region_language: c.region_language || null,
-      notes: `取引形態: ${deal.name} / 計算モデル: ${calcLabel(deal.calc_type)}`,
-    }
-  }
-  // 非 royalty 既存条件をそのまま送り返して保全(フォームでは編集しない)。
-  const passthroughToPutRow = (cl: any): Record<string, any> => ({
-    __clid: Number(cl.id),
-    payment_scheme: cl.payment_scheme,
-    amount_ex_tax: cl.amount_ex_tax ?? null,
-    rate_pct: cl.rate_pct ?? null,
-    mg_amount: cl.mg_amount ?? null,
-    ag_amount: cl.ag_amount ?? null,
-    subject: cl.subject ?? null,
-    calc_method: cl.calc_method ?? null,
-    base_price_label: cl.base_price_label ?? null,
-    currency: cl.currency ?? "JPY",
-    region_territory: cl.region_territory ?? null,
-    region_language: cl.region_language ?? null,
-    payment_terms: cl.payment_terms ?? null,
-    notes: cl.notes ?? null,
-  })
-
-  // 編集: 金銭条件を全置換 PUT(__clid で既存を更新 / 無い行は新規 / 送らない既存は解除・削除)。
-  //   保存 count を返す。読み込み済みでない(condsLoaded=false)ときは呼ばない。
-  const putConditions = async (mid: number): Promise<number> => {
-    const rows = [...conds.map(condRowToPutRow), ...passthroughConds.map(passthroughToPutRow)]
-    const r = await fetch(
-      `/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/conditions`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows }),
-      }
-    )
-    if (!r.ok) {
-      const e = await r.json().catch(() => ({}))
-      throw new Error(e?.error || `金銭条件の保存に失敗 (HTTP ${r.status})`)
-    }
-    const j = await r.json().catch(() => ({}))
-    return Number(j?.count ?? rows.length)
-  }
-
-  const docPayload = (): Record<string, any> => {
-    if (pickedDoc?.document_number) return { document_number: pickedDoc.document_number }
-    const link = fileLink.trim()
-    if (link) return { issue_document: true, file_link: link, doc_kind: docKind }
-    // 既存文書なし → 常に実在の条件書を発番(出版=ARC-PUBT / その他=ARC-ILT)。doc_kind で種別を渡す。
-    return { doc_kind: docKind }
-  }
-
-  const postConditions = async (mid: number): Promise<string> => {
-    let capabilityId: number | null = null
-    let docNumber = ""
-    for (let i = 0; i < conds.length; i++) {
-      const c = conds[i]
-      const deal = V3_FIXED_DEALS.find((d) => d.id === c.dealId) || V3_FIXED_DEALS[0]
-      const body: Record<string, any> = {
-        payment_scheme: "royalty",
-        subject: deal.name, // condition_name = 取引形態名
-        calc_type: deal.calc_type, // 計算モデル(BASE_QTY_RATE 等)を cfc に保持
-        base_price_label: deal.basePrice || null,
-        currency: c.currency || "JPY",
-        rate_pct: c.rate_pct || null,
-        mg_amount: c.mg_amount || null,
-        ag_amount: c.ag_amount || null,
-        region_territory: c.region_territory || null,
-        region_language: c.region_language || null,
-        notes: `取引形態: ${deal.name} / 計算モデル: ${calcLabel(deal.calc_type)}`,
-      }
-      if (i === 0) Object.assign(body, docPayload())
-      else if (capabilityId != null) body.capability_id = capabilityId
-
-      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}))
-        throw new Error(e?.error || `金銭条件 #${i + 1} の登録に失敗 (HTTP ${r.status})`)
-      }
-      const j = await r.json()
-      if (i === 0) { capabilityId = j.capability_id ?? null; docNumber = j.document_number || "" }
-    }
-    return docNumber
   }
 
   const jpToday = () => {
@@ -480,25 +315,23 @@ export function MaterialEntryPanel() {
   // PDF出力: 素材＋金銭条件を文書フォームの formData へ写像し、sessionStorage 経由で受け渡す。
   //   ILT  = v3_conds(固定3種)/v3_lcs(構成要素×料率)、PUBT = 紙/電子の印税率フラット項目。
   //   翻訳は別権利(発注書由来)のため PUBT では常に「許諾しない」。言語/地域は許諾範囲・許諾言語で制御。
+  // UIC-03: 条件値(料率など)は文書フォームで入力するため、prefill は素材・原作・当事者の
+  //   コンテキストのみを引き継ぐ(条件明細は文書フォーム側で作成)。地域/言語は素材の枠(territory/language)から。
   const buildPrefill = (material: any): { template: string; formData: Record<string, any> } => {
     const src = selectedSource || {}
     const srcTitle = src.title || ""
     const ledgerCode = src.source_code || src.work_code || ""
-    const region = conds[0]?.region_territory || ""
-    const lang = conds[0]?.region_language || ""
     const common: Record<string, any> = {
       原著作物名: srcTitle,
       素材番号: material.material_code,
       ledger_code: ledgerCode,
       is_work_linked: true,
-      許諾地域: region,
-      許諾言語: lang,
+      許諾地域: territory.trim() || "",
+      許諾言語: language.trim() || "",
       // 許諾者(取引先)を vendor_code で渡すと、フォームが dbField(vendor.*)で氏名/住所/口座を解決。
       vendor_code: rightsVendorCode || undefined,
     }
     if (docKind === "publication") {
-      const paper = conds.find((c) => c.dealId === 1 || c.dealId === 3)
-      const digital = conds.find((c) => c.dealId === 2)
       return {
         template: "pub_license_terms",
         formData: {
@@ -507,37 +340,22 @@ export function MaterialEntryPanel() {
           締結日: jpToday(),
           著作者名: rightsHolderLabel.trim() || "",
           基本契約番号: pubBaseDoc?.document_number || "",
-          紙書籍印税率: paper?.rate_pct || "",
-          電子書籍配信許諾有無: digital ? "許諾する" : "許諾しない",
-          電子書籍印税率: digital?.rate_pct || "",
         },
       }
     }
-    // ILT: 固定3種を v3_conds に、素材を v3_lcs に。加算(①③)は LC の rates、非加算(②)は cond.fixedRate。
-    const v3conds = V3_FIXED_DEALS.map((d) => {
-      const row = conds.find((c) => c.dealId === d.id)
-      const copy: any = { ...d }
-      if (row && !d.addon) copy.fixedRate = row.rate_pct || ""
-      return copy
-    })
-    const rates: Record<string, string> = {}
-    conds.forEach((c) => {
-      const d = V3_FIXED_DEALS.find((x) => x.id === c.dealId)
-      if (d && d.addon) rates[String(d.id)] = c.rate_pct || ""
-    })
     return {
       template: "individual_license_terms",
       formData: {
         ...common,
         許諾範囲: scope || "",
         対象製品予定名: material.material_name || "",
-        v3_conds: v3conds,
+        // 素材を構成要素(LC)として引き継ぐ(料率は文書フォームで入力)。
         v3_lcs: [
           {
             material_code: material.material_code,
             name: material.material_name || "",
             holder: rightsHolderLabel.trim() || "",
-            rates,
+            rates: {},
             source_doc: "（この条件書・新規）",
           },
         ],
@@ -550,7 +368,6 @@ export function MaterialEntryPanel() {
   const handoffToDocForm = async () => {
     if (!workId) return showNotification?.("所属する原作を選択してください。", "error")
     if (!materialName.trim()) return showNotification?.("素材名を入力してください。", "error")
-    if (conds.length === 0) return showNotification?.("PDF出力には金銭条件が1件以上必要です。", "error")
     setSaving(true)
     try {
       const attrs = {
@@ -594,7 +411,7 @@ export function MaterialEntryPanel() {
       const prefill = buildPrefill(material)
       sessionStorage.setItem("lb_material_prefill", JSON.stringify(prefill))
       showNotification?.(
-        `マテリアル ${material.material_code} を登録しました。文書フォームで内容を確認し PDF を作成してください。`,
+        `マテリアル ${material.material_code} を保存しました。文書フォームで金銭条件を入力してください。`,
         "success"
       )
       navigate(`/documents/new?template=${encodeURIComponent(prefill.template)}&prefill_material=1`)
@@ -604,17 +421,10 @@ export function MaterialEntryPanel() {
     }
   }
 
+  // UIC-03: 素材属性のみを保存(条件の作成・全置換は撤去)。条件は文書フォームで入力する。
   const submit = async () => {
-    if (pdfOutput) return handoffToDocForm()
     if (!workId) return showNotification?.("所属する原作を選択してください。", "error")
     if (!materialName.trim()) return showNotification?.("素材名を入力してください。", "error")
-    const link = fileLink.trim()
-    if (link && !/^https:\/\//i.test(link)) {
-      return showNotification?.("文書リンクは https:// で始まる URL を入力してください。", "error")
-    }
-    if (!editingId && conds.length === 0) {
-      return showNotification?.("原作マテリアルには金銭条件が付帯必須です(1件以上)。", "error")
-    }
     setSaving(true)
     try {
       const attrs = {
@@ -642,16 +452,7 @@ export function MaterialEntryPanel() {
           const e = await uRes.json().catch(() => ({}))
           throw new Error(e?.error || `マテリアル更新に失敗 (HTTP ${uRes.status})`)
         }
-        // 金銭条件: 読み込み成功時のみ全置換 PUT(既存を編集/削除/追加)。読み込み失敗時は条件を触らない。
-        if (condsLoaded) {
-          const saved = await putConditions(editingId)
-          showNotification?.(`更新しました: ${editingCode}（金銭条件 ${saved} 件を保存）`, "success")
-        } else {
-          showNotification?.(
-            `属性を更新しました: ${editingCode}（金銭条件は読込未完了のため変更していません）`,
-            "success"
-          )
-        }
+        showNotification?.(`属性を更新しました: ${editingCode}（金銭条件は文書フォームで編集します）`, "success")
       } else {
         const mRes = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/materials`, {
           method: "POST",
@@ -663,9 +464,8 @@ export function MaterialEntryPanel() {
           throw new Error(e?.error || `マテリアル作成に失敗 (HTTP ${mRes.status})`)
         }
         const material = await mRes.json()
-        const docNumber = await postConditions(material.id)
         showNotification?.(
-          `マテリアルを登録しました: ${material.material_code}（金銭条件 ${conds.length} 件 / 文書: ${docNumber || "自動発番"}）`,
+          `マテリアルを登録しました: ${material.material_code}（金銭条件は文書フォームで登録してください）`,
           "success"
         )
       }
@@ -875,236 +675,176 @@ export function MaterialEntryPanel() {
             </div>
           </div>
 
-          {/* 金銭条件(固定3種) */}
-          <div className="rounded-xl border border-border border-t-[3px] border-t-violet-500 bg-card p-5 space-y-4">
+          {/* UIC-03: 金銭条件は文書フォームで登録・修正(素材CRUDへ限定)。条件明細の唯一の書込み口＝Document Command。 */}
+          <div className="rounded-xl border border-border border-t-[3px] border-t-emerald-500 bg-card p-5 space-y-3">
             <div>
-              <h4 className="font-mono text-[13px] font-bold text-violet-600">
-                金銭条件{editingId ? "（編集）" : "（この素材の初回登録＝L1）"}
-              </h4>
+              <h4 className="font-mono text-[13px] font-bold text-emerald-600">金銭条件（文書フォームで登録）</h4>
               <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
-                {editingId
-                  ? "既存の金銭条件を読み込んで編集できます(行の追加・削除も可)。保存するとここに表示中の内容で上書きします(消した行は解除・削除)。"
-                  : "素材には金銭条件を付帯必須。取引形態は利用許諾条件書と同じ固定3種から選ぶ(＝軸を揃える)。取引形態ごとに1行。"}
+                条件値（取引形態・料率など）の作成・修正は「利用許諾条件書」文書フォームで行います（データの唯一の入力口＝文書作成）。
+                下のボタンで素材を保存し、原作・素材・許諾者を引き継いで文書フォームへ移動します。
               </p>
-              {editingId && !condsLoaded && (
-                <p className="font-mono text-[9.5px] text-amber-700 leading-snug mt-1">
-                  ⚠ 既存の金銭条件を読み込み中／読み込みに失敗しました。この状態で保存しても<strong>金銭条件は変更されません</strong>(属性のみ更新)。
-                </p>
-              )}
-              {editingId && passthroughConds.length > 0 && (
-                <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
-                  ※ 一括/従量など固定3種以外の条件 {passthroughConds.length} 件はこのフォームでは編集せず、そのまま保全します。
-                </p>
-              )}
             </div>
 
-            {conds.length > 0 && (
-              <div className="rounded-lg border border-dashed border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
-                <Field
-                  label="文書種別"
-                  col="doc_kind"
-                  help="この素材の金銭条件をどの条件書に紐づけるか。出版作品は出版側を選ぶ(取引形態=紙自社出版①/電子出版②/紙他社出版③ に対応)。"
-                >
-                  <select className={selCls} value={docKind} onChange={(e) => { setDocKind(e.target.value as any); setPickedDoc(null) }}>
-                    <option value="license">個別利用許諾条件書（ARC-ILT）</option>
-                    <option value="publication">出版等利用許諾条件書（ARC-PUBT）</option>
-                  </select>
-                </Field>
+            <Field label="文書種別" col="doc_kind" help="出版作品は出版側を選ぶ。文書フォームのテンプレートを切り替えます。">
+              <select className={selCls} value={docKind} onChange={(e) => setDocKind(e.target.value as any)}>
+                <option value="license">個別利用許諾条件書（ARC-ILT）</option>
+                <option value="publication">出版等利用許諾条件書（ARC-PUBT）</option>
+              </select>
+            </Field>
 
-                {/* 出力モード: DB登録のみ / PDF出力あり(文書フォームへ) */}
-                <label className="flex items-center gap-2 font-mono text-[10.5px] rounded-md border border-emerald-500 bg-emerald-500/10 px-2.5 py-2">
-                  <input type="checkbox" checked={pdfOutput} onChange={(e) => setPdfOutput(e.target.checked)} />
-                  <b className="text-emerald-700">PDF出力あり</b>
-                  <span className="text-muted-foreground">— 文書作成フォームへ遷移し、ここの内容を反映して PDF を生成（オフ＝DB登録のみ）</span>
-                </label>
-
-                {pdfOutput ? (
-                  <>
-                    <div className="flex items-start gap-2 font-mono text-[10px] text-muted-foreground bg-background border border-border rounded px-2.5 py-2 leading-snug">
-                      <FileOutput className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                      <span>
-                        「登録して文書フォームへ」を押すと、素材を登録してから
-                        <b>{docKind === "publication" ? "出版等利用許諾条件書" : "個別利用許諾条件書"}</b>
-                        の作成フォームへ移動します。属性・金銭条件（取引形態→料率）・原作/素材・締結日/著作者/許諾者が
-                        prefill され、内容を確認して PDF を生成できます（番号は生成時に採番）。
-                      </span>
-                    </div>
-
-                    {/* 出版: 基本契約書(ARC-PUB)。条件書は基本契約番号を参照する */}
-                    {docKind === "publication" && (
-                      <div className="rounded-md border border-sky-500 bg-sky-500/10 p-2.5 space-y-2">
-                        <div className="font-mono text-[10px] font-bold text-sky-700">出版等許諾基本契約書（ARC-PUB）</div>
-                        <p className="font-mono text-[9px] text-muted-foreground leading-snug">
-                          条件書は基本契約に紐づきます。既存の基本契約書を検索して番号を引き継ぐか、無ければ先に作成してください。
-                        </p>
-                        <DocumentNumberLookup
-                          filterTemplateTypes={["pub_master_individual", "pub_master_corporate"]}
-                          onApply={(d) => setPubBaseDoc(d)}
-                          placeholder="ARC-PUB / 件名 で基本契約を検索"
-                          includeMaster
-                        />
-                        {pubBaseDoc ? (
-                          <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
-                            <FileText className="h-3.5 w-3.5 text-sky-600 shrink-0" />
-                            <span className="font-bold">{pubBaseDoc.document_number}</span>
-                            <span className="text-muted-foreground truncate">{pubBaseDoc.derived_title}</span>
-                            <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPubBaseDoc(null)}>解除</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-[9px] text-muted-foreground">基本契約書が無い場合:</span>
-                            <select className="h-7 rounded border border-border bg-background px-1.5 text-[10px] font-mono" value={pubBaseType} onChange={(e) => setPubBaseType(e.target.value as any)}>
-                              <option value="individual">個人版</option>
-                              <option value="corporate">法人版</option>
-                            </select>
-                            <button
-                              type="button"
-                              className="inline-flex items-center gap-1 border border-sky-500 text-sky-600 rounded px-2 py-1 font-mono text-[10px] hover:bg-sky-500/10"
-                              onClick={handoffToBaseContract}
-                            >
-                              <FileOutput className="h-3 w-3" /> 基本契約書を先に作成
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
+            {/* 出版: 基本契約書(ARC-PUB)。条件書は基本契約番号を参照する。 */}
+            {docKind === "publication" && (
+              <div className="rounded-md border border-sky-500 bg-sky-500/10 p-2.5 space-y-2">
+                <div className="font-mono text-[10px] font-bold text-sky-700">出版等許諾基本契約書（ARC-PUB）</div>
+                <p className="font-mono text-[9px] text-muted-foreground leading-snug">
+                  条件書は基本契約に紐づきます。既存の基本契約書を検索して番号を引き継ぐか、無ければ先に作成してください。
+                </p>
+                <DocumentNumberLookup
+                  filterTemplateTypes={["pub_master_individual", "pub_master_corporate"]}
+                  onApply={(d) => setPubBaseDoc(d)}
+                  placeholder="ARC-PUB / 件名 で基本契約を検索"
+                  includeMaster
+                />
+                {pubBaseDoc ? (
+                  <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
+                    <FileText className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+                    <span className="font-bold">{pubBaseDoc.document_number}</span>
+                    <span className="text-muted-foreground truncate">{pubBaseDoc.derived_title}</span>
+                    <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPubBaseDoc(null)}>解除</button>
+                  </div>
                 ) : (
-                  <>
-                    <Field
-                      label={`文書（この素材の${docKind === "publication" ? "出版等利用許諾条件書" : "利用許諾条件書"}）`}
-                      col="capability_id / document_number"
-                      help={`マテリアル登録＝文書作成。既存があれば検索して紐づけ、無ければ ${docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を自動発番して実在の条件書として登録(DB登録のみ・PDFなし)。合成MLC器は廃止。`}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-[9px] text-muted-foreground">基本契約書が無い場合:</span>
+                    <select className="h-7 rounded border border-border bg-background px-1.5 text-[10px] font-mono" value={pubBaseType} onChange={(e) => setPubBaseType(e.target.value as any)}>
+                      <option value="individual">個人版</option>
+                      <option value="corporate">法人版</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 border border-sky-500 text-sky-600 rounded px-2 py-1 font-mono text-[10px] hover:bg-sky-500/10"
+                      onClick={handoffToBaseContract}
                     >
-                      <DocumentNumberLookup
-                        filterTemplateTypes={docKind === "publication" ? ["pub_license_terms"] : ["individual_license_terms", "purchase_order"]}
-                        onApply={(d) => setPickedDoc(d)}
-                        placeholder={docKind === "publication" ? "ARC-PUBT / 件名 で検索" : "ARC-ILT / ARC-PO(発注書) / 件名 で検索"}
-                        includeMaster
-                      />
-                    </Field>
-                    {pickedDoc && (
-                      <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
-                        <FileText className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                        <span className="font-bold">{pickedDoc.document_number}</span>
-                        <span className="text-muted-foreground truncate">{pickedDoc.derived_title}</span>
-                        <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPickedDoc(null)}>解除</button>
-                      </div>
-                    )}
-                    {/* CL引用(リンク方式): この文書が既に持つ未リンクの利用許諾CLを、値コピーせず
-                        この素材へ後付けリンク(source_material_id)。発注書の受託者帰属条件の二重化を防ぐ。 */}
-                    {pickedDoc && unlinkedLoading && (
-                      <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground py-1">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> この文書の未リンク利用許諾条件(CL)を確認中…
-                      </div>
-                    )}
-                    {pickedDoc && !unlinkedLoading && unlinkedCLs.length > 0 && (
-                      <div className="rounded-md border border-amber-400 bg-amber-50/60 dark:bg-amber-950/20 px-2.5 py-2 space-y-2">
-                        <p className="font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300">
-                          この文書は素材未割当の利用許諾条件（CL）を {unlinkedCLs.length} 件持っています（発注書の受託者帰属条件など）。
-                        </p>
-                        <p className="font-mono text-[9.5px] text-amber-800/80 dark:text-amber-200/70 leading-snug">
-                          下で新規入力せず、<b>既存CLをこの素材にリンク</b>してください（新規作成しない＝二重化なし）。
-                          {!editingId && <span className="text-rose-600"> ※ リンクには保存済みの素材が必要です。先に「マテリアルを登録」で保存してから紐づけてください。</span>}
-                        </p>
-                        <ul className="space-y-1">
-                          {unlinkedCLs.map((cl) => (
-                            <li key={cl.id} className="flex items-center gap-2 rounded-sm border border-amber-200 bg-white/70 dark:bg-black/20 px-2 py-1">
-                              <div className="min-w-0 flex-1 font-mono text-[10px]">
-                                <span className="font-bold">CL #{cl.id}</span>
-                                {cl.subject ? ` / ${cl.subject}` : ""}
-                                {cl.rate_pct != null ? ` / 料率${cl.rate_pct}%` : ""}
-                                {cl.region_language_label ? ` / ${cl.region_language_label}` : ""}
-                                {cl.payment_scheme && cl.payment_scheme !== "royalty" ? ` / ${cl.payment_scheme}` : ""}
-                              </div>
-                              <button
-                                type="button"
-                                disabled={!editingId}
-                                onClick={() => linkExistingCL(cl)}
-                                className="inline-flex items-center gap-1 border border-amber-500 text-amber-700 dark:text-amber-300 rounded px-2 py-1 font-mono text-[10px] hover:bg-amber-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
-                                title="この既存CLをこの素材にリンク(新規作成しない)"
-                              >
-                                <Link2 className="h-3 w-3" /> この素材に紐づける
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {!pickedDoc && (
-                      <>
-                        <p className="font-mono text-[10px] text-muted-foreground leading-snug">
-                          既存文書を選ばない場合は <b>{docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を自動発番</b>して実在の条件書として登録します（条件明細・計算書に反映）。従前契約があれば下に文書リンクを。
-                        </p>
-                        <Field label="文書リンク（従前の締結済み契約 PDF・任意）" col="file_link → document_url" help="従前に契約がある場合、締結済み PDF/Drive の URL を貼ると新規 PDF を作らずそのリンクで登録(https:// 始まり)。">
-                          <Input value={fileLink} onChange={(e) => setFileLink(e.target.value)} placeholder="https://drive.google.com/…（任意）" className="h-8 text-[12px]" />
-                        </Field>
-                      </>
-                    )}
-                  </>
+                      <FileOutput className="h-3 w-3" /> 基本契約書を先に作成
+                    </button>
+                  </div>
                 )}
               </div>
             )}
 
-            {conds.map((c, idx) => {
-              const deal = V3_FIXED_DEALS.find((d) => d.id === c.dealId) || V3_FIXED_DEALS[0]
-              return (
-                <div key={c.key} className="rounded-lg border border-violet-400 bg-violet-50/40 dark:bg-violet-950/20 p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[9.5px] font-bold text-violet-600">条件 #{idx + 1}</span>
-                    <button type="button" className="text-rose-600 hover:text-rose-700" onClick={() => removeCond(c.key)}>
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="取引形態" col="固定3種">
-                      <select className={selCls} value={c.dealId} onChange={(e) => patchCond(c.key, { dealId: Number(e.target.value) })}>
-                        {V3_FIXED_DEALS.map((d, i) => (
-                          <option key={d.id} value={d.id}>{dealOptionLabel(d.id, i, d.name, docKind === "publication")}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="計算モデル" help="取引形態に紐づき自動。">
-                      <div className={`${selCls} flex items-center text-emerald-600 font-bold`}>{calcLabel(deal.calc_type)}</div>
-                    </Field>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <Field label="料率(%)" col="rate_pct">
-                      <Input value={c.rate_pct} onChange={(e) => patchCond(c.key, { rate_pct: e.target.value })} placeholder="5" className="h-8 text-[12px]" />
-                    </Field>
-                    <Field label="MG" col="mg_amount">
-                      <Input value={c.mg_amount} onChange={(e) => patchCond(c.key, { mg_amount: e.target.value })} placeholder="0" className="h-8 text-[12px]" />
-                    </Field>
-                    <Field label="AG" col="ag_amount">
-                      <Input value={c.ag_amount} onChange={(e) => patchCond(c.key, { ag_amount: e.target.value })} placeholder="0" className="h-8 text-[12px]" />
-                    </Field>
-                    <Field label="通貨" col="currency">
-                      <Input value={c.currency} onChange={(e) => patchCond(c.key, { currency: e.target.value })} placeholder="JPY" className="h-8 text-[12px]" />
-                    </Field>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="地域" col="region_territory">
-                      <Input value={c.region_territory} onChange={(e) => patchCond(c.key, { region_territory: e.target.value })} placeholder="全世界" className="h-8 text-[12px]" />
-                    </Field>
-                    <Field label="言語" col="region_language">
-                      <Input value={c.region_language} onChange={(e) => patchCond(c.key, { region_language: e.target.value })} placeholder="全言語" className="h-8 text-[12px]" />
-                    </Field>
-                  </div>
-                </div>
-              )
-            })}
+            <button
+              type="button"
+              onClick={handoffToDocForm}
+              disabled={saving}
+              className="inline-flex items-center gap-2 font-mono text-[11px] font-bold px-3 py-2 rounded-md border border-emerald-500 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-50"
+            >
+              <FileOutput className="h-3.5 w-3.5" />
+              {editingId ? "保存して文書フォームで条件を登録／修正" : "保存して文書フォームで条件を登録"}
+              （{docKind === "publication" ? "出版等利用許諾条件書" : "個別利用許諾条件書"}）
+            </button>
 
-            <Button variant="outline" size="sm" onClick={addCond} className="font-mono text-[11px]">
-              <Plus className="h-3.5 w-3.5" />
-              金銭条件を追加
-            </Button>
+            {/* 編集: この素材の登録済み条件を read-only 表示(修正は文書フォーム/元文書で) */}
+            {editingId && (
+              <div className="rounded-lg border border-violet-300 bg-violet-50/40 dark:bg-violet-950/20 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] font-bold text-violet-600">この素材の登録済み条件（閲覧のみ）</span>
+                  {existingLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                </div>
+                {!existingLoading && existingConds.length === 0 ? (
+                  <p className="font-mono text-[10px] text-muted-foreground">登録済みの金銭条件はありません。上のボタンから文書フォームで登録してください。</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {existingConds.map((cl: any) => (
+                      <li key={cl.id} className="rounded-sm border border-violet-200 bg-background/70 px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                        <span className="font-bold text-foreground">{cl.subject || "（取引形態未設定）"}</span>
+                        {cl.rate_pct != null ? ` / 料率${cl.rate_pct}%` : ""}
+                        {cl.mg_amount != null && Number(cl.mg_amount) > 0 ? ` / MG ${cl.mg_amount}` : ""}
+                        {cl.ag_amount != null && Number(cl.ag_amount) > 0 ? ` / AG ${cl.ag_amount}` : ""}
+                        {cl.region_language_label ? ` / ${cl.region_language_label}` : ""}
+                        {cl.document_number ? <span className="text-sky-600"> · 参照文書: {cl.document_number}</span> : ""}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="font-mono text-[9px] text-muted-foreground/70 leading-snug">
+                  条件値の修正は上のボタン（文書フォーム）または参照文書の再編集で行います。この画面からは条件を変更しません。
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* 既存の利用許諾条件(CL)をこの素材に紐づけ(link-conditions・維持)。値は書かず既存CLをリンク。 */}
+          <div className="rounded-xl border border-border border-t-[3px] border-t-sky-500 bg-card p-5 space-y-3">
+            <div>
+              <h4 className="font-mono text-[13px] font-bold text-sky-600">既存の利用許諾条件(CL)をこの素材に紐づけ</h4>
+              <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
+                既に文書配下にある条件明細（発注書の受託者帰属条件など）を、値コピーせずこの素材へ後付けリンクします（新規作成しない＝二重化なし）。
+              </p>
+            </div>
+            <Field label="文書を検索して未リンクCLを表示" col="capability_id / document_number">
+              <DocumentNumberLookup
+                filterTemplateTypes={docKind === "publication" ? ["pub_license_terms"] : ["individual_license_terms", "purchase_order"]}
+                onApply={(d) => setPickedDoc(d)}
+                placeholder={docKind === "publication" ? "ARC-PUBT / 件名 で検索" : "ARC-ILT / ARC-PO(発注書) / 件名 で検索"}
+                includeMaster
+              />
+            </Field>
+            {pickedDoc && (
+              <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
+                <FileText className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                <span className="font-bold">{pickedDoc.document_number}</span>
+                <span className="text-muted-foreground truncate">{pickedDoc.derived_title}</span>
+                <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPickedDoc(null)}>解除</button>
+              </div>
+            )}
+            {pickedDoc && unlinkedLoading && (
+              <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground py-1">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> この文書の未リンク利用許諾条件(CL)を確認中…
+              </div>
+            )}
+            {pickedDoc && !unlinkedLoading && unlinkedCLs.length === 0 && (
+              <p className="font-mono text-[10px] text-muted-foreground py-1">この文書に素材未割当の利用許諾条件(CL)はありません。</p>
+            )}
+            {pickedDoc && !unlinkedLoading && unlinkedCLs.length > 0 && (
+              <div className="rounded-md border border-amber-400 bg-amber-50/60 dark:bg-amber-950/20 px-2.5 py-2 space-y-2">
+                <p className="font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                  この文書は素材未割当の利用許諾条件（CL）を {unlinkedCLs.length} 件持っています。
+                </p>
+                {!editingId && (
+                  <p className="font-mono text-[9.5px] text-rose-600 leading-snug">
+                    ※ リンクには保存済みの素材が必要です。先に「マテリアルを登録」で保存してから紐づけてください。
+                  </p>
+                )}
+                <ul className="space-y-1">
+                  {unlinkedCLs.map((cl) => (
+                    <li key={cl.id} className="flex items-center gap-2 rounded-sm border border-amber-200 bg-white/70 dark:bg-black/20 px-2 py-1">
+                      <div className="min-w-0 flex-1 font-mono text-[10px]">
+                        <span className="font-bold">CL #{cl.id}</span>
+                        {cl.subject ? ` / ${cl.subject}` : ""}
+                        {cl.rate_pct != null ? ` / 料率${cl.rate_pct}%` : ""}
+                        {cl.region_language_label ? ` / ${cl.region_language_label}` : ""}
+                        {cl.payment_scheme && cl.payment_scheme !== "royalty" ? ` / ${cl.payment_scheme}` : ""}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!editingId}
+                        onClick={() => linkExistingCL(cl)}
+                        className="inline-flex items-center gap-1 border border-amber-500 text-amber-700 dark:text-amber-300 rounded px-2 py-1 font-mono text-[10px] hover:bg-amber-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="この既存CLをこの素材にリンク(新規作成しない)"
+                      >
+                        <Link2 className="h-3 w-3" /> この素材に紐づける
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={backToGate} disabled={saving} className="font-mono text-[11px]">キャンセル</Button>
             <Button size="sm" onClick={submit} disabled={saving} className="font-mono text-[11px]">
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : pdfOutput ? <FileOutput className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-              {pdfOutput ? "登録して文書フォームへ（PDF作成）" : editingId ? "変更を保存" : "マテリアルを登録"}
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+              {editingId ? "変更を保存" : "マテリアルを登録"}
             </Button>
           </div>
         </>
