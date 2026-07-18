@@ -495,6 +495,25 @@ export async function addMaterialToLedger(payload: {
   }
   const ledgerCode = ledgerRes.rows[0].ledger_code;
   const workId = Number(ledgerRes.rows[0].work_id);
+  // B系(T1): 同作品内で同名(正規化一致)の素材が既にあれば新規作成せず既存を返す(重複防止)。
+  //   lb_norm_name 欠如時は fail-open(従来通り新規追加)。
+  try {
+    const dup = await query(
+      `SELECT id, material_code, material_no FROM work_materials
+        WHERE work_id = $1 AND lb_norm_name(material_name) = lb_norm_name($2)
+        ORDER BY id LIMIT 1`,
+      [workId, payload.material_name]
+    );
+    if (dup.rows[0]) {
+      return {
+        id: Number(dup.rows[0].id),
+        material_code: dup.rows[0].material_code,
+        material_no: Number(dup.rows[0].material_no),
+      };
+    }
+  } catch (e) {
+    console.warn("[addMaterialToLedger dedup] skipped:", e);
+  }
   const nextNo = await getNextMaterialNo(payload.ledger_id);
   const materialCode = `${ledgerCode}-${nextNo.toString().padStart(3, "0")}`;
   // O5: ジャンルを正準化し、役割(本体/サブ)を推定。
