@@ -184,7 +184,7 @@ const SublicenseOutTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             </p>
           ) : (
             <select
-              className="retro-input w-full text-[12px]"
+              className="w-full text-[12px] font-mono border-b border-input py-1.5 bg-transparent focus:outline-none focus:border-foreground transition-colors"
               value={String(formData.親ライセンス条件ID || "")}
               onChange={(e) => {
                 const id = e.target.value
