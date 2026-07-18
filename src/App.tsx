@@ -27,7 +27,6 @@ import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ReceivableMapPanel } from "./pages/master/ReceivableMapPanel" // 統合 P3-4
 import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
 import { MaterialEntryPanel } from "./pages/master/MaterialEntryPanel" // 原作マテリアル登録
-import { WorkMaterialLinkPanel } from "./pages/master/WorkMaterialLinkPanel" // 作品↔原作マテリアル 紐づけ
 import { SublicenseConditionPanel } from "./pages/master/SublicenseConditionPanel" // 再許諾条件登録
 import { UnlinkedConditionsPanel } from "./pages/master/UnlinkedConditionsPanel" // 未リンクCL 棚卸し
 import { BulkImportPanel } from "./pages/master/BulkImportPanel" // 原作・原作マテリアル 一括インポート
@@ -84,7 +83,9 @@ export default function App() {
                   <Route path="work-entry" element={<DeprecatedRedirect from="/master/work-entry" to="/works" />} />{/* 作品/原作 登録 → Works */}
                   <Route path="materials" element={<MaterialEntryPanel />} />{/* 原作マテリアル登録 */}
                   <Route path="bulk-import" element={<BulkImportPanel />} />{/* 原作・原作マテリアル 一括インポート */}
-                  <Route path="work-material-link" element={<WorkMaterialLinkPanel />} />{/* 作品↔原作マテリアル 紐づけ */}
+                  {/* UIC-11(設計 v1.4 Phase D): 作品↔原作マテリアル 紐づけは Works 詳細(/works/:id)の
+                      component-lines 結線 UI へ統合済み。旧ルートは計測付き互換リダイレクトで温存(CLEAN-06)。 */}
+                  <Route path="work-material-link" element={<DeprecatedRedirect from="/master/work-material-link" to="/works" />} />{/* 作品↔原作マテリアル 紐づけ → Works */}
                   <Route path="sublicense-conditions" element={<SublicenseConditionPanel />} />{/* 再許諾条件登録 */}
                   <Route path="unlinked-conditions" element={<UnlinkedConditionsPanel />} />{/* 未リンクCL 棚卸し */}
                   <Route path="billing" element={<BillingTablePanel />} />{/* 請求・分配テーブル(再許諾) */}

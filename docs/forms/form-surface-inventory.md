@@ -137,11 +137,14 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
   リダイレクト**（`DeprecatedRedirect`）。作成は `WorksListPanel` のダイアログ（原作/自社作品）、編集は
   3カードエディタ（`/works/:id`）が担うため機能損失なし。ナビ（`MasterLayout` / `DashboardPage`）も `/works` へ
   repoint。`WorkEntryPanel.tsx`（445 行）は参照ゼロを確認して**物理削除**。
-- **CLEAN-03残（Phase D 待ち）**: `WorkModelPanel` / `LedgersPanel` / `WorkMaterialLinkPanel` は
-  **まだ `App.tsx` で live route**（`work-model` / `ledgers` / `work-material-link`）。物理削除は
-  Phase D（UIC-11/13）でルートをリダイレクトへ置換した後に行う（先に消すと 404）。
-  `MaterialEntryPanel` は UIC-03 で素材 CRUD の常設面として存続（削除対象外）。`PubLicenseEntryPanel` は
-  CLEAN-03 で削除済み。
+- **UIC-11 / CLEAN-03（WorkMaterialLink・完了）**: `work-material-link` を `/works` へ計測付き互換リダイレクト。
+  作品↔原作マテリアルの N:N 結線（`component-lines` POST/DELETE）は Works 詳細（`/works/:id`）が同一 API で
+  既に提供済みのため機能損失なし。`MasterLayout` の独立ナビ「作品×原作素材 紐づけ」は撤去（文脈内操作へ一本化）。
+  `WorkMaterialLinkPanel.tsx`（349 行）を物理削除。副次効果として**条件エンドポイント参照 12 → 8**（ratchet gate も 8 へ）。
+- **CLEAN-03残（Phase D 待ち）**: `WorkModelPanel` / `LedgersPanel` は **まだ `App.tsx` で live route**
+  （`work-model` / `ledgers`）。物理削除は Phase D（UIC-13）/ UIC-14（Ledgers read-only 縮退）でルートを
+  置換した後に行う（先に消すと 404）。`MaterialEntryPanel` は UIC-03 で素材 CRUD の常設面として存続（削除対象外）。
+  `PubLicenseEntryPanel` / `WorkEntryPanel` は削除済み。
 - **CLEAN-06（計測付きリダイレクト基盤）**: `src/components/DeprecatedRedirect.tsx` を新設し、廃止ルート到達を
   `navigator.sendBeacon` で BFF（`server.ts` の `POST /api/_client-telemetry/deprecated-route`）へ通知→
   Cloud Logging に `[deprecated-route] from=… to=…` を構造化出力。旧 URL がいつまで踏まれるかを集計し、
