@@ -21,6 +21,7 @@ import {
   Receipt,
   Wrench,
   FileText,
+  ShieldAlert,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -78,6 +79,7 @@ const groups: NavGroup[] = [
       { to: "/data-maintenance", label: "Data Maintenance", icon: Wrench, description: "一括取込 / ID統合 / 未リンクCL / 下書き" },
       { to: "/templates", label: "テンプレート", icon: FileCode2, description: "ひな型スタジオ" },
       { to: "/data-linkage", label: "連結チェック", icon: Link2, description: "データ整合性 点検 / 修復" },
+      { to: "/data-quality", label: "データ品質", icon: ShieldAlert, description: "完全性 Issue の俯瞰 / 担当 / 修正導線" },
       { to: "/settings", label: "設定", icon: SettingsIcon, description: "システム" },
     ],
   },

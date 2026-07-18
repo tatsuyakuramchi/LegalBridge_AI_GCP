@@ -43,6 +43,7 @@ import { ImportPage } from "./pages/ImportPage"
 import { GenericImportPage } from "./pages/GenericImportPage"
 import { ExcelBatchPage } from "./pages/ExcelBatchPage"
 import { DataLinkagePanel } from "./pages/DataLinkagePanel"
+import { DataQualityCenter } from "./pages/DataQualityCenter" // DQ-06(Data Quality Center)
 import { SettingsPage } from "./pages/SettingsPage"
 
 export default function App() {
@@ -142,6 +143,8 @@ export default function App() {
                 <Route path="templates/:id" element={<TemplateEditorPage />} />
 
                 <Route path="data-linkage" element={<DataLinkagePanel />} />
+                {/* DQ-06(設計 v1.4 §8.11): Data Quality Center。全 Issue 俯瞰・担当・期限・修正導線。 */}
+                <Route path="data-quality" element={<DataQualityCenter />} />
                 <Route path="settings" element={<SettingsPage />} />
 
                 <Route path="*" element={<Navigate to="/" replace />} />
