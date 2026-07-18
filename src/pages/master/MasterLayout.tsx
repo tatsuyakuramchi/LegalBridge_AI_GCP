@@ -1,13 +1,13 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, ClipboardCheck, Boxes, BookMarked, BookOpen, Coins } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, ClipboardCheck, Boxes, BookMarked, BookOpen, Coins } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 const tabs = [
-  { to: "/master/contracts", label: "Contracts", icon: FileText },
+  // UIC-15(設計 v1.4 Phase E): 契約台帳は top-level /contracts へ移設(ここからは撤去)。
   { to: "/master/vendors", label: "Vendors", icon: Building2 },
   // UIC-10(設計 v1.4 Phase D): 作品/原作 登録は Works 統一一覧(/works)へ統合。
   { to: "/works", label: "Works (作品/原作)", icon: BookMarked },
@@ -33,7 +33,7 @@ export function MasterLayout() {
   const navigate = useNavigate()
 
   React.useEffect(() => {
-    if (location.pathname === "/master") navigate("/master/contracts", { replace: true })
+    if (location.pathname === "/master") navigate("/master/vendors", { replace: true })
   }, [location.pathname, navigate])
 
   return (

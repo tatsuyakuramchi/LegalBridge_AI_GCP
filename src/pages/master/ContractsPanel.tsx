@@ -503,7 +503,16 @@ export function ContractsPanel() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-4">
+      {/* UIC-15(設計 v1.4 Phase E): 契約台帳を /contracts へ移設。MasterLayout の chrome を
+          離れるため標準ページヘッダを付与する。 */}
+      <header className="border-b border-border pb-5">
+        <p className="retro-tag mb-1.5">CTR · INDEX</p>
+        <h2 className="text-2xl font-mono font-bold tracking-tight">契約台帳</h2>
+        <p className="text-xs font-mono text-muted-foreground mt-1.5">
+          締結済み(紙・既存)契約の登録は文書フォームの「DB登録のみ」、新規発行は「Finalize &amp; Sync」で。
+        </p>
+      </header>
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -514,25 +523,11 @@ export function ContractsPanel() {
             className="pl-8"
           />
         </div>
-        {/* フォーム統一 (段階移行): 新規登録の主導線は通常の文書作成フォーム。
-            テンプレを選んで /documents/new?template=… へ遷移し、締結済み契約は
-            「DB登録のみ」・新規発行は「Finalize & Sync」で保存する。
-            旧ダイアログは移行期間中「簡易登録」として残す。 */}
+        {/* UIC-15(設計 v1.4 Phase E): 新規登録は文書フォームへ一本化。旧「簡易登録(旧フォーム)」は撤去。
+            編集ダイアログ(PUT)は既存契約の編集用として存続。 */}
         <Button onClick={() => setTemplatePickOpen(true)}>
           <FileText />
           文書フォームで登録
-        </Button>
-        <Button
-          variant="outline"
-          title="旧マスター登録ダイアログ (段階移行中のため残置)。基本情報だけを手早く登録したい場合に。"
-          onClick={() => {
-            setDraft({ ...empty, vendor_id: vendors[0]?.id || "" })
-            setCreating(true)
-            setEditing(null)
-          }}
-        >
-          <Plus />
-          簡易登録 (旧フォーム)
         </Button>
       </div>
 
