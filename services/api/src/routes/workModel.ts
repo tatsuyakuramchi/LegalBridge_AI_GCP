@@ -1690,6 +1690,21 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 全素材のグローバル一覧(統合ツール等の横断検索用)。作品タイトルを同梱して曖昧さを解消。
+  app.get("/api/v3/work-materials", ...requireRead, async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT wm.id, wm.material_code, wm.material_name, wm.work_id,
+                w.title AS work_title, w.work_code
+           FROM work_materials wm
+           LEFT JOIN works w ON w.id = wm.work_id
+          ORDER BY wm.material_code NULLS LAST, wm.id
+          LIMIT 5000`
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
   app.post("/api/v3/works/:id/materials", ...requireWrite, express.json(), async (req, res) => {
     try {
       const id = Number(req.params.id);

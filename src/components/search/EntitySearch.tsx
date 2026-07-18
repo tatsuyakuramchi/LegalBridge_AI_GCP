@@ -62,7 +62,7 @@ function mapOption(entity: EntityKind, r: any): EntityOption {
     case "work":
       return { id: s(r.id), code: s(r.work_code), label: s(r.title), sub: "作品 " + s(r.work_code), raw: r };
     case "work_material":
-      return { id: s(r.id), code: s(r.material_code), label: s(r.material_name) || s(r.material_code), sub: s(r.material_code), raw: r };
+      return { id: s(r.id), code: s(r.material_code), label: s(r.material_name) || s(r.material_code), sub: s(r.material_code) + (r.work_title ? ` · ${s(r.work_title)}` : ""), raw: r };
     case "ledger":
       return { id: s(r.id), code: s(r.ledger_code), label: s(r.title), sub: s(r.ledger_code), raw: r };
     case "matter":
@@ -77,7 +77,7 @@ function remoteUrl(entity: EntityKind, parentId?: string | number | null): strin
   if (entity === "source_ip") return "/api/v3/source-ips";
   if (entity === "work") return "/api/v3/works";
   if (entity === "matter") return "/api/matters";
-  if (entity === "work_material") return parentId ? `/api/v3/works/${encodeURIComponent(String(parentId))}/materials` : null;
+  if (entity === "work_material") return parentId ? `/api/v3/works/${encodeURIComponent(String(parentId))}/materials` : "/api/v3/work-materials";
   return null;
 }
 
