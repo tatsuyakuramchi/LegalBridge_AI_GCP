@@ -838,5 +838,24 @@
       "PRIVACY_CONTACT": { "label": "問い合わせ先", "group": "III. 当社", "placeholder": "privacy@arclight.co.jp" },
       "JOINT_USE_PARTIES": { "label": "共同利用先", "group": "IV. その他", "type": "textarea" }
     }
+  },
+  "sublicense_out_terms": {
+    "label": "再許諾条件書",
+    "category": "License",
+    "vars": {
+      "条件書番号": { "label": "条件書番号", "group": "I. 基本情報", "dbField": "auto.docNumber" },
+      "契約名称": { "label": "契約名称 (任意)", "group": "I. 基本情報" },
+      "契約締結日": { "label": "契約締結日", "group": "I. 基本情報", "type": "date", "required": true },
+      "許諾開始日": { "label": "許諾開始日", "group": "I. 基本情報", "type": "date", "required": true },
+      "許諾終了日": { "label": "許諾終了日 (空欄=期間の定めなし)", "group": "I. 基本情報", "type": "date" },
+      "被許諾者名": { "label": "被許諾者 (サブライセンシー) 名称", "group": "II. 被許諾者", "required": true, "dbField": "vendor.vendor_name" },
+      "被許諾者住所": { "label": "被許諾者 住所", "group": "II. 被許諾者", "type": "textarea", "dbField": "vendor.address" },
+      "被許諾者種別": { "label": "被許諾者 種別", "group": "II. 被許諾者", "type": "select", "options": ["法人", "個人"] },
+      "被許諾者取引先ID": { "label": "被許諾者 取引先ID", "group": "II. 被許諾者", "type": "hidden" },
+      "対象作品名": { "label": "対象作品名", "group": "III. 対象作品", "required": true },
+      "対象作品ID": { "label": "対象作品ID", "group": "III. 対象作品", "type": "hidden" },
+      "親ライセンス表示": { "label": "再許諾元ライセンス (license_in)", "group": "IV. 再許諾元", "type": "readonly" },
+      "親ライセンス条件ID": { "label": "親ライセンス条件ID", "group": "IV. 再許諾元", "type": "hidden" }
+    }
   }
 }

@@ -91,7 +91,6 @@ export function PubLicenseEntryPanel() {
   const [ebookFormula, setEbookFormula] = React.useState("") // 電子書籍計算式(任意)
 
   // 出力モード
-  const [pdfOutput, setPdfOutput] = React.useState(true)
 
   const [saving, setSaving] = React.useState(false)
 
@@ -119,7 +118,6 @@ export function PubLicenseEntryPanel() {
     setPubBaseDoc(null); setPubBaseType("individual")
     setPaperRate(""); setPaperQtyKind("実売部数"); setPaperFormula("")
     setEbookOn(false); setEbookRate(""); setEbookFormula("")
-    setPdfOutput(true)
   }
 
   const loadMaterials = React.useCallback(async (wid: string) => {
@@ -208,43 +206,6 @@ export function PubLicenseEntryPanel() {
     }
   }
 
-  // DB登録のみ: condition-lines API で ARC-PUBT を発番し 紙/電子 の印税条件(cfc)を作成。
-  //   worker buildPubLicenseConditions と同じ 紙=BASE_QTY_RATE/税抜定価, 電子=BASE_QTY_RATE/被許諾者受領額。
-  const postConditionsDbOnly = async (mid: number): Promise<string> => {
-    const rows: Array<Record<string, any>> = [
-      { subject: "紙書籍出版", base_price_label: "税抜定価", rate_pct: paperRate.trim() || null },
-    ]
-    if (ebookOn) rows.push({ subject: "電子書籍配信", base_price_label: "被許諾者受領額", rate_pct: ebookRate.trim() || null })
-
-    let capabilityId: number | null = null
-    let docNumber = ""
-    for (let i = 0; i < rows.length; i++) {
-      const body: Record<string, any> = {
-        payment_scheme: "royalty",
-        calc_type: "BASE_QTY_RATE",
-        region_territory: territory.trim() || null,
-        region_language: language.trim() || null,
-        currency: "JPY",
-        ...rows[i],
-      }
-      if (i === 0) body.doc_kind = "publication"
-      else if (capabilityId != null) body.capability_id = capabilityId
-
-      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}))
-        throw new Error(e?.error || `印税条件 #${i + 1} の登録に失敗 (HTTP ${r.status})`)
-      }
-      const j = await r.json()
-      if (i === 0) { capabilityId = j.capability_id ?? null; docNumber = j.document_number || "" }
-    }
-    return docNumber
-  }
-
   // 出版等許諾基本契約書(ARC-PUB)を先に作成する導線。
   const handoffToBaseContract = () => {
     if (!licensorVendorCode) {
@@ -270,24 +231,17 @@ export function PubLicenseEntryPanel() {
     if (err) return showNotification?.(err, "error")
     setSaving(true)
     try {
+      // 編集入口の一本化: 条件明細(印税条件)は必ず「出版利用許諾条件書」文書フォーム
+      //   (pub_license_terms)経由で作成する。ここで対象出版物(素材=マスタ)だけ確定し、
+      //   条件の作成/編集は文書作成フォームに委譲する(旧「DB登録のみ」裏口は撤去)。
       const material = await ensureMaterial()
-      if (pdfOutput) {
-        const prefill = { template: "pub_license_terms", formData: buildFormData(material) }
-        sessionStorage.setItem("lb_material_prefill", JSON.stringify(prefill))
-        showNotification?.(
-          `対象出版物 ${material.material_code} を登録しました。条件書フォームで内容を確認し PDF を作成してください。`,
-          "success"
-        )
-        navigate(`/documents/new?template=pub_license_terms&prefill_material=1`)
-        return
-      }
-      const docNumber = await postConditionsDbOnly(material.id)
+      const prefill = { template: "pub_license_terms", formData: buildFormData(material) }
+      sessionStorage.setItem("lb_material_prefill", JSON.stringify(prefill))
       showNotification?.(
-        `出版利用許諾条件を登録しました: ${docNumber || "自動発番"}（対象出版物 ${material.material_code} / 紙${ebookOn ? "・電子" : ""}）`,
+        `対象出版物 ${material.material_code} を登録しました。条件書フォームで内容を確認し作成してください。`,
         "success"
       )
-      await loadMaterials(workId)
-      backToGate()
+      navigate(`/documents/new?template=pub_license_terms&prefill_material=1`)
     } catch (e: any) {
       showNotification?.(String(e?.message || e), "error")
     } finally {
@@ -509,19 +463,18 @@ export function PubLicenseEntryPanel() {
               )}
             </div>
 
-            {/* 出力モード */}
-            <label className="flex items-center gap-2 font-mono text-[10.5px] rounded-md border border-emerald-500 bg-emerald-500/10 px-2.5 py-2">
-              <input type="checkbox" checked={pdfOutput} onChange={(e) => setPdfOutput(e.target.checked)} />
-              <b className="text-emerald-700">PDF出力あり</b>
-              <span className="text-muted-foreground">— 条件書フォームへ遷移し、ここの内容を反映して PDF を生成（オフ＝DB登録のみ・条件明細だけ作成）</span>
-            </label>
+            {/* 編集入口の一本化: 条件は必ず条件書フォーム(文書作成)で作成する */}
+            <div className="flex items-start gap-2 font-mono text-[10.5px] rounded-md border border-emerald-500 bg-emerald-500/10 px-2.5 py-2">
+              <FileOutput className="h-3.5 w-3.5 mt-0.5 text-emerald-700 shrink-0" />
+              <span className="text-muted-foreground">ここで入力した内容は「出版利用許諾条件書」フォームに引き継がれます。条件明細の作成・修正は<b className="text-emerald-700">文書作成フォームでのみ</b>行えます（データの唯一の入力口）。</span>
+            </div>
           </div>
 
           <div className="flex flex-wrap justify-end gap-2">
             <Button variant="outline" size="sm" onClick={backToGate} disabled={saving} className="font-mono text-[11px]">キャンセル</Button>
             <Button size="sm" onClick={submit} disabled={saving} className="font-mono text-[11px]">
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : pdfOutput ? <FileOutput className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-              {pdfOutput ? "登録して条件書フォームへ（PDF作成）" : "出版条件を登録（DB登録のみ）"}
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileOutput className="h-3.5 w-3.5" />}
+              登録して条件書フォームへ
             </Button>
           </div>
         </>

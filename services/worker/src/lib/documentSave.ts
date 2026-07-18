@@ -44,6 +44,14 @@ export interface FinancialConditionLike {
   seller?: any;
   max_region?: any;
   max_language?: any;
+  // 0133: 許諾地域/言語の選択式(1対N)。子テーブルへ保存。
+  regions?: any;
+  languages?: any;
+  // 再許諾/アウトライセンス: 種別・親ライセンス条件・相手方・対象作品。
+  condition_kind?: any;
+  parent_license_condition_id?: any;
+  counterparty_vendor_id?: any;
+  source_work_id?: any;
 }
 
 export interface MasterContractInput {
@@ -194,6 +202,9 @@ function toConditionInput(
     guarantee_type: s(fc.guarantee_type),
     region_territory: s(fc.region_territory),
     region_language: s(fc.region_language),
+    // 0133: 選択式の許諾地域/言語(配列)。undefined なら子テーブルは触らない。
+    regions: Array.isArray(fc.regions) ? fc.regions : undefined,
+    languages: Array.isArray(fc.languages) ? fc.languages : undefined,
     applies_scope: s(fc.applies_scope),
     formula_text: s(fc.formula_text),
     payment_terms: s(fc.payment_terms),
@@ -203,6 +214,20 @@ function toConditionInput(
     seller: s(fc.seller),
     max_region: s(fc.max_region),
     max_language: s(fc.max_language),
+    // 再許諾/アウトライセンス: 種別・親ライセンス条件・相手方(未指定なら NULL)。
+    condition_kind: s(fc.condition_kind) || undefined,
+    parent_license_condition_id:
+      fc.parent_license_condition_id != null && fc.parent_license_condition_id !== ""
+        ? Number(fc.parent_license_condition_id)
+        : undefined,
+    counterparty_vendor_id:
+      fc.counterparty_vendor_id != null && fc.counterparty_vendor_id !== ""
+        ? Number(fc.counterparty_vendor_id)
+        : undefined,
+    source_work_id:
+      fc.source_work_id != null && fc.source_work_id !== ""
+        ? Number(fc.source_work_id)
+        : undefined,
   };
 }
 

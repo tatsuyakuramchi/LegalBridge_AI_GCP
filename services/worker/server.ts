@@ -18268,6 +18268,47 @@ ${details}
             );
           }
         }
+      } else if (templateType === "sublicense_out_terms") {
+        // 再許諾/アウトライセンス条件書: 当社が受け取る(out) sublicense_out 条件を
+        //   文書経由で作成する。条件データの入力口を文書作成フォームに一本化し、
+        //   SublicenseConditionPanel の直接作成を代替する(編集入口の一本化)。
+        //   各条件に condition_kind='sublicense_out' / 親ライセンス条件 / 被許諾者 /
+        //   対象作品 を注入し、upsertMasterContract(=upsertDocumentConditions) で保存。
+        const counterpartyVendorId =
+          formData.counterparty_vendor_id ?? formData.被許諾者取引先ID ?? null;
+        const parentLicenseCondId =
+          formData.parent_license_condition_id ?? formData.親ライセンス条件ID ?? null;
+        const targetWorkId =
+          formData.source_work_id ?? formData.対象作品ID ?? null;
+        const subConds = (Array.isArray(formData.financial_conditions)
+          ? formData.financial_conditions
+          : []
+        ).map((fc: any) => ({
+          ...fc,
+          condition_kind: "sublicense_out",
+          counterparty_vendor_id: fc.counterparty_vendor_id ?? counterpartyVendorId ?? null,
+          parent_license_condition_id:
+            fc.parent_license_condition_id ?? parentLicenseCondId ?? null,
+          source_work_id: fc.source_work_id ?? targetWorkId ?? null,
+        }));
+        await upsertMasterContract(
+          { query },
+          {
+            document_number: docNumber,
+            issue_key: issueKey,
+            template_type: "sublicense_out_terms",
+            record_type: "standalone_contract",
+            contract_category: "license",
+            contract_type: "sublicense_out",
+            contract_title:
+              formData.契約名称 || formData.対象作品名 || formData.被許諾者名 || docNumber,
+            effective_date: formData.許諾開始日 || formData.契約締結日 || null,
+            expiration_date: formData.許諾終了日 || null,
+            vendor_id: counterpartyVendorId ? Number(counterpartyVendorId) : null,
+            flow_direction: "out",
+            financial_conditions: subConds,
+          }
+        );
       } else if (templateType === "royalty_statement") {
         await query(
           "INSERT INTO royalty_payments (backlog_issue_key, total_amount, period, status) VALUES ($1, $2, $3, $4)",
