@@ -23,8 +23,24 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
   const apiImportUrl = "/api/master/vendors/import-csv";
   const apiTemplateUrl = "/api/master/vendors/template.csv";
 
+  // 取引先UI一本化: 編集の正典は admin-ui の取引先マスタ(法人番号の重複チェック等が有効)。
+  //   ADMIN_UI_URL があれば本ページ上部から誘導する(ダッシュボードのマスタ編集導線と同一方針)。
+  const ADMIN_UI = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  const adminUiBanner = ADMIN_UI
+    ? `<a href="${ADMIN_UI}/master/vendors" target="_blank" rel="noopener"
+         style="display:flex;align-items:center;gap:10px;margin:0 0 14px;padding:11px 14px;border:1px solid #6c5ce7;border-radius:8px;background:rgba(108,92,231,0.08);text-decoration:none;color:inherit;">
+        <span style="font-size:18px;line-height:1;">🖥</span>
+        <span style="flex:1;font-size:12.5px;line-height:1.55;">
+          <b style="color:#6c5ce7;">取引先マスタは管理UI（admin-ui）に一本化しました。</b>
+          新規登録・編集は管理UIで行ってください（法人番号の重複チェック等が有効）。本ページは閲覧・CSV取込の互換用です。
+        </span>
+        <span style="font-size:12px;color:#6c5ce7;white-space:nowrap;font-weight:600;">管理UIで開く ↗</span>
+      </a>`
+    : "";
+
   const body = `
   <div class="container" style="padding:0 0 24px;">
+    ${adminUiBanner}
 
     <!-- Toolbar -->
     <div class="toolbar">
