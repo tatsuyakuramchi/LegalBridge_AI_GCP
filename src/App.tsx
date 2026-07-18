@@ -75,8 +75,9 @@ export default function App() {
                 <Route path="archive" element={<ArchivePage />} />
 
                 <Route path="master" element={<MasterLayout />}>
-                  <Route index element={<Navigate to="contracts" replace />} />
-                  <Route path="contracts" element={<ContractsPanel />} />
+                  {/* UIC-15(設計 v1.4 Phase E): 契約台帳は top-level /contracts へ移設。/master 既定は vendors。 */}
+                  <Route index element={<Navigate to="vendors" replace />} />
+                  <Route path="contracts" element={<DeprecatedRedirect from="/master/contracts" to="/contracts" />} />
                   <Route path="vendors" element={<VendorsPanel />} />
                   {/* UIC-10(設計 v1.4 Phase D): 作品/原作 登録は Works 統一一覧(/works)へ統合。
                       作成(原作/自社作品)は WorksListPanel のダイアログ、編集は 3カードエディタ(/works/:id)。
@@ -112,6 +113,9 @@ export default function App() {
                   <Route path="staff" element={<StaffPanel />} />
                   <Route path="rules" element={<RulesPanel />} />
                 </Route>
+
+                {/* UIC-15(設計 v1.4 Phase E): 契約台帳を top-level へ移設。旧 /master/contracts はリダイレクト。 */}
+                <Route path="contracts" element={<ContractsPanel />} />
 
                 {/* UIC-16(設計 v1.4 Phase E): Finance モジュール。金銭系を /master から集約。 */}
                 <Route path="finance" element={<FinanceLayout />}>

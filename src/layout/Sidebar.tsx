@@ -20,6 +20,7 @@ import {
   FolderKanban,
   Receipt,
   Wrench,
+  FileText,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -71,6 +72,7 @@ const groups: NavGroup[] = [
     items: [
       // 作品統合: 原作 / 自社作品 / 派生 を 3カードで一元管理 (work-3card-unified-editor-spec)
       { to: "/works", label: "作品管理", icon: Network, description: "原作 / 作品 / 派生" },
+      { to: "/contracts", label: "契約台帳", icon: FileText, description: "契約マスタ / 検索 / 編集" },
       { to: "/finance", label: "Finance", icon: Receipt, description: "請求・分配 / 請求ダッシュボード / 分配マップ" },
       { to: "/master", label: "マスタ", icon: Building2, description: "取引先 / 担当者 / 契約" },
       { to: "/data-maintenance", label: "Data Maintenance", icon: Wrench, description: "一括取込 / ID統合 / 未リンクCL / 下書き" },
