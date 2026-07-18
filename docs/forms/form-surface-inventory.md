@@ -97,7 +97,7 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 | DE-work | `/data-entry/*` | 独立データ入力UI（作品/素材/権利根源の単独・補完登録） | DQ-05 |
 | DQ-center | `/data-quality` | Data Quality Center（完全性Issue一覧・修正導線） | DQ-06 |
 | FIN-home | `/finance` | Finance モジュール（billing / billing-dashboard / receivable-map を集約）**✅ 実装済み（UIC-16）**。旧 `/master/billing*`・`/master/receivable-map` は計測付きリダイレクト | UIC-16 |
-| DM-home | `/data-maintenance` | Import/Merge/Unlinked/Drafts 集約 | UIC-17 |
+| DM-home | `/data-maintenance` | bulk-import / merge / unlinked-conditions / drafts を集約 **✅ 実装済み（UIC-17）**。旧 `/master/*` は計測付きリダイレクト（`merge?prefill` の内部導線は直結に repoint） | UIC-17 |
 | CTR-home | `/contracts` | 契約台帳（`/master/contracts` から移設） | UIC-15 |
 
 ---

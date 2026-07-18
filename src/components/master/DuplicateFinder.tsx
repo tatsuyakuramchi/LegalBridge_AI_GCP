@@ -77,7 +77,7 @@ export const DuplicateFinder: React.FC = () => {
 
   const sendToCart = (g: Opt[]) => {
     sessionStorage.setItem("lb_merge_prefill", JSON.stringify({ kind, items: g }))
-    navigate("/master/merge?prefill=1")
+    navigate("/data-maintenance/merge?prefill=1")
   }
 
   return (
