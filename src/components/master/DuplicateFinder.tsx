@@ -11,13 +11,15 @@ import * as React from "react"
 import { useNavigate } from "react-router-dom"
 import { GitMerge, Loader2, RefreshCw, Copy } from "lucide-react"
 
-type Kind = "source_ip" | "work" | "matter"
+type Kind = "source_ip" | "work" | "matter" | "vendor" | "staff"
 type Opt = { id: string; code?: string; label: string; sub?: string }
 
 const KINDS: Array<{ key: Kind; label: string; url: string }> = [
   { key: "source_ip", label: "原作", url: "/api/v3/source-ips" },
   { key: "work", label: "作品", url: "/api/v3/works" },
   { key: "matter", label: "案件", url: "/api/matters" },
+  { key: "vendor", label: "取引先", url: "/api/master/vendors" },
+  { key: "staff", label: "担当者", url: "/api/master/staff" },
 ]
 
 const s = (v: any) => (v == null ? "" : String(v))
@@ -38,6 +40,8 @@ function unwrap(d: any): any[] {
 
 function toOpt(kind: Kind, r: any): Opt {
   if (kind === "matter") return { id: s(r.id), code: s(r.matter_code || r.code), label: s(r.title || r.name) || `案件 #${s(r.id)}`, sub: s(r.status || r.matter_status || "") }
+  if (kind === "vendor") return { id: s(r.id), code: s(r.vendor_code), label: s(r.vendor_name) || s(r.trade_name) || s(r.vendor_code), sub: "取引先 " + s(r.vendor_code) }
+  if (kind === "staff") return { id: s(r.id), code: s(r.slack_user_id), label: s(r.staff_name) || s(r.email) || s(r.slack_user_id), sub: s(r.department || r.email || "") }
   const code = s(r.source_code || r.work_code)
   return { id: s(r.id), code, label: s(r.title), sub: (kind === "source_ip" ? "原作 " : "作品 ") + code }
 }
