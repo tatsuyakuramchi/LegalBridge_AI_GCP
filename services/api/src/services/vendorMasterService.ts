@@ -568,11 +568,41 @@ async function replaceVendorBankAccounts(
  *
  * @throws vendor_code / vendor_name が空のときエラー。
  */
-export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
+export async function upsertVendor(
+  v: VendorRow,
+  opts?: { checkCorpDup?: boolean }
+): Promise<VendorRow> {
   const code = String(v.vendor_code || "").trim();
   const name = String(v.vendor_name || "").trim();
   if (!code) throw new Error("vendor_code は必須です");
   if (!name) throw new Error("vendor_name は必須です");
+
+  // B系(取引先UI一本化): 対話登録では、同じ法人番号(正規化=数字のみ)の取引先が
+  //   「別 vendor_code」で既にあれば重複作成を止める(worker 側 POST と同一仕様)。
+  //   CSV 一括取込は opts 未指定で従来通り(バッチを壊さない)。
+  const corpNo = String((v as any).corporate_number || "").replace(/[^0-9]/g, "");
+  if (opts?.checkCorpDup && corpNo && (v as any).force_new !== true) {
+    try {
+      const dupe = await query(
+        `SELECT id, vendor_code, vendor_name FROM vendors
+          WHERE regexp_replace(coalesce(corporate_number,''), '[^0-9]', '', 'g') = $1
+            AND vendor_code <> $2
+          ORDER BY id LIMIT 1`,
+        [corpNo, code]
+      );
+      if (dupe.rows[0]) {
+        const err: any = new Error(
+          `同じ法人番号の取引先「${dupe.rows[0].vendor_name}（${dupe.rows[0].vendor_code}）」が既に登録されています。既存を使うか、統合(Masters→統合)してください。`
+        );
+        err.code = "VENDOR_CORP_DUP";
+        err.existing = dupe.rows[0];
+        throw err;
+      }
+    } catch (e: any) {
+      if (e?.code === "VENDOR_CORP_DUP") throw e;
+      console.warn("[upsertVendor corp dedup] skipped:", e);
+    }
+  }
 
   // Phase 22.21.72: vendors INSERT/UPDATE + vendor_addresses + vendor_bank_accounts
   //   の書込みをトランザクション化。途中失敗で中途半端なデータ (住所だけ消える等)
