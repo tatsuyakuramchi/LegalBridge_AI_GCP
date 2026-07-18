@@ -42,6 +42,18 @@ type WorkRow = {
   title_kana?: string
   sub: string
   is_active: boolean
+  // UIC-13(段階A-2): 系譜(派生ツリー)表示用。
+  parent_work_id?: number | null
+  derivation_type?: string | null
+}
+
+// UIC-13(段階A-2): 派生種別ラベル(WorkGraphPanel の DERIV_CHOICES と対応)。
+const DERIV_LABEL: Record<string, string> = {
+  translation: "翻訳",
+  edition: "版",
+  title_change: "改題",
+  localization: "地域化",
+  adaptation: "翻案",
 }
 
 const KIND_META: Record<Kind, { label: string; cls: string; icon: React.ComponentType<{ className?: string }> }> = {
@@ -83,6 +95,8 @@ export function WorksListPanel() {
         title_kana: w.title_kana || undefined,
         sub: `${w.work_type || "—"} / ${w.status || "—"} / 製品 ${w.product_count ?? 0}`,
         is_active: w.is_active !== false,
+        parent_work_id: w.parent_work_id ?? null,
+        derivation_type: w.derivation_type ?? null,
       }))
       const src: WorkRow[] = (Array.isArray(srcR) ? srcR : []).map((w: any) => ({
         id: w.id,
@@ -154,6 +168,22 @@ export function WorksListPanel() {
     [rows]
   )
 
+  // UIC-13(段階A-2): 自社作品の親→派生ツリー(旧 WorkModelPanel の WorkTree を移植)。
+  //   parent_work_id が同一 own 集合に居るものを子として入れ子表示。派生が無ければ非表示。
+  const ownDeriv = React.useMemo(() => {
+    const own = rows.filter((r) => r.kind === "own")
+    const byId = new Map(own.map((r) => [r.id, r]))
+    const childrenOf = (pid: number) =>
+      own
+        .filter((r) => r.parent_work_id != null && r.parent_work_id === pid)
+        .sort((a, b) => a.code.localeCompare(b.code))
+    const roots = own
+      .filter((r) => r.parent_work_id == null || !byId.has(r.parent_work_id))
+      .sort((a, b) => a.code.localeCompare(b.code))
+    const hasDeriv = own.some((r) => r.parent_work_id != null && byId.has(r.parent_work_id))
+    return { childrenOf, roots, hasDeriv }
+  }, [rows])
+
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
       {/* ヘッダ */}
@@ -214,6 +244,43 @@ export function WorksListPanel() {
           />
         </div>
       </div>
+
+      {/* UIC-13(段階A-2): 系譜(派生ツリー)。自社作品に親→派生の関係があるときだけ表示。 */}
+      {!loading && ownDeriv.hasDeriv && (() => {
+        const renderNode = (r: WorkRow, depth: number): React.ReactNode => (
+          <React.Fragment key={r.id}>
+            <button
+              type="button"
+              onClick={() => navigate(`/works/${r.id}`)}
+              style={{ paddingLeft: `${depth * 18 + 8}px` }}
+              className="flex w-full items-center gap-2 rounded-sm py-1 pr-2 text-left text-[11px] font-mono hover:bg-muted/60"
+            >
+              {depth > 0 && <span className="text-muted-foreground/60">└</span>}
+              <span className="font-bold">{r.code}</span>
+              <span className="truncate">{r.title}</span>
+              {r.derivation_type && (
+                <Badge variant="outline" className="h-4 shrink-0 border-violet-300 text-violet-700 text-[9px]">
+                  {DERIV_LABEL[r.derivation_type] || r.derivation_type}
+                </Badge>
+              )}
+              {!r.is_active && (
+                <Badge variant="outline" className="h-4 shrink-0 border-slate-300 text-slate-500 text-[9px]">無効</Badge>
+              )}
+            </button>
+            {ownDeriv.childrenOf(r.id).map((c) => renderNode(c, depth + 1))}
+          </React.Fragment>
+        )
+        return (
+          <details className="rounded-md border border-border bg-card">
+            <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
+              系譜（派生ツリー） — 自社作品の親→派生
+            </summary>
+            <div className="px-2 pb-2">
+              {ownDeriv.roots.map((r) => renderNode(r, 0))}
+            </div>
+          </details>
+        )
+      })()}
 
       {/* 一覧 */}
       {loading ? (
