@@ -16,8 +16,8 @@ const tabs = [
   // 原作＋原作マテリアル＋文書を一括で DB 化(upsert)。①既存文書から抽出 ②表(CSV/TSV)貼付。
   { to: "/master/bulk-import", label: "一括インポート", icon: FileUp },
   { to: "/master/work-material-link", label: "作品×原作素材 紐づけ", icon: Link2 },
-  // 出版利用許諾条件 登録(ARC-PUBT: 原作/対象出版物/許諾者/紙・電子印税率 → 条件明細)
-  { to: "/master/pub-license", label: "出版条件 (ARC-PUBT)", icon: BookOpen },
+  // UIC-12: 出版利用許諾条件は Document Editor(pub_license_terms)で直接起票。旧パネルは廃止し文書フォームへ誘導。
+  { to: "/documents/new?template=pub_license_terms", label: "出版条件書を作成", icon: BookOpen },
   // ID統合(マージ)カート: 重複した 原作/作品/案件 を外部キー付替えで統合(孤立防止)
   { to: "/master/merge", label: "ID統合", icon: GitMerge },
   // 統合 増分⑨: 原作台帳(Ledgers)/作品モデル(work-model) はサイドバー「作品管理」(/works)へ統合。

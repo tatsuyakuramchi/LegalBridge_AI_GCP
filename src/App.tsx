@@ -35,7 +35,6 @@ import { BillingTablePanel } from "./pages/master/BillingTablePanel" // 請求�
 import { BillingDashboardPanel } from "./pages/master/BillingDashboardPanel" // 請求・分配 横断ダッシュボード
 import { BillingPrintPage } from "./pages/master/BillingPrintPage" // 再許諾料 受領・分配 計算書(印刷/PDF)
 import { WorkEntryPanel } from "./pages/master/WorkEntryPanel" // 作品/原作 登録
-import { PubLicenseEntryPanel } from "./pages/master/PubLicenseEntryPanel" // 出版利用許諾条件 登録
 import { EntityMergePanel } from "./pages/master/EntityMergePanel" // ID統合(マージ)カート
 import { WorkGraphPanel } from "./pages/master/WorkGraphPanel" // 統合 Phase3c → /works/:id へ移設
 import { WorksListPanel } from "./pages/works/WorksListPanel" // 作品統合 増分④: 統一一覧
@@ -87,7 +86,9 @@ export default function App() {
                   <Route path="unlinked-conditions" element={<UnlinkedConditionsPanel />} />{/* 未リンクCL 棚卸し */}
                   <Route path="billing" element={<BillingTablePanel />} />{/* 請求・分配テーブル(再許諾) */}
                   <Route path="billing-dashboard" element={<BillingDashboardPanel />} />{/* 請求・分配 横断ダッシュボード */}
-                  <Route path="pub-license" element={<PubLicenseEntryPanel />} />{/* 出版利用許諾条件 登録 */}
+                  {/* UIC-12(設計 v1.4 Phase C): PubLicenseEntryPanel を廃止し、出版利用許諾条件は
+                      Document Editor(pub_license_terms 文書フォーム)で直接起票する。旧URLはリダイレクトを維持。 */}
+                  <Route path="pub-license" element={<Navigate to="/documents/new?template=pub_license_terms" replace />} />{/* 出版利用許諾条件 → 文書フォームへ */}
                   <Route path="merge" element={<EntityMergePanel />} />{/* ID統合(マージ)カート */}
                   <Route path="ledgers" element={<LedgersPanel />} />{/* Phase 22.18 */}
                   <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}

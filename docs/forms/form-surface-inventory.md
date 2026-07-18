@@ -61,7 +61,7 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 | MST-unlinked-conditions | `/master/unlinked-conditions` | UnlinkedConditionsPanel | page-specific | link-conditions のみ（値は書かない）。維持 |
 | MST-billing | `/master/billing` | BillingTablePanel | page-specific | Finance へ移動（UIC-16 / Phase E） |
 | MST-billing-dashboard | `/master/billing-dashboard` | BillingDashboardPanel | page-specific | Finance へ移動（UIC-16 / Phase E） |
-| MST-pub-license | `/master/pub-license` | PubLicenseEntryPanel | 文書フォームへ委譲 | A系で postConditions 撤去済み。**UIC-12 で廃止→Document Editor 直起票** |
+| ~~MST-pub-license~~ | `/master/pub-license` → redirect | ~~PubLicenseEntryPanel~~（廃止） | Document Editor へ | ✅ UIC-12 で廃止。旧URLは `/documents/new?template=pub_license_terms` へリダイレクト（1リリース維持）。ファイル物理削除は CLEAN-03 |
 | MST-merge | `/master/merge` | EntityMergePanel | page-specific | Data Maintenance へ移動（UIC-17 / Phase E） |
 | MST-ledgers | `/master/ledgers` | LedgersPanel | page-specific | **移行照合専用 read-only へ縮退（UIC-14 / Phase F）** |
 | MST-ringi | `/master/ringi` | RingiPanel | page-specific | 参照マスター/業務。共通シェルへ（FRM-07） |
