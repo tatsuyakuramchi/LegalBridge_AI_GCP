@@ -34,10 +34,10 @@ import { BulkImportPanel } from "./pages/master/BulkImportPanel" // 原作・原
 import { BillingTablePanel } from "./pages/master/BillingTablePanel" // 請求・分配テーブル(再許諾)
 import { BillingDashboardPanel } from "./pages/master/BillingDashboardPanel" // 請求・分配 横断ダッシュボード
 import { BillingPrintPage } from "./pages/master/BillingPrintPage" // 再許諾料 受領・分配 計算書(印刷/PDF)
-import { WorkEntryPanel } from "./pages/master/WorkEntryPanel" // 作品/原作 登録
 import { EntityMergePanel } from "./pages/master/EntityMergePanel" // ID統合(マージ)カート
 import { WorkGraphPanel } from "./pages/master/WorkGraphPanel" // 統合 Phase3c → /works/:id へ移設
 import { WorksListPanel } from "./pages/works/WorksListPanel" // 作品統合 増分④: 統一一覧
+import { DeprecatedRedirect } from "./components/DeprecatedRedirect" // CLEAN-06: 廃止ルートの計測付きリダイレクト
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
 import { GenericImportPage } from "./pages/GenericImportPage"
@@ -63,7 +63,7 @@ export default function App() {
                 <Route path="data-import" element={<GenericImportPage />} />
                 <Route path="excel-batches" element={<ExcelBatchPage />} />
                 {/* データ構造刷新: 検収待ちは条件明細ハブの検収待ちタブへ集約(旧URL温存) */}
-                <Route path="pending-inspections" element={<Navigate to="/condition-lines?tab=inspections" replace />} />
+                <Route path="pending-inspections" element={<DeprecatedRedirect from="/pending-inspections" to="/condition-lines?tab=inspections" />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="issues/:issueKey" element={<IssueDetailPage />} />{/* データ構造刷新 Phase A */}
                 <Route path="unified" element={<UnifiedIssuesListPage />} />{/* 新課題 一覧 */}
@@ -78,7 +78,10 @@ export default function App() {
                   <Route index element={<Navigate to="contracts" replace />} />
                   <Route path="contracts" element={<ContractsPanel />} />
                   <Route path="vendors" element={<VendorsPanel />} />
-                  <Route path="work-entry" element={<WorkEntryPanel />} />{/* 作品/原作 登録 */}
+                  {/* UIC-10(設計 v1.4 Phase D): 作品/原作 登録は Works 統一一覧(/works)へ統合。
+                      作成(原作/自社作品)は WorksListPanel のダイアログ、編集は 3カードエディタ(/works/:id)。
+                      旧 URL は計測付き互換リダイレクトで温存(CLEAN-06)。 */}
+                  <Route path="work-entry" element={<DeprecatedRedirect from="/master/work-entry" to="/works" />} />{/* 作品/原作 登録 → Works */}
                   <Route path="materials" element={<MaterialEntryPanel />} />{/* 原作マテリアル登録 */}
                   <Route path="bulk-import" element={<BulkImportPanel />} />{/* 原作・原作マテリアル 一括インポート */}
                   <Route path="work-material-link" element={<WorkMaterialLinkPanel />} />{/* 作品↔原作マテリアル 紐づけ */}
@@ -88,17 +91,17 @@ export default function App() {
                   <Route path="billing-dashboard" element={<BillingDashboardPanel />} />{/* 請求・分配 横断ダッシュボード */}
                   {/* UIC-12(設計 v1.4 Phase C): PubLicenseEntryPanel を廃止し、出版利用許諾条件は
                       Document Editor(pub_license_terms 文書フォーム)で直接起票する。旧URLはリダイレクトを維持。 */}
-                  <Route path="pub-license" element={<Navigate to="/documents/new?template=pub_license_terms" replace />} />{/* 出版利用許諾条件 → 文書フォームへ */}
+                  <Route path="pub-license" element={<DeprecatedRedirect from="/master/pub-license" to="/documents/new?template=pub_license_terms" />} />{/* 出版利用許諾条件 → 文書フォームへ */}
                   <Route path="merge" element={<EntityMergePanel />} />{/* ID統合(マージ)カート */}
                   <Route path="ledgers" element={<LedgersPanel />} />{/* Phase 22.18 */}
                   <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}
                   <Route path="drafts" element={<DraftsPanel />} />{/* Phase 22.21.81 */}
                   {/* データ構造刷新: 条件明細 横断検索は条件明細ハブの検索タブへ集約(旧URL温存) */}
-                  <Route path="conditions" element={<Navigate to="/condition-lines?tab=search" replace />} />
+                  <Route path="conditions" element={<DeprecatedRedirect from="/master/conditions" to="/condition-lines?tab=search" />} />
                   <Route path="receivable-map" element={<ReceivableMapPanel />} />{/* 統合 P3-4 */}
                   <Route path="work-model" element={<WorkModelPanel />} />{/* 統合 P3-5 */}
                   {/* 統合 増分④: 3カードエディタは /works/:id へ移設。旧URLは温存リダイレクト */}
-                  <Route path="work-graph" element={<Navigate to="/works" replace />} />
+                  <Route path="work-graph" element={<DeprecatedRedirect from="/master/work-graph" to="/works" />} />
                   <Route path="staff" element={<StaffPanel />} />
                   <Route path="rules" element={<RulesPanel />} />
                 </Route>
