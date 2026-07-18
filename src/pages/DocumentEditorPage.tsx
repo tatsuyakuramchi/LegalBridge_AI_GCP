@@ -2594,16 +2594,16 @@ export function DocumentEditorPage() {
                     {/* Phase 17: 稟議番号セレクタ — 全テンプレ共通の header field。
                         formData.ringi_numbers[] に保存し、Finalize & Sync で
                         worker が ringi_documents (N:N) に upsert する。 */}
-                    {/* Phase 22.21.29: 閲覧モードでは pointer-events 無効化で
-                        すべての入力を不可にする。CSS だけなので keyboard で
-                        focus は出来ない (tabindex は html input が持つ) が、
-                        テキスト選択 (user-select:text) は許可してコピー可能に。 */}
-                    <div
-                      className={
-                        isReadOnly
-                          ? "pointer-events-none opacity-75 select-text"
-                          : ""
-                      }
+                    {/* UIC-06(設計 v1.4 Phase B): true readonly。旧実装は CSS の pointer-events-none
+                        のみで、マウスは不可でもキーボード(tab→入力)では編集できてしまう不具合があった。
+                        <fieldset disabled> にすると子孫の全フォームコントロール(input/select/textarea/
+                        button、config駆動・カスタム部品を問わず)がネイティブに無効化され、マウス・
+                        キーボード双方で変更不可になる。値はスクリーンリーダーが disabled 項目として
+                        読み上げ可能(inert のように a11y ツリーから外れない)。fieldset の既定装飾は
+                        border-0/p-0/m-0/min-w-0 で無効化し、視覚的手掛かりに opacity-75 を付ける。 */}
+                    <fieldset
+                      disabled={isReadOnly}
+                      className={`border-0 p-0 m-0 min-w-0 ${isReadOnly ? "opacity-75" : ""}`}
                       aria-readonly={isReadOnly ? "true" : "false"}
                     >
                       <RingiSelector
@@ -2640,7 +2640,7 @@ export function DocumentEditorPage() {
                         selectedStaff={selectedStaff}
                         combineVendorAlias={combineVendorAlias}
                       />
-                    </div>
+                    </fieldset>
                   </div>
                 )}
                   </div>
