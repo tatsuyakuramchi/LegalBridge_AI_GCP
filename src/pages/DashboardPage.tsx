@@ -234,7 +234,7 @@ export function DashboardPage() {
                   { label: "取引先", to: "/master/vendors", Icon: Building2 },
                   { label: "作品/原作", to: "/master/work-entry", Icon: FileText },
                   { label: "原作素材", to: "/master/materials", Icon: ListChecks },
-                  { label: "出版条件", to: "/master/pub-license", Icon: FilePlus2 },
+                  { label: "出版条件", to: "/documents/new?template=pub_license_terms", Icon: FilePlus2 },
                 ].map((m) => {
                   const Icon = m.Icon
                   return (
