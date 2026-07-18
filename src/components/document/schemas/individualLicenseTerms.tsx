@@ -32,8 +32,10 @@ import { FkField } from "../formkit/DocFormKit"
 import type { DocFormSchema, FkCtx } from "../SchemaDocumentForm"
 import { Briefcase, Coins, Building2, User, ShieldCheck, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useToast } from "@/components/ui/toast"
 
 const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
+  const { push } = useToast()
   const {
     metadata,
     formData,
@@ -175,6 +177,12 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const j = await r.json()
+      push(
+        j?.matched
+          ? `同名の既存原作「${j.title || title}」を選択しました（重複作成を防止）`
+          : `原作「${title}」を新規登録しました`,
+        "success"
+      )
       const code = j.work_code || j.source_code || ""
       await refreshLedgers().catch(() => {})
       let created: any = null
@@ -207,6 +215,12 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const created = await r.json()
+      push(
+        created?.matched
+          ? `同名の既存作品「${created.title || title}」を選択しました（重複作成を防止）`
+          : `作品「${title}」を新規登録しました`,
+        "success"
+      )
       try {
         const listRes = await fetch("/api/v3/works")
         const list = await listRes.json()
