@@ -30,7 +30,8 @@ steps:
   #    materials/:mid/conditions / condition-lines / link-conditions)への直接参照を
   #    「増やさない」ゲート。条件値の書込みは文書フォーム(Document Command)経由が原則。
   #    Phase C/D で置換して減らしたら、この上限も同時に下げていく。
-  #    現状値: 17 (Phase C 第1弾で WorkGraph の license-matrix 直接保存を撤去し 18→17)。
+  #    現状値: 15 (UIC-02 で license-matrix 撤去 18→17、UIC-03 で MaterialEntry の
+  #            条件作成(POST)・全置換(PUT)撤去 17→15)。
   #    詳細: docs/forms/legacy-condition-endpoints.md
   - id: gate-condition-endpoints
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -38,7 +39,7 @@ steps:
     args:
       - scripts/audit/condition_write_refs.sh
       - --gate
-      - "17"
+      - "15"
 
   # (Phase 6) 旧 step 0「inject-portal-secret」は撤去した。
   #   共有シークレット(LB_PORTAL_SECRET)を VITE_API_PORTAL_SECRET として

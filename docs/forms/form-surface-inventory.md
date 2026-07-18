@@ -54,7 +54,7 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 | MST-contracts | `/master/contracts` | ContractsPanel | page-specific | `/contracts` へ移動（UIC-15 / Phase E）。旧簡易登録撤去 |
 | MST-vendors | `/master/vendors` | VendorsPanel | page-specific | 参照マスターとして残置。search-api 旧UIは read-only 化済み（UIC-18） |
 | MST-work-entry | `/master/work-entry` | WorkEntryPanel | page-specific | **Works へ統合しリダイレクト（UIC-10 / Phase D）** |
-| MST-materials | `/master/materials` | MaterialEntryPanel | page-specific | **条件作成・全置換を撤去し素材CRUDへ限定（UIC-03 / Phase C）** |
+| MST-materials | `/master/materials` | MaterialEntryPanel | page-specific | 条件作成・全置換を撤去し素材CRUDへ限定済（✅ UIC-03 / Phase C）→条件は文書フォームCTA・既存は read-only |
 | MST-bulk-import | `/master/bulk-import` | BulkImportPanel | page-specific | Data Maintenance へ移動（UIC-17 / Phase E） |
 | MST-work-material-link | `/master/work-material-link` | WorkMaterialLinkPanel | page-specific | **Works マテリアルタブへ統合（UIC-11 / Phase D）** |
 | MST-sublicense-conditions | `/master/sublicense-conditions` | SublicenseConditionPanel | read-only + CTA | A系で read-only 化済み。再許諾は文書起票へ |

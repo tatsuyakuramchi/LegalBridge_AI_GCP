@@ -23,7 +23,7 @@
 # 使い方:
 #   scripts/audit/condition_write_refs.sh            # サマリ表示
 #   scripts/audit/condition_write_refs.sh --detail   # 該当行も表示
-#   scripts/audit/condition_write_refs.sh --gate 17  # CI ラチェット(参照数が上限超過なら非0終了)
+#   scripts/audit/condition_write_refs.sh --gate 15  # CI ラチェット(参照数が上限超過なら非0終了)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
