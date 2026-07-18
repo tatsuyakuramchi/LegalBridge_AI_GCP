@@ -172,6 +172,15 @@ export function DraftsPanel() {
   }
 
   const openInEditor = (row: DraftRow) => {
+    // UIC-05: 「案件のみ下書き」(issue_key = "matter:<id>") は matter_id 起点で開き、
+    //   resume_draft=1 で編集側に matter:<id> キーの下書きを直接復元させる。
+    const m = /^matter:(\d+)$/.exec(row.issue_key || "")
+    if (m) {
+      navigate(
+        `/documents/new?matter_id=${encodeURIComponent(m[1])}&template=${encodeURIComponent(row.template_type)}&resume_draft=1`
+      )
+      return
+    }
     // 既存ルート: /documents/new?issue=<key>
     // 編集側で issue を select すると自動で DBSYNC → draft 復元される。
     navigate(`/documents/new?issue=${encodeURIComponent(row.issue_key)}`)
@@ -284,7 +293,10 @@ export function DraftsPanel() {
                 )}
               </button>
               <div className="truncate font-bold" title={r.issue_key}>
-                {r.issue_key}
+                {/* UIC-05: 案件のみ下書きは "matter:<id>" キー。分かりやすく表示。 */}
+                {/^matter:\d+$/.test(r.issue_key)
+                  ? `案件のみ (Matter #${r.issue_key.slice("matter:".length)})`
+                  : r.issue_key}
               </div>
               <div className="truncate text-foreground/80" title={r.template_type}>
                 {r.template_type}
