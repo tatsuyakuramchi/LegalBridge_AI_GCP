@@ -112,7 +112,7 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 
 ## 集計（Phase A ベースライン）
 
-- 文書テンプレート: 18（全 Schema 化 → **legacy DocumentForm fallback 残 0**。dead code の物理削除は FRM-14）
+- 文書テンプレート: 18（全 Schema 化 → **legacy DocumentForm fallback 残 0**。**FRM-14 で dead render を物理削除済み**）
 - マスター編集ルート: 19
 - その他編集ルート: 10
 - 共通シェル移行済み: **0 / 全 surface**（R1 未着手）
@@ -126,6 +126,19 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
   `number`/`date` 型の型検証と、動的明細（`type:"array"` / `itemRequired`）の行内検証を
   「基盤」として実装（型/明細は False Positive を避ける保守的判定）。テンプレ固有の
   明細ルールは `extraValidators` で差し込める拡張口を用意。
+## FRM-14 / CLEAN-03 撤去状況
+
+- **FRM-14（完了）**: `DocumentForm.tsx` の旧 per-template 分岐（フォールバック render）＋ `renderField` ヘルパを
+  物理削除。全 19 テンプレが REGISTRY 登録済み（root/worker 両 `templates_config.json` と突合済み）で
+  到達不能を確認したうえで撤去（1341 行 → 805 行、-536 行）。孤立した import も除去。
+  `DocumentForm` は「ctx を組み立て、移行済みの各 hook/effect を回し、`SchemaDocumentForm` へ委譲する器」に縮退。
+  未登録テンプレが将来現れても `autoSectionsFromMetadata` で汎用描画する安全弁を残置（白画面防止）。
+- **CLEAN-03残（Phase D 待ち）**: `WorkEntryPanel` / `WorkModelPanel` / `LedgersPanel` / `WorkMaterialLinkPanel` は
+  **まだ `App.tsx` で live route**（`work-entry` / `work-model` / `ledgers` / `work-material-link`）。物理削除は
+  Phase D（UIC-10/11/13）でルートをリダイレクトへ置換した後に行う（先に消すと 404）。
+  `MaterialEntryPanel` は UIC-03 で素材 CRUD の常設面として存続（削除対象外）。`PubLicenseEntryPanel` は
+  CLEAN-03 で削除済み。
+
 - **FRM-03 ラチェット**: `scripts/audit/form_primitive_refs.sh`（Cloud Build `gate-form-primitives`）。
   文書フォーム面（`src/components/document/`、共通プリミティブ本体 `FormField.tsx`/`DocFormKit.tsx` 除外）の
   生 `<input>/<select>/<textarea>` と旧フォーム CSS（`retro-input` 等）を「増やさない」。
