@@ -83,6 +83,9 @@ export const WRITE_PATHS_ON_GET: RegExp[] = [
   //         が、search-api 経路でも問題ないので broaden しない。
   //   ここでは line-items GET を WRITE に明示的に振る。
   /^\/api\/management\/issues\/[^/]+\/line-items(?:\?|$|\/)/,
+  // 設計 v1.4 DQ-02/04: データ完全性 API(rules/issues/summary の GET)は worker のみ実装。
+  //   これが無いと search-api へ振られて 404(完全性 Badge/Issue が出ない)。POST/PATCH は既定で write。
+  /^\/api\/data-quality\//,
 ];
 
 // READS_TO_WORKER=1 でも常に READ(search-api)へ振る GET。worker にミラーが
