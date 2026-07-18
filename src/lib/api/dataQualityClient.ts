@@ -38,6 +38,9 @@ export type DqIssue = {
   detected_at?: string | null;
   last_detected_at?: string | null;
   resolution_note?: string | null;
+  // 修正導線用: worker が解決した親 work_id / 条件の line_code(条件明細詳細への直リンク)。
+  resolved_work_id?: number | null;
+  condition_line_code?: string | null;
 };
 
 export type DqIssueFilters = {
