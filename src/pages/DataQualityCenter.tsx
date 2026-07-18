@@ -101,8 +101,22 @@ export function DataQualityCenter() {
     else setIssues((prev) => (prev || []).map((x) => (x.id === id ? { ...x, ...r } : x)))
   }
 
+  // 修正導線: 対象の実編集画面へ飛ばす。
+  //   work → /works/:id、条件 → line_code があれば条件明細詳細、無ければ親作品、
+  //   どちらも無ければ条件明細ハブ(検索)。素材 → 親作品。
+  const targetPath = (it: DqIssue): string | null => {
+    if (it.entity_type === "work") return `/works/${it.entity_id}`
+    if (it.entity_type === "condition") {
+      if (it.condition_line_code) return `/condition-lines/${encodeURIComponent(it.condition_line_code)}`
+      if (it.resolved_work_id) return `/works/${it.resolved_work_id}`
+      return `/condition-lines`
+    }
+    if (it.resolved_work_id) return `/works/${it.resolved_work_id}`
+    return null
+  }
   const remediate = (it: DqIssue) => {
-    if (it.entity_type === "work") navigate(`/works/${it.entity_id}`)
+    const p = targetPath(it)
+    if (p) navigate(p)
     else push(`${ENTITY_LABEL[it.entity_type] || it.entity_type} #${it.entity_id} を対象画面で修正してください（${it.remediation_type || ""}）`, "info")
   }
 
@@ -204,9 +218,9 @@ export function DataQualityCenter() {
                     </div>
                   </td>
                   <td className="px-3 py-1.5">
-                    {it.entity_type === "work" ? (
-                      <Link to={`/works/${it.entity_id}`} className="inline-flex items-center gap-1 underline-offset-2 hover:underline">
-                        {ENTITY_LABEL.work} #{it.entity_id} <ExternalLink className="h-3 w-3" />
+                    {targetPath(it) ? (
+                      <Link to={targetPath(it)!} className="inline-flex items-center gap-1 underline-offset-2 hover:underline">
+                        {ENTITY_LABEL[it.entity_type] || it.entity_type} #{it.entity_id} <ExternalLink className="h-3 w-3" />
                       </Link>
                     ) : (
                       <span>{ENTITY_LABEL[it.entity_type] || it.entity_type} #{it.entity_id}</span>

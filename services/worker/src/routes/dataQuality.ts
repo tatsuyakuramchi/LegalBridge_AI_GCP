@@ -59,13 +59,24 @@ export function registerDataQualityRoutes(app: Express, deps: DataQualityDeps) {
       if (req.query.severity) push("i.severity = $?", String(req.query.severity));
       if (req.query.assignee_staff_id) push("i.assignee_staff_id = $?", Number(req.query.assignee_staff_id));
       const limit = Math.min(Number(req.query.limit) || 500, 2000);
+      // 修正導線(admin-ui)のため、条件/素材 issue に「親 work_id」と条件の line_code を解決して載せる。
+      //   condition → condition_lines(work_id, line_code) / material → work_materials(work_id)。
+      //   work は entity_id 自身。これで DataQualityCenter の「修正」を実画面へ接続できる。
       const sql = `
         SELECT i.id, i.entity_type, i.entity_id, i.rule_code, i.severity, i.status,
                i.detected_at, i.last_detected_at, i.resolved_at, i.assignee_staff_id,
                i.due_at, i.resolution_type, i.resolution_note, i.detail,
-               r.title AS rule_title, r.remediation_type, r.stage
+               r.title AS rule_title, r.remediation_type, r.stage,
+               CASE i.entity_type
+                 WHEN 'work' THEN i.entity_id
+                 WHEN 'condition' THEN cl.work_id
+                 WHEN 'material' THEN wm.work_id
+               END AS resolved_work_id,
+               cl.line_code AS condition_line_code
           FROM data_quality_issues i
           JOIN data_quality_rules r ON r.rule_code = i.rule_code
+          LEFT JOIN condition_lines cl ON i.entity_type = 'condition' AND cl.id = i.entity_id
+          LEFT JOIN work_materials wm ON i.entity_type = 'material' AND wm.id = i.entity_id
          ${where.length ? "WHERE " + where.join(" AND ") : ""}
          ORDER BY CASE i.severity WHEN 'BLOCKER' THEN 0 WHEN 'ERROR' THEN 1 WHEN 'WARNING' THEN 2 ELSE 3 END,
                   i.last_detected_at DESC
