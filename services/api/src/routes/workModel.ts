@@ -731,6 +731,19 @@ export function registerWorkModelRoutes(
     try {
       const b = req.body || {};
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
+      // B系(T1): 同名(正規化一致)の原作が既にあれば新規作成せず既存を返す(重複防止)。
+      //   force_new=true で明示的に別レコードを作成できる。lb_norm_name 欠如時は fail-open。
+      if (!b.force_new) {
+        try {
+          const dup = await query(
+            `SELECT *, work_code AS source_code FROM works
+              WHERE kind = 'licensed_in' AND lb_norm_name(title) = lb_norm_name($1)
+              ORDER BY id LIMIT 1`,
+            [b.title]
+          );
+          if (dup.rows[0]) return res.json({ ...dup.rows[0], matched: true });
+        } catch (e) { console.warn("[source-ips dedup] skipped:", e); }
+      }
       const year = new Date().getFullYear();
       const r = await query(
         `WITH yr AS (SELECT $1::text AS y),
@@ -800,6 +813,17 @@ export function registerWorkModelRoutes(
     try {
       const b = req.body || {};
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
+      // B系(T1): 同名(正規化一致)の自社作品が既にあれば新規作成せず既存を返す(重複防止)。
+      if (!b.force_new) {
+        try {
+          const dup = await query(
+            `SELECT * FROM works WHERE kind = 'own' AND lb_norm_name(title) = lb_norm_name($1)
+              ORDER BY id LIMIT 1`,
+            [b.title]
+          );
+          if (dup.rows[0]) return res.json({ ...dup.rows[0], matched: true });
+        } catch (e) { console.warn("[works dedup] skipped:", e); }
+      }
       const year = new Date().getFullYear();
       const code = b.work_code || `W-${year}-${pad4(await nextMasterSeq(query, "W", year))}`;
       // 整理①: publisher_vendor_id / is_original は廃止(列はdefault/既存値のまま)。kind='own'。
@@ -1666,11 +1690,38 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 全素材のグローバル一覧(統合ツール等の横断検索用)。作品タイトルを同梱して曖昧さを解消。
+  app.get("/api/v3/work-materials", ...requireRead, async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT wm.id, wm.material_code, wm.material_name, wm.work_id,
+                w.title AS work_title, w.work_code
+           FROM work_materials wm
+           LEFT JOIN works w ON w.id = wm.work_id
+          ORDER BY wm.material_code NULLS LAST, wm.id
+          LIMIT 5000`
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
   app.post("/api/v3/works/:id/materials", ...requireWrite, express.json(), async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
+      // B系(T1): 同作品内で同名(正規化一致)の素材が既にあれば新規作成せず既存を返す(重複防止)。
+      if (!b.force_new && b.material_name) {
+        try {
+          const dup = await query(
+            `SELECT * FROM work_materials
+              WHERE work_id = $1 AND lb_norm_name(material_name) = lb_norm_name($2)
+              ORDER BY id LIMIT 1`,
+            [id, b.material_name]
+          );
+          if (dup.rows[0]) return res.json({ ...dup.rows[0], matched: true });
+        } catch (e) { console.warn("[material dedup] skipped:", e); }
+      }
       // 統合: 取得経路を推定(明示指定が無ければ rights_type / 発注書紐付けから)。
       const acq =
         b.acquisition_type ??

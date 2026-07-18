@@ -5422,6 +5422,30 @@ ${details}
         .status(400)
         .json({ error: "vendor_code と vendor_name は必須です" });
     }
+    // B系: 同じ法人番号(corporate_number)の取引先が「別コード」で既にあれば重複作成を防ぐ。
+    //   同一 vendor_code の編集は対象外。force_new=true で明示的に別レコード登録も可。
+    const corpNo = String(v.corporate_number || "").replace(/[^0-9]/g, "");
+    if (corpNo && v.force_new !== true) {
+      try {
+        const dupe = await query(
+          `SELECT id, vendor_code, vendor_name FROM vendors
+            WHERE regexp_replace(coalesce(corporate_number,''), '[^0-9]', '', 'g') = $1
+              AND vendor_code <> $2
+            ORDER BY id LIMIT 1`,
+          [corpNo, vcode]
+        );
+        if (dupe.rows[0]) {
+          return res.status(409).json({
+            ok: false,
+            matched: true,
+            existing: dupe.rows[0],
+            error: `同じ法人番号の取引先「${dupe.rows[0].vendor_name}（${dupe.rows[0].vendor_code}）」が既に登録されています。既存を使うか、統合(Masters→統合)してください。`,
+          });
+        }
+      } catch (e) {
+        console.warn("[vendor corp dedup] skipped:", e);
+      }
+    }
     // Phase 25.1: 数値カラム (capital_yen BIGINT / employee_count INTEGER) は
     //   「1,000,000」等カンマ付き文字列が来ると Number() が NaN になり、
     //   BIGINT/INTEGER への INSERT で "invalid input syntax" → 500 になっていた

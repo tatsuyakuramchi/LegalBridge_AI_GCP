@@ -1460,9 +1460,18 @@ async function startServer() {
     async (req, res) => {
       try {
         const payload = req.body || {};
-        const saved = await upsertVendor(payload);
+        const saved = await upsertVendor(payload, { checkCorpDup: true });
         res.json({ ok: true, vendor: saved });
       } catch (error: any) {
+        // B系: 法人番号重複は 409 + 既存情報を返す(UI が既存採用/統合へ誘導)。
+        if (error?.code === "VENDOR_CORP_DUP") {
+          return res.status(409).json({
+            ok: false,
+            matched: true,
+            existing: error.existing,
+            error: String(error?.message || error),
+          });
+        }
         console.error("POST /api/master/vendors failed:", error);
         const msg = String(error?.message || error);
         // バリデーションエラーは 400 で返す

@@ -72,6 +72,44 @@ const ENTITIES: Record<
     refIntCols: [],
     refCodeCols: ["backlog_issue_key", "issue_key"],
   },
+  // B系(T3): マスタ重複掃除の受け皿。取引先/素材/担当者を統合可能に。
+  vendor: {
+    label: "取引先",
+    table: "vendors",
+    pk: "id",
+    idType: "int",
+    refIntCols: [
+      "vendor_id",
+      "counterparty_vendor_id",
+      "party_vendor_id",
+      "publisher_vendor_id",
+      "rights_holder_vendor_id",
+      "primary_vendor_id",
+      "licensor_vendor_id",
+    ],
+    refCodeCols: ["vendor_code"],
+    codeSourceCol: "vendor_code",
+  },
+  work_material: {
+    label: "素材",
+    table: "work_materials",
+    pk: "id",
+    idType: "int",
+    refIntCols: ["material_id", "source_material_id", "material_ref_id"],
+    refCodeCols: ["material_code"],
+    codeSourceCol: "material_code",
+  },
+  staff: {
+    // 注: created_by 等の文字列参照(email/slack)は FK でないため自動付け替え対象外。
+    //   staff_id(int) / slack_user_id を付け替え、loser 行を削除する。
+    label: "担当者",
+    table: "staff",
+    pk: "id",
+    idType: "int",
+    refIntCols: ["staff_id"],
+    refCodeCols: ["slack_user_id"],
+    codeSourceCol: "slack_user_id",
+  },
 };
 
 const IDENT = /^[a-z_][a-z0-9_]*$/; // catalog 由来の識別子を二重引用する前の安全確認

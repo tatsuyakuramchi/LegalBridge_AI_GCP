@@ -16,13 +16,16 @@ import { Button } from "@/components/ui/button"
 import { useAppData } from "@/src/context/AppDataContext"
 import { EntitySearchSelect, ENTITY_LABEL, type EntityKind, type EntityOption } from "@/src/components/search/EntitySearch"
 
-type MergeKind = "work" | "source_ip" | "matter" | "issue"
+type MergeKind = "work" | "source_ip" | "matter" | "issue" | "vendor" | "staff" | "work_material"
 
 // このカートで統合できる実体(EntitySearch で検索できるもの)。
 const MERGE_KINDS: Array<{ key: MergeKind; label: string; accent: string }> = [
   { key: "source_ip", label: "原作", accent: "border-t-sky-500 text-sky-600" },
   { key: "work", label: "作品", accent: "border-t-emerald-500 text-emerald-600" },
   { key: "matter", label: "案件", accent: "border-t-violet-500 text-violet-600" },
+  { key: "vendor", label: "取引先", accent: "border-t-rose-500 text-rose-600" },
+  { key: "staff", label: "担当者", accent: "border-t-teal-500 text-teal-600" },
+  { key: "work_material", label: "素材", accent: "border-t-cyan-500 text-cyan-600" },
   { key: "issue", label: "依頼", accent: "border-t-amber-500 text-amber-600" },
 ]
 

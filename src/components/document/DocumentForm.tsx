@@ -32,6 +32,7 @@ import { TemplateMetadata } from './types';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useToast } from '@/components/ui/toast';
 
 // インボイス登録番号は発注書テンプレ等が先頭に "T" を付与するため、取引先DB値に
 //   既に T が付いていると "TT…" になる。引用時に先頭の T(半角/全角) を1つ除去する。
@@ -80,6 +81,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   selectedStaff,
   combineVendorAlias = false
 }) => {
+  const { push } = useToast();
   // Group variables by their group property
   const groupedVars = useMemo(() => {
     const groups: Record<string, string[]> = {};
@@ -983,6 +985,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
+      // B系(T2): 同名既存があれば API が {matched:true} を返す(重複作成せず既存を採用)。
+      push(
+        j?.matched
+          ? `同名の既存原作「${j.title || title}」を選択しました（重複作成を防止）`
+          : `原作「${title}」を新規登録しました`,
+        'success'
+      );
       const code = j.work_code || j.source_code || '';
       await refreshLedgers().catch(() => {});
       let created: any = null;
@@ -1025,6 +1034,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const created = await r.json();
+      push(
+        created?.matched
+          ? `同名の既存作品「${created.title || title}」を選択しました（重複作成を防止）`
+          : `作品「${title}」を新規登録しました`,
+        'success'
+      );
       try {
         const listRes = await fetch('/api/v3/works');
         const list = await listRes.json();

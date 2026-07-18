@@ -25,6 +25,7 @@ import { FkField } from "../formkit/DocFormKit"
 import type { DocFormSchema, FkCtx } from "../SchemaDocumentForm"
 import { Briefcase, Building2, User, List, Coins, Scale } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useToast } from "@/components/ui/toast"
 
 const stripLeadingT = (s?: string | null): string =>
   String(s || "").replace(/^[TtＴｔ]\s*/, "").trim()
@@ -39,6 +40,7 @@ const individualVendorName = (v: any, combine: boolean): string => {
 }
 
 const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
+  const { push } = useToast()
   const {
     metadata,
     formData,
@@ -452,6 +454,12 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                   })
                   if (!r.ok) throw new Error(`HTTP ${r.status}`)
                   const j = await r.json()
+                  push(
+                    j?.matched
+                      ? `同名の既存原作「${j.title || title}」を選択しました（重複作成を防止）`
+                      : `原作「${title}」を新規登録しました`,
+                    "success"
+                  )
                   const code = j.work_code || j.source_code || ""
                   await refreshLedgers().catch(() => {})
                   // 新原作の ledger id を取得(素材新規登録APIが台帳idを要求するため)。
