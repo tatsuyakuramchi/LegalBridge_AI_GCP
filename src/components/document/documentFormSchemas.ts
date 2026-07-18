@@ -15,6 +15,7 @@ import { royaltyStatementBuilder } from "./schemas/royaltyStatement";
 import { purchaseOrderBuilder } from "./schemas/purchaseOrder";
 import { individualLicenseTermsBuilder } from "./schemas/individualLicenseTerms";
 import { sublicenseOutTermsBuilder } from "./schemas/sublicenseOutTerms";
+import { pubLicenseTermsBuilder } from "./schemas/pubLicenseTerms";
 
 // group メタから順序付きの {group→fieldIds} を得る(hidden 除外)。
 function groupList(metadata: any): { order: string[]; groups: Record<string, string[]> } {
@@ -301,6 +302,10 @@ const REGISTRY: Record<string, SchemaBuilder> = {
   //   汎用レンダリング(DbFillBar + config group 順)だったので、AUTO で等価に再現する。
   //   取引先/担当の充填は DbFillBar と DocumentForm の hook(全 render 分岐で発火)が継続担当。
   pub_additional_terms: AUTO,
+  // 設計 v1.4 Phase C / FRM-04: 出版等利用許諾条件書。旧 DocumentForm の独自セクション
+  //   (作品/原作/基本契約 検索 + PUB 並替 + VI 対価に FinancialConditionTable 注入)を
+  //   bare セクションへ移設。pubCondSeededRef effect は DocumentForm 側に残置。
+  pub_license_terms: (metadata) => pubLicenseTermsBuilder(metadata),
 };
 
 export function isSchemaMigrated(templateId: string): boolean {
