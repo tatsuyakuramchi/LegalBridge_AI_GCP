@@ -30,9 +30,10 @@ steps:
   #    materials/:mid/conditions / condition-lines / link-conditions)への直接参照を
   #    「増やさない」ゲート。条件値の書込みは文書フォーム(Document Command)経由が原則。
   #    Phase C/D で置換して減らしたら、この上限も同時に下げていく。
-  #    現状値: 12。18→17(UIC-02 license-matrix)→15(UIC-03 MaterialEntry)→12(WorkGraph の
-  #            孤児条件書込み saveMatFc/saveMatCond 撤去)。残 12 は全て「関係リンク(component-lines/
-  #            link-conditions)」か「読取り(condition-lines GET)」で、値書込みは 0。撤去は Phase D
+  #    現状値: 8。18→17(UIC-02 license-matrix)→15(UIC-03 MaterialEntry)→12(WorkGraph の
+  #            孤児条件書込み saveMatFc/saveMatCond 撤去)→8(UIC-11 WorkMaterialLinkPanel 撤去)。
+  #            残 8 は全て「関係リンク(component-lines/link-conditions)」か「読取り(condition-lines GET)」で、
+  #            値書込みは 0。残る component-lines(2)は WorkGraphPanel の結線 UI。撤去は Phase D
   #            (source-ips→works 統合)で。詳細: docs/forms/legacy-condition-endpoints.md
   - id: gate-condition-endpoints
     name: gcr.io/google.com/cloudsdktool/cloud-sdk
@@ -40,7 +41,7 @@ steps:
     args:
       - scripts/audit/condition_write_refs.sh
       - --gate
-      - "12"
+      - "8"
 
   # (FRM-03) 文書フォーム面の「独自Field・生input・旧フォームCSS」ラチェット。
   #   入力は FormField / DocFormKit の共通プリミティブへ収斂させる方針。生の

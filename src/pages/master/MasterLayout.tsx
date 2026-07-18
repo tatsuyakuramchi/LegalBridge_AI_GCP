@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins, Unlink, Receipt, FileUp } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Coins, Unlink, Receipt, FileUp } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -15,7 +15,8 @@ const tabs = [
   { to: "/master/materials", label: "Materials (原作素材)", icon: Boxes },
   // 原作＋原作マテリアル＋文書を一括で DB 化(upsert)。①既存文書から抽出 ②表(CSV/TSV)貼付。
   { to: "/master/bulk-import", label: "一括インポート", icon: FileUp },
-  { to: "/master/work-material-link", label: "作品×原作素材 紐づけ", icon: Link2 },
+  // UIC-11(設計 v1.4 Phase D): 作品×原作素材 紐づけは Works 詳細(/works/:id)の結線 UI へ統合したため
+  //   独立ナビは撤去(作品を選んでから紐づける文脈内操作へ一本化)。
   // UIC-12: 出版利用許諾条件は Document Editor(pub_license_terms)で直接起票。旧パネルは廃止し文書フォームへ誘導。
   { to: "/documents/new?template=pub_license_terms", label: "出版条件書を作成", icon: BookOpen },
   // ID統合(マージ)カート: 重複した 原作/作品/案件 を外部キー付替えで統合(孤立防止)
