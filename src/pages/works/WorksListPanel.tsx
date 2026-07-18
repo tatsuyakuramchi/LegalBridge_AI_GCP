@@ -14,6 +14,8 @@
  */
 import * as React from "react"
 import { useNavigate, Link } from "react-router-dom"
+import { CompletenessBadge } from "@/src/components/dataquality/CompletenessBadge"
+import { getWorkCompleteness, type DqSummary } from "@/src/lib/api/dataQualityClient"
 import { Plus, Search, RefreshCw, BookMarked, Boxes, Network } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -167,6 +169,28 @@ export function WorksListPanel() {
     }),
     [rows]
   )
+
+  // DQ-04: 各作品の完全性サマリー(works.id キー)。まず1件 probe し、取得できたときだけ
+  //   残りを取りに行く(worker 未デプロイ時に N 回 404 を撃たない degrade)。失敗は無表示。
+  const [dq, setDq] = React.useState<Record<string, DqSummary>>({})
+  React.useEffect(() => {
+    if (!rows.length) return
+    let alive = true
+    ;(async () => {
+      const first = await getWorkCompleteness(rows[0].id)
+      if (!alive || !first) return // API 不在 → バッジ無し
+      const map: Record<string, DqSummary> = { [rows[0].id]: first.summary }
+      const rest = await Promise.all(
+        rows.slice(1).map((r) => getWorkCompleteness(r.id).then((x) => [r.id, x?.summary] as const))
+      )
+      if (!alive) return
+      for (const [id, s] of rest) if (s) map[String(id)] = s
+      setDq(map)
+    })()
+    return () => {
+      alive = false
+    }
+  }, [rows])
 
   // UIC-13(段階A-2): 自社作品の親→派生ツリー(旧 WorkModelPanel の WorkTree を移植)。
   //   parent_work_id が同一 own 集合に居るものを子として入れ子表示。派生が無ければ非表示。
@@ -325,6 +349,8 @@ export function WorksListPanel() {
                           無効
                         </Badge>
                       )}
+                      {/* DQ-04: 完全性スコア(未評価/未デプロイなら非表示)。 */}
+                      <CompletenessBadge summary={dq[String(r.id)]} />
                     </div>
                   </div>
                   <div className="font-mono font-bold text-sm truncate">{r.title}</div>

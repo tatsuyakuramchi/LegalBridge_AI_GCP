@@ -12,6 +12,7 @@
 import * as React from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { RightsTreePanel } from "./RightsTreePanel"
+import { CompletenessPanel } from "@/src/components/dataquality/CompletenessPanel"
 import { Globe } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -901,6 +902,16 @@ export function WorkGraphPanel() {
           />
         </div>
       </header>
+
+      {/* DQ-04: データ完全性(スコア + 未解消 Issue + 修正導線)。worker 未デプロイ / 未評価なら非表示。 */}
+      {workId ? (
+        <CompletenessPanel
+          entityType="work"
+          entityId={workId}
+          reloadKey={editing}
+          onRemediate={() => startEdit()}
+        />
+      ) : null}
 
       {/* 契約・権利ツリー（金銭イン/アウト・買い切り・許諾地域サマリー）。 */}
       {workId ? <RightsTreePanel workId={workId} /> : null}
