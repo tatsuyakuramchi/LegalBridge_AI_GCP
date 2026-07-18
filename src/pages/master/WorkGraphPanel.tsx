@@ -79,6 +79,16 @@ const matDisplay = (code?: string | null, srcTitle?: string | null, name?: strin
 // 増分⑤: 中カードの作品(own)基本情報インライン編集の選択肢(WorkModelPanel と同一)。
 const WORK_TYPES = ["board_game", "trpg_book", "supplement", "digital"]
 const WORK_STATUS = ["planning", "in_production", "released", "suspended", "discontinued"]
+// UIC-13(段階A): 派生種別。旧 WorkModelPanel の DERIV_CHOICES を移植(系譜・派生設定を Works へ)。
+const DERIV_CHOICES: [string, string][] = [
+  ["", "(なし・原版)"],
+  ["translation", "翻訳"],
+  ["edition", "版"],
+  ["title_change", "改題"],
+  ["localization", "地域化"],
+  ["adaptation", "翻案"],
+]
+const DERIV_LABEL: Record<string, string> = Object.fromEntries(DERIV_CHOICES)
 
 function EdgeRow({
   e,
@@ -796,6 +806,9 @@ export function WorkGraphPanel() {
       status: work.status ?? "",
       division: Array.isArray(work.division) ? work.division.join(", ") : (work.division ?? ""),
       remarks: work.remarks ?? "",
+      // UIC-13(段階A): 系譜・派生設定を編集対象に。
+      parent_work_id: work.parent_work_id != null ? String(work.parent_work_id) : "",
+      derivation_type: work.derivation_type ?? "",
     })
     setSaveErr(null)
     setEditing(true)
@@ -808,8 +821,8 @@ export function WorkGraphPanel() {
     setSaving(true)
     setSaveErr(null)
     try {
-      // PUT は alternative_titles / parent_work_id / derivation_type も無条件に上書きするため、
-      //   編集対象外の既存値を保持して送る(データ消失防止)。
+      // UIC-13(段階A): 系譜(parent_work_id)・派生種別(derivation_type)も編集対象へ。
+      //   PUT は alternative_titles も無条件上書きするため、編集対象外の既存値は保持して送る。
       const body = {
         title: form.title.trim(),
         title_kana: form.title_kana?.trim() || null,
@@ -820,8 +833,8 @@ export function WorkGraphPanel() {
           : null,
         remarks: form.remarks?.trim() || null,
         alternative_titles: work.alternative_titles ?? null,
-        parent_work_id: work.parent_work_id ?? null,
-        derivation_type: work.derivation_type ?? null,
+        parent_work_id: form.parent_work_id ? Number(form.parent_work_id) : null,
+        derivation_type: form.derivation_type || null,
       }
       const r = await fetch(`/api/v3/works/${encodeURIComponent(workId)}`, {
         method: "PUT",
@@ -839,6 +852,12 @@ export function WorkGraphPanel() {
   }
   const inputCls =
     "w-full text-[11px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+
+  // UIC-13(段階A): 派生元(親)の候補。自社作品(own)＋原作(licensed_in)から自分自身を除外。
+  //   旧 WorkModelPanel の work-select(kinds: own/licensed_in)と同等。
+  const parentCandidates = [...works, ...sourceWorks]
+    .filter((w: any) => !work || String(w.id) !== String(work.id))
+    .map((w: any) => toWorkPickerItem(w))
 
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-5">
@@ -1231,6 +1250,26 @@ export function WorkGraphPanel() {
                     placeholder="区分(, 区切り) 例: BDG, PUB"
                     className={inputCls}
                   />
+                  {/* UIC-13(段階A): 系譜・派生設定(旧 WorkModelPanel から移植)。
+                      派生元を指定すると翻訳版・改題版などのチェーンになる。 */}
+                  <div className="pt-1 space-y-1.5 border-t border-dashed border-border">
+                    <div className="text-[9.5px] font-mono uppercase tracking-wider text-muted-foreground">系譜・派生</div>
+                    <WorkPicker
+                      items={parentCandidates}
+                      value={form.parent_work_id || undefined}
+                      onSelect={(w) => setForm((f) => ({ ...f, parent_work_id: w ? String(w.id) : "" }))}
+                      placeholder="派生元(親作品/原作)を検索 — 無ければ原版"
+                    />
+                    <select
+                      value={form.derivation_type}
+                      onChange={(e) => setForm((f) => ({ ...f, derivation_type: e.target.value }))}
+                      className="w-full text-[11px] font-mono border-b border-input bg-transparent py-1"
+                    >
+                      {DERIV_CHOICES.map(([v, l]) => (
+                        <option key={v} value={v}>{l === "(なし・原版)" ? "派生種別 — (なし・原版)" : l}</option>
+                      ))}
+                    </select>
+                  </div>
                   <textarea
                     value={form.remarks}
                     onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
@@ -1266,6 +1305,18 @@ export function WorkGraphPanel() {
                   {(work.work_type || work.status) && (
                     <div className="text-muted-foreground">
                       {work.work_type || "—"} / {work.status || "—"}
+                    </div>
+                  )}
+                  {/* UIC-13(段階A): 系譜・派生の読み取り表示。 */}
+                  {work.parent_work_id != null && (
+                    <div className="text-muted-foreground">
+                      派生元: {(() => {
+                        const p = [...works, ...sourceWorks].find(
+                          (w: any) => String(w.id) === String(work.parent_work_id)
+                        )
+                        return p ? `${p.work_code || p.source_code || `#${p.id}`} ${p.title || ""}`.trim() : `#${work.parent_work_id}`
+                      })()}
+                      {work.derivation_type ? `（${DERIV_LABEL[work.derivation_type] || work.derivation_type}）` : ""}
                     </div>
                   )}
                 </div>
