@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Coins, Unlink, Receipt, FileUp } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Boxes, BookMarked, BookOpen, GitMerge, Coins, Unlink, FileUp } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -27,17 +27,10 @@ const tabs = [
   { to: "/master/sublicense-conditions", label: "再許諾条件登録", icon: Coins },
   // 発注書等で発生した「素材未リンクの利用許諾CL」を棚卸し→原作マテリアルへ後付けリンク(二重化なし)。
   { to: "/master/unlinked-conditions", label: "未リンクCL 棚卸し", icon: Unlink },
-  // 再許諾の受領記録＋ライセンサーへの分配(基準額×個数×親ライセンスイン料率)を台帳同期。
-  { to: "/master/billing", label: "請求・分配", icon: Receipt },
-  // 全作品の再許諾受領×分配を1画面で俯瞰(期間/未受領/未分配で絞込)。
-  { to: "/master/billing-dashboard", label: "請求ダッシュボード", icon: Network },
+  // UIC-16(設計 v1.4 Phase E): 金銭系(請求・分配 / 請求ダッシュボード / 分配マップ)は
+  //   Finance モジュール(/finance)へ集約。ここからは撤去。
   // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
   { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
-  // データ構造刷新: 条件明細 横断検索は「条件明細」ハブの検索タブへ集約 (旧URLはリダイレクト)
-  // 統合 P3-4: 分配構造マップ (作品中心の上流分配←当社←下流受領)
-  { to: "/master/receivable-map", label: "分配マップ", icon: Network },
-  // 統合: 3カード統合エディタ(旧「権利フロー」)はサイドバー「作品管理」(/works)へ移設。
-  //   (work-3card-unified-editor-spec 増分④)
   // Phase 22.21.81: 文書作成途中の draft (一時保存) の掃除タブ
   { to: "/master/drafts", label: "Drafts (一時保存)", icon: FileEdit },
   { to: "/master/staff", label: "Staff", icon: Users },

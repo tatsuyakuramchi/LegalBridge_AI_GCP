@@ -108,7 +108,7 @@ export function BillingDashboardPanel() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={9} className="text-center text-muted-foreground py-6">該当する受領記録がありません。</td></tr>
             ) : rows.map((x) => (
-              <tr key={x.id} className="border-b border-border/60 hover:bg-muted/30 cursor-pointer" onClick={() => x.work_id && navigate(`/master/billing`)} title="作品別の請求・分配へ">
+              <tr key={x.id} className="border-b border-border/60 hover:bg-muted/30 cursor-pointer" onClick={() => x.work_id && navigate(`/finance/billing`)} title="作品別の請求・分配へ">
                 <td className="py-1 px-2">{x.period || "—"}</td>
                 <td className="py-1 px-2 max-w-[180px] truncate">{x.work_code ? `[${x.work_code}] ` : ""}{x.work_title || `#${x.work_id}`}</td>
                 <td className="py-1 px-2 max-w-[140px] truncate">{x.counterparty_name || "—"}{x.region_language_label ? ` / ${x.region_language_label}` : ""}</td>
