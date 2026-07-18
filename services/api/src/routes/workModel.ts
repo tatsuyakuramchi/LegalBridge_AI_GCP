@@ -4,11 +4,6 @@
 
 import express from "express";
 import type { Express } from "express";
-import {
-  importWorkModelCsv,
-  getWorkModelSampleCsv,
-  type V3Entity,
-} from "../services/workModelImportService.ts";
 import { normalizeGenre, normalizeRole } from "../lib/materialVocab.ts";
 import { getNewDocumentNumber, pool } from "../lib/db.ts";
 import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "../lib/compatViewSql.ts";
@@ -2975,31 +2970,8 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
-  // ── CSV 一括取込 ───────────────────────────────────────────
-  //   POST /api/v3/import/:entity  body: { csv, dry_run, duplicate_mode }
-  //   GET  /api/v3/import/:entity/template.csv
-  const ENTITIES = new Set<V3Entity>(["source-ips", "works", "contracts", "work-materials"]);
-
-  app.post("/api/v3/import/:entity", ...requireWrite, express.json({ limit: "12mb" }), async (req, res) => {
-    try {
-      const entity = req.params.entity as V3Entity;
-      if (!ENTITIES.has(entity)) return res.status(400).json({ ok: false, error: "unknown entity" });
-      const b = req.body || {};
-      const csv = String(b.csv || "");
-      if (!csv.trim()) return res.status(400).json({ ok: false, error: "csv is required" });
-      const out = await importWorkModelCsv(query, entity, csv, {
-        dry_run: !!b.dry_run,
-        duplicate_mode: b.duplicate_mode,
-      });
-      res.json({ ok: true, ...out });
-    } catch (e) { fail(res, e); }
-  });
-
-  app.get("/api/v3/import/:entity/template.csv", ...requireRead, (req, res) => {
-    const entity = req.params.entity as V3Entity;
-    if (!ENTITIES.has(entity)) return res.status(400).json({ ok: false, error: "unknown entity" });
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="${entity}-template.csv"`);
-    res.send(getWorkModelSampleCsv(entity));
-  });
+  // ── CSV 一括取込 (撤去) ───────────────────────────────────────────
+  //   UIC-13 段階B / UIC-17: /api/v3/import/:entity(POST) と template.csv(GET) は
+  //   旧 WorkModelPanel(React 撤去済み)と旧 SSR workModelHtml(未ルーティングの死活)
+  //   だけが消費者で、本番 30 日 使用実績 0 のため撤去。実装は workModelImportService へ。
 }
