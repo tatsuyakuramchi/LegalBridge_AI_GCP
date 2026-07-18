@@ -59,6 +59,24 @@
 4. 契約タブ撤去（`ContractsPanel` へ集約＝UIC-15）、CSV 取込の後継確認（UIC-17）。
 5. `work-model` を `/works` へ計測付きリダイレクト（`DeprecatedRedirect`）＋ `WorkModelPanel.tsx`（1772 行）物理削除。
 
+### 段階 B 依存-2: CSV 取込（UIC-17）後継確認の結果（2026-07-18）
+
+**判定: WorkModel の CSV 取込は「別サーフェスへ機能同等の移設」が要る（完全な後継はまだ無い）。**
+
+| 取込サーフェス | 対象 | 方式 | WorkModel 取込の代替になるか |
+|---|---|---|---|
+| **WorkModel ImportModal**（撤去検討対象） | source-ips / works / contracts | `GET/POST /api/v3/import/:type`。**ドメイン対応**（コード自動採番・親をコード/作品名で紐付け・親未紐付け警告・dry-run・duplicate_mode・日英ヘッダ） | — |
+| `/data-import`（GenericImportPage） | 全テーブル＋互換ビュー（works/source_ips/contracts も DENY 対象外で到達可） | `/api/imports/tables/:name`。**生テーブル**スキーマ駆動・PK/ユニークで upsert・strict/besteffort | △ 同じ**テーブル**は入るが、**ドメイン意味（自動採番・親名リンク・dry-run 警告）は無い** |
+| `/master/bulk-import`（BulkImportPanel） | ledgers（原作）＋ work_materials（素材） | `POST /api/master/bulk-import`。文書抽出 / 表貼付 | ✗ works(own)/contracts は非対象 |
+
+**要点:**
+- `/api/v3/import/:type` の **UI 消費者は WorkModel の ImportModal のみ**（`src/` 全体で 2 箇所、いずれも WorkModelPanel）。バックエンドのルートは残存。
+- `/data-import` は同じ**テーブル**を扱えるが**低レベル（生列）**で、WorkModel 取込の**ドメイン機能（コード自動採番・親をコード/作品名で紐付け・親未紐付け警告）を持たない** → 1:1 の後継ではない。
+- したがって **WorkModel を消す前に、この取込を「捨てる／移設する」の意思決定が要る**（プロダクト判断）:
+  - (A) ドメイン対応取込は不要と判断 → ImportModal を撤去し `/data-import`（生取込）へ誘導。最小工数で段階 B へ。
+  - (B) 必要と判断 → ImportModal（source-ips/works/contracts のドメイン取込）を **Data Maintenance（UIC-17）** か Works 配下へ移設してから WorkModel を削除。中規模。
+- **利用実態の裏取り**が判断材料に有効: `DeprecatedRedirect` と同型の計測、または本番ログで `/api/v3/import/` の POST 頻度を確認（ほぼ使われていなければ (A) が妥当）。
+
 ## メモ
 
 - 現状 `work-model` ルートは live だが **MasterLayout のナビ項目は既に無い**（コメントのみ）。到達は直 URL / LegacyWorksBanner 経由。
