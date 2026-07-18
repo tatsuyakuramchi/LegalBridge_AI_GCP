@@ -14,7 +14,7 @@ admin-ui の Cloud Build では **適用されない**。
 | ID | 内容 | 状態 |
 |---|---|---|
 | **DQ-01** | ルール・Issue・完全性サマリー・entity_sources の DB 基盤 | ✅ 実装（`migrations/0136_data_quality_and_entity_sources.sql`） |
-| DQ-02 | 作品登録後の 契約・権利・素材・証憑 不足ルール（**評価エンジン**） | ⬜ |
+| **DQ-02** | 評価エンジン（predicate 実行 → Issue upsert/auto-close → サマリー再計算）＋ API | ✅ 実装（`services/worker/src/services/dataQualityService.ts` ＋ `routes/dataQuality.ts`） |
 | DQ-04 | 作品一覧・詳細へ 完全性 Badge・修正 CTA | ⬜（admin-ui） |
 | DQ-05 | 独立データ入力 UI `/data-entry` | ⬜（admin-ui） |
 | DQ-06 | Data Quality Center `/data-quality` | ⬜（admin-ui） |
@@ -41,12 +41,32 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 - FK（`data_quality_issues.rule_code → data_quality_rules`）が不正コードを拒否。
 - `UNIQUE(entity_type, entity_id, rule_code)` が重複を拒否。
 
-## 次（DQ-02）
+## DQ-02 で入ったもの（worker / release/worker）
 
-- 各 `predicate_key` の**評価ロジック**を worker に実装（作品/素材/条件を走査 → Issue upsert →
-  解消時 auto-close → `entity_completeness_summary` 再計算）。
-- 評価タイミング（§8.4）: フォーム保存後 / 独立 UI 保存後 / リンク変更後 / 状態遷移前 /
-  夜間全件再スキャン / migration・import・merge 後。評価失敗が元データ保存を壊さないよう
-  outbox で追いつく設計。
-- API（§14.4）: `GET /api/data-quality/issues`・`.../entities/:type/:id/summary`・
-  `POST /api/data-quality/rescan` 等。
+**評価エンジン** `services/worker/src/services/dataQualityService.ts`:
+- ルールごとに「違反行の id を返す SQL(failingSql)」を持つ評価器を登録。実スキーマに対応する
+  **6 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
+  `MAT-RGT-002` / `COND-FIN-001`。
+- 評価 = 失敗集合を issue へ **upsert(open)** ／ 失敗しなくなったものを **auto-close(resolved)**。
+  `status='waived'` は尊重して**再オープンしない**。
+- `entity_completeness_summary` を集計（blocker/error/warning 件数 ＋ score ＝ 100−blocker×40−error×15−warning×5、
+  ＋ 分類別 status を rule→category マッピングで算出）。runtime DDL は使わない（実行ロールの CREATE 権限に非依存）。
+- **未実装テーブル依存のルール（`work_relations`/`material_rights_sources`/`fee_subject_snapshot` 等）は
+  評価器を登録せずスキップ**（台帳には残す）。Phase D/F でテーブルが入り次第、評価器を追加する。
+
+**API** `services/worker/src/routes/dataQuality.ts`（§14.4）:
+`POST /api/data-quality/rescan`・`GET .../rules`・`GET .../issues`（絞込＋severity 順＋rule メタ join）・
+`GET .../entities/:type/:id/summary`・`PATCH .../issues/:id`（担当/期限/メモ）・`POST .../issues/:id/waive`。
+
+### 検証（ローカル Postgres 16、全 migration 適用 + 実データ seed）
+
+- エンジン: 6 ルールが正しい失敗集合を検出（例: work_type 欠落=3件、派生で親なし=1件…）、
+  サマリー score/status が期待通り、**修復→再スキャンで auto-close**、**waive→再スキャンで再オープンしない**。
+- API: rescan/rules/issues/summary/patch/waive を Express 実起動 + fetch で 200 応答・期待値を確認。
+- worker `tsc --noEmit`: エラー 0。
+
+## 次
+
+- **DQ-04**（admin-ui）: 作品一覧・詳細へ完全性 Badge・修正 CTA（`summary`/`issues` API を消費）。
+- 評価の**自動発火**（§8.4）: フォーム保存後 / リンク変更後 等での差分評価（現状は `rescan` 手動 or 定期）。
+- 残ルールの評価器（Phase D/F のテーブル導入後）。
