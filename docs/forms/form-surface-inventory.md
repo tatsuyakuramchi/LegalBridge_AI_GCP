@@ -141,10 +141,15 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
   作品↔原作マテリアルの N:N 結線（`component-lines` POST/DELETE）は Works 詳細（`/works/:id`）が同一 API で
   既に提供済みのため機能損失なし。`MasterLayout` の独立ナビ「作品×原作素材 紐づけ」は撤去（文脈内操作へ一本化）。
   `WorkMaterialLinkPanel.tsx`（349 行）を物理削除。副次効果として**条件エンドポイント参照 12 → 8**（ratchet gate も 8 へ）。
-- **CLEAN-03残（Phase D 待ち）**: `WorkModelPanel` / `LedgersPanel` は **まだ `App.tsx` で live route**
-  （`work-model` / `ledgers`）。物理削除は Phase D（UIC-13）/ UIC-14（Ledgers read-only 縮退）でルートを
-  置換した後に行う（先に消すと 404）。`MaterialEntryPanel` は UIC-03 で素材 CRUD の常設面として存続（削除対象外）。
-  `PubLicenseEntryPanel` / `WorkEntryPanel` は削除済み。
+- **UIC-14（LedgersPanel read-only 縮退・完了）**: 原作マスター（`ledgers`）を**移行照合専用の読み取り専用**へ縮退。
+  作成は既に `/works` へ誘導済みだったが、残る書込み（原作編集 PUT・原作削除・素材追加/削除）を全て無効化。
+  4 つの書込み関数を `READ_ONLY` ガードで早期 return、詳細ダイアログを `<fieldset disabled>`（UIC-06 と同型）で
+  全入力・全ボタン不活性化、行の「編集/削除」を「詳細（閲覧）」のみへ、保存ボタン撤去、read-only バナー掲示。
+  `ledgers` ルートは存続（旧 ledgers 参照・移行突合のため）。物理削除は migration（Phase F）完了後。
+- **CLEAN-03残（Phase D 待ち）**: `WorkModelPanel` は **まだ `App.tsx` で live route**（`work-model`）。
+  物理削除は UIC-13（Works へ移植）でルート置換した後（先に消すと 404）。`MaterialEntryPanel` は UIC-03 で
+  素材 CRUD の常設面として存続（削除対象外）。`PubLicenseEntryPanel` / `WorkEntryPanel` / `WorkMaterialLinkPanel`
+  は削除済み。`LedgersPanel` は UIC-14 で read-only 化（migration 完了まで参照用に存続）。
 - **CLEAN-06（計測付きリダイレクト基盤）**: `src/components/DeprecatedRedirect.tsx` を新設し、廃止ルート到達を
   `navigator.sendBeacon` で BFF（`server.ts` の `POST /api/_client-telemetry/deprecated-route`）へ通知→
   Cloud Logging に `[deprecated-route] from=… to=…` を構造化出力。旧 URL がいつまで踏まれるかを集計し、

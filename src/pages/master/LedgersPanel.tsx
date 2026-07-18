@@ -14,7 +14,7 @@
 import * as React from "react"
 import {
   Plus,
-  Edit2,
+  Eye,
   Trash2,
   BookMarked,
   Layers,
@@ -163,7 +163,20 @@ export function LedgersPanel() {
     setNewMaterial(emptyMaterial)
   }
 
+  // UIC-14(設計 v1.4 Phase E): 原作マスター(Ledgers)は「移行照合専用の読み取り専用」へ縮退。
+  //   原作・素材の作成/編集/削除は作品管理(/works, 正準 works モデル)へ一本化済み。
+  //   ここは旧 ledgers/materials を参照して移行の突合をするだけ。全書込みを無効化する
+  //   (UI は fieldset disabled で不活性化し、各書込み関数もガードで二重に止める)。
+  const READ_ONLY = true
+  const readOnlyBlocked = () => {
+    showNotification(
+      "原作マスターは移行照合専用（読み取り専用）です。作成・編集・削除は作品管理（/works）から行ってください。",
+      "error"
+    )
+  }
+
   const save = async () => {
+    if (READ_ONLY) return readOnlyBlocked()
     if (!data?.title?.trim()) {
       showNotification("title は必須です", "error")
       return
@@ -200,6 +213,7 @@ export function LedgersPanel() {
   }
 
   const remove = async (id: number, code: string) => {
+    if (READ_ONLY) return readOnlyBlocked()
     if (!window.confirm(`原作 ${code} を削除しますか? (素材も全削除されます)`)) return
     try {
       const res = await fetch(`/api/master/ledgers/${id}`, { method: "DELETE" })
@@ -216,6 +230,7 @@ export function LedgersPanel() {
 
   // 派生素材を追加 (編集モードのみ)
   const addMaterial = async () => {
+    if (READ_ONLY) return readOnlyBlocked()
     if (!data?.id) return
     if (!newMaterial.material_name?.trim()) {
       showNotification("素材名は必須です", "error")
@@ -244,6 +259,7 @@ export function LedgersPanel() {
   }
 
   const removeMaterial = async (mid: number, code: string) => {
+    if (READ_ONLY) return readOnlyBlocked()
     if (!window.confirm(`素材 ${code} を削除しますか?`)) return
     try {
       const res = await fetch(`/api/master/materials/${mid}`, { method: "DELETE" })
@@ -265,6 +281,11 @@ export function LedgersPanel() {
   return (
     <div className="space-y-4">
       <LegacyWorksBanner what="原作" />
+      {/* UIC-14: 移行照合専用 読み取り専用の明示。 */}
+      <div className="rounded-md border border-amber-300 bg-amber-50/60 px-3 py-2 text-[11px] font-mono text-amber-800">
+        この画面は<strong>移行照合専用（読み取り専用）</strong>です。原作・素材の作成／編集／削除は
+        <strong>作品管理（/works）</strong>へ一本化しました。ここでは旧 ledgers の内容を参照・突合できます。
+      </div>
       <div className="flex items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -348,22 +369,17 @@ export function LedgersPanel() {
                   </p>
                 )}
                 <div className="pt-2 border-t border-dashed border-border flex justify-end gap-1">
+                  {/* UIC-14: 編集/削除は撤去。詳細は読み取り専用ビューで開く。 */}
                   <Button
                     size="icon-sm"
                     variant="outline"
+                    title="詳細を表示（読み取り専用）"
                     onClick={() => {
                       setEditing(l)
                       setCreating(false)
                     }}
                   >
-                    <Edit2 />
-                  </Button>
-                  <Button
-                    size="icon-sm"
-                    variant="destructive"
-                    onClick={() => l.id && remove(l.id, l.ledger_code || "")}
-                  >
-                    <Trash2 />
+                    <Eye />
                   </Button>
                 </div>
               </CardContent>
@@ -376,15 +392,15 @@ export function LedgersPanel() {
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
-              {creating ? "新規原作登録" : `原作編集: ${data?.ledger_code || ""}`}
+              {`原作詳細: ${data?.ledger_code || ""}`}
             </DialogTitle>
             <DialogDescription className="text-[11px]">
-              {creating
-                ? "登録すると LO-YYYY-NNNN 形式の原作コードが自動採番され、配下に原作本体素材 (-001) が自動作成されます。"
-                : "編集モード。配下の素材リストから派生素材の追加・削除が可能。原作本体素材 (-001) は削除できません。"}
+              移行照合専用の読み取り専用ビューです。原作・素材の編集は作品管理（/works）から行ってください。
             </DialogDescription>
           </DialogHeader>
+          {/* UIC-14: 読み取り専用。fieldset disabled で全入力・全ボタンを不活性化(UIC-06 と同型)。 */}
           <DialogBody className="overflow-y-auto flex-1 min-h-0 space-y-4">
+            <fieldset disabled={READ_ONLY} className="contents m-0 border-0 p-0">
             {/* 原作 属性 */}
             <div className="grid grid-cols-2 gap-3">
               <Field label="正式名称 *" className="col-span-2">
@@ -731,13 +747,12 @@ export function LedgersPanel() {
                 )}
               </div>
             )}
+            </fieldset>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={close} disabled={saving}>
+            {/* UIC-14: 読み取り専用のため保存ボタンは撤去。閉じるのみ。 */}
+            <Button variant="outline" onClick={close}>
               閉じる
-            </Button>
-            <Button onClick={save} disabled={saving}>
-              {saving ? "保存中…" : "保存"}
             </Button>
           </DialogFooter>
         </DialogContent>
