@@ -55,9 +55,10 @@
 > **段階 A 完了（2026-07-18）**。以後 `WorkModelPanel` を開く固有理由は「契約 CRUD（→UIC-15、ContractsPanel と重複）」「CSV 取込（→UIC-17）」のみ。
 > `WorkModelPanel` 物理削除は段階 B（それら 2 Issue の解消後）。
 
-**段階 B（WorkModel 全廃・後続）— UIC-15 / UIC-17 と連動**
-4. 契約タブ撤去（`ContractsPanel` へ集約＝UIC-15）、CSV 取込の後継確認（UIC-17）。
-5. `work-model` を `/works` へ計測付きリダイレクト（`DeprecatedRedirect`）＋ `WorkModelPanel.tsx`（1772 行）物理削除。
+**段階 B（WorkModel 全廃）— ✅ 完了（2026-07-18）**
+4. 依存の解消を確認: 契約＝`ContractsPanel`（/master/contracts, 正準 CRUD）で冗長／CSV 取込＝本番 30 日 **使用実績 0**（`/api/v3/import/` ログ 0 件）で撤去可／作品・派生＝段階A で /works へ移植済み／原作IP＝閲覧冗長。
+5. ✅ `work-model` を `/works` へ計測付きリダイレクト（`DeprecatedRedirect`）＋ `WorkModelPanel.tsx`（1772 行）物理削除。
+   - 補足: `/api/v3/import/:type`（worker）は UI 消費者ゼロになった（UI 側は撤去済み）。バックエンドの当該ルート／`genericImport` とは別物で、worker のルート撤去は別 PR（worker デプロイ）で扱う。
 
 ### 段階 B 依存-2: CSV 取込（UIC-17）後継確認の結果（2026-07-18）
 

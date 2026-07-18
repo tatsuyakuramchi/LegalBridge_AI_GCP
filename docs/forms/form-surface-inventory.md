@@ -146,10 +146,12 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
   4 つの書込み関数を `READ_ONLY` ガードで早期 return、詳細ダイアログを `<fieldset disabled>`（UIC-06 と同型）で
   全入力・全ボタン不活性化、行の「編集/削除」を「詳細（閲覧）」のみへ、保存ボタン撤去、read-only バナー掲示。
   `ledgers` ルートは存続（旧 ledgers 参照・移行突合のため）。物理削除は migration（Phase F）完了後。
-- **CLEAN-03残（Phase D 待ち）**: `WorkModelPanel` は **まだ `App.tsx` で live route**（`work-model`）。
-  物理削除は UIC-13（Works へ移植）でルート置換した後（先に消すと 404）。`MaterialEntryPanel` は UIC-03 で
-  素材 CRUD の常設面として存続（削除対象外）。`PubLicenseEntryPanel` / `WorkEntryPanel` / `WorkMaterialLinkPanel`
-  は削除済み。`LedgersPanel` は UIC-14 で read-only 化（migration 完了まで参照用に存続）。
+- **UIC-13 / CLEAN-03（WorkModel・完了）**: `WorkModelPanel`（1772 行）を物理削除。作品・派生は段階A で /works へ移植、
+  契約は `ContractsPanel`（/master/contracts）で冗長、CSV 取込は本番 30 日 使用実績 0（`/api/v3/import/` ログ 0 件）で撤去、
+  原作IP は閲覧冗長。`work-model` は `/works` へ計測付きリダイレクト。詳細: `docs/forms/uic-13-workmodel-parity.md`。
+- **CLEAN-03残**: `MaterialEntryPanel` は UIC-03 で素材 CRUD の常設面として存続（削除対象外）。`LedgersPanel` は
+  UIC-14 で read-only 化（migration 完了まで参照用に存続）。`PubLicenseEntryPanel` / `WorkEntryPanel` /
+  `WorkMaterialLinkPanel` / `WorkModelPanel` は削除済み。
 - **CLEAN-06（計測付きリダイレクト基盤）**: `src/components/DeprecatedRedirect.tsx` を新設し、廃止ルート到達を
   `navigator.sendBeacon` で BFF（`server.ts` の `POST /api/_client-telemetry/deprecated-route`）へ通知→
   Cloud Logging に `[deprecated-route] from=… to=…` を構造化出力。旧 URL がいつまで踏まれるかを集計し、
