@@ -333,6 +333,8 @@ export function DocumentEditorPage() {
   //   後段の effect が searchParams からクエリを削除するため初期値を ref へ退避する。
   const initialMatterIdRef = React.useRef(searchParams.get("matter_id"))
   const initialIssueKeyRef = React.useRef(searchParams.get("issue_key"))
+  // UIC-05: 案件のみ下書きの再開(?matter_id=<id>&template=<t>&resume_draft=1)。
+  const initialResumeDraftRef = React.useRef(searchParams.get("resume_draft") === "1")
   React.useEffect(() => {
     const targetId = fromPendingId || reopenId
     if (!targetId) return
@@ -499,6 +501,7 @@ export function DocumentEditorPage() {
     const sp = searchParams
     sp.delete("matter_id")
     sp.delete("issue_key")
+    sp.delete("resume_draft")
     setSearchParams(sp, { replace: true })
     const mid = Number(midRaw)
     if (!Number.isFinite(mid) || mid <= 0) return
@@ -524,12 +527,36 @@ export function DocumentEditorPage() {
         setSelectedDirection("")
         setPreviousDocument(null)
         setIsReadOnly(false)
-        // 代表課題(またはクエリ指定の課題)を依頼原票として自動選択し、
-        // form-context(取引先・件名・条件明細)をプリフィルする。
-        const issueKey = initialIssueKeyRef.current || m.primary_issue_key || ""
-        if (issueKey) {
-          setSelectedIssue(issueKey)
-          void syncFromDatabase(issueKey, { skipRestore: true })
+        // UIC-05: 「案件のみ下書き」の再開。matter:<id> キーの下書きを直接読み込む
+        //   (Backlog 課題が無いので form-context プリフィルは行わない)。
+        const resumeDraft = initialResumeDraftRef.current
+        const tmplForDraft = initialTemplateParamRef.current || ""
+        if (resumeDraft && tmplForDraft) {
+          try {
+            const dj: any = await documentClient.getDraftOrNull(`matter:${mid}`, tmplForDraft)
+            if (!cancelled && dj?.draft?.form_data && typeof dj.draft.form_data === "object") {
+              setSelectedTemplate(tmplForDraft)
+              setFormData((prev: any) => ({
+                ...(prev || {}),
+                ...dj.draft.form_data,
+                ...(dj.draft.document_number ? { __draft_doc_number: dj.draft.document_number } : {}),
+              }))
+              const when = dj.draft.updated_at
+                ? new Date(dj.draft.updated_at).toLocaleString("ja-JP")
+                : ""
+              showNotification(`📄 案件のみの一時保存を復元しました${when ? ` (${when})` : ""}`, "success")
+            }
+          } catch (e) {
+            console.warn("[matter-only draft resume] failed:", e)
+          }
+        } else {
+          // 代表課題(またはクエリ指定の課題)を依頼原票として自動選択し、
+          // form-context(取引先・件名・条件明細)をプリフィルする。
+          const issueKey = initialIssueKeyRef.current || m.primary_issue_key || ""
+          if (issueKey) {
+            setSelectedIssue(issueKey)
+            void syncFromDatabase(issueKey, { skipRestore: true })
+          }
         }
         // LB-F06: Matter 起点はコンテキストが揃っているので選択グリッドは畳んで
         //   読み取り表示にする(必要なら「変更」で開く)。
@@ -604,7 +631,12 @@ export function DocumentEditorPage() {
    */
   const saveDraftToServer = React.useCallback(
     async (silent = false, assignNumber = false): Promise<boolean> => {
-      if (!selectedIssue || !selectedTemplate) return false
+      // UIC-05(設計 v1.4 Phase B): Backlog 課題が無い「案件のみ」でも下書き保存できるように、
+      //   保存キーを selectedIssue 優先・無ければ matter:<id> の合成キーにする。
+      //   ※ このキーは document_drafts の保存キー専用。生成(generate)は従来どおり selectedIssue
+      //     (空なら MANUAL-)を使うため、合成キーが issue として漏れることはない。
+      const draftKey = selectedIssue || (matterContext?.id ? `matter:${matterContext.id}` : "")
+      if (!draftKey || !selectedTemplate) return false
       // 中身が空 (or 制御フラグのみ) なら保存しない
       const hasContent = Object.keys(formData || {}).some(
         (k) => !k.startsWith("__") && (formData as any)[k] != null && (formData as any)[k] !== ""
@@ -612,7 +644,7 @@ export function DocumentEditorPage() {
       if (!hasContent) return false
       try {
         const data: any = await documentClient.saveDraft({
-          issue_key: selectedIssue,
+          issue_key: draftKey,
           template_type: selectedTemplate,
           form_data: formData,
           // 採番は明示的な「保存」操作のときだけ行う(暗黙保存では採番しない)。
@@ -628,8 +660,9 @@ export function DocumentEditorPage() {
           }))
         }
         if (!silent) {
+          const label = selectedIssue || `案件 ${matterContext?.matter_code || `#${matterContext?.id}`}`
           showNotification(
-            `📄 Draft saved (${selectedIssue})${assignedNo ? ` — ${assignedNo}` : ""}`,
+            `📄 Draft saved (${label})${assignedNo ? ` — ${assignedNo}` : ""}`,
             "success"
           )
         }
@@ -646,7 +679,7 @@ export function DocumentEditorPage() {
         return false
       }
     },
-    [selectedIssue, selectedTemplate, formData, showNotification]
+    [selectedIssue, selectedTemplate, formData, showNotification, matterContext]
   )
 
   /**
@@ -1161,14 +1194,16 @@ export function DocumentEditorPage() {
   //   キーは issue + template で分離(別テンプレのデータ混入を防止)。
   //   制御フラグ (__*) のみの空フォームは保存しない (saveDraftToServer と同条件)。
   React.useEffect(() => {
-    if (!selectedIssue || !selectedTemplate) return
+    // UIC-05: 案件のみ(課題なし)でも matter:<id> をキーにローカルバックアップする。
+    const lsKey = selectedIssue || (matterContext?.id ? `matter:${matterContext.id}` : "")
+    if (!lsKey || !selectedTemplate) return
     const hasContent = Object.keys(formData || {}).some(
       (k) => !k.startsWith("__") && (formData as any)[k] != null && (formData as any)[k] !== ""
     )
     if (!hasContent) return
     const to = setTimeout(() => {
       localStorage.setItem(
-        `draft_${selectedIssue}__${selectedTemplate}`,
+        `draft_${lsKey}__${selectedTemplate}`,
         JSON.stringify(formData)
       )
       setLastAutoSave(
@@ -1176,7 +1211,7 @@ export function DocumentEditorPage() {
       )
     }, 2000)
     return () => clearTimeout(to)
-  }, [formData, selectedIssue, selectedTemplate])
+  }, [formData, selectedIssue, selectedTemplate, matterContext])
 
   // Phase 23.2: プレビューを別タブで開く (Split preview は廃止)。
   //   - クリック時点の最新 formData で /api/documents/preview を呼ぶ
@@ -1611,8 +1646,9 @@ export function DocumentEditorPage() {
   // 明示的な「保存」ボタン。下書きをサーバ保存し、初回はここで採番する。
   //   暗黙保存(編集モード切替・自動保存)では採番しないため、番号は保存ボタンで確定。
   const handleExplicitSave = React.useCallback(async () => {
-    if (!selectedIssue || !selectedTemplate) {
-      showNotification("課題とテンプレートを選択してください。", "error")
+    // UIC-05: 課題が無くても案件(matterContext)があれば「案件のみ下書き」として保存できる。
+    if ((!selectedIssue && !matterContext?.id) || !selectedTemplate) {
+      showNotification("課題または案件と、テンプレートを選択してください。", "error")
       return
     }
     setIsSavingDraft(true)
@@ -1621,7 +1657,7 @@ export function DocumentEditorPage() {
     } finally {
       setIsSavingDraft(false)
     }
-  }, [selectedIssue, selectedTemplate, saveDraftToServer, showNotification])
+  }, [selectedIssue, selectedTemplate, matterContext, saveDraftToServer, showNotification])
 
   // 過去文書/下書きを番号で呼び出してフォームに読み込む。
   //   - draft : form_data + 採番済み番号(__draft_doc_number) を引き継いで編集を再開。
@@ -2802,7 +2838,7 @@ export function DocumentEditorPage() {
                   <Button
                     variant="outline"
                     onClick={handleExplicitSave}
-                    disabled={isSavingDraft || !selectedIssue || !selectedTemplate}
+                    disabled={isSavingDraft || (!selectedIssue && !matterContext?.id) || !selectedTemplate}
                     title="下書きを保存します。初めての保存時にこのタイミングで採番されます。"
                   >
                     {isSavingDraft ? <Loader2 className="animate-spin" /> : <History />}
