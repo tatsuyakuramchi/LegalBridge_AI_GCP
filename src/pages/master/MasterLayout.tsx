@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils"
 const tabs = [
   { to: "/master/contracts", label: "Contracts", icon: FileText },
   { to: "/master/vendors", label: "Vendors", icon: Building2 },
-  // 作品/原作 登録(works own / source_ips licensed_in)
-  { to: "/master/work-entry", label: "Works (作品/原作)", icon: BookMarked },
+  // UIC-10(設計 v1.4 Phase D): 作品/原作 登録は Works 統一一覧(/works)へ統合。
+  { to: "/works", label: "Works (作品/原作)", icon: BookMarked },
   // 原作マテリアル登録(work_materials + 固定3種 金銭条件 + 文書欄)
   { to: "/master/materials", label: "Materials (原作素材)", icon: Boxes },
   // 原作＋原作マテリアル＋文書を一括で DB 化(upsert)。①既存文書から抽出 ②表(CSV/TSV)貼付。

@@ -133,11 +133,20 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
   到達不能を確認したうえで撤去（1341 行 → 805 行、-536 行）。孤立した import も除去。
   `DocumentForm` は「ctx を組み立て、移行済みの各 hook/effect を回し、`SchemaDocumentForm` へ委譲する器」に縮退。
   未登録テンプレが将来現れても `autoSectionsFromMetadata` で汎用描画する安全弁を残置（白画面防止）。
-- **CLEAN-03残（Phase D 待ち）**: `WorkEntryPanel` / `WorkModelPanel` / `LedgersPanel` / `WorkMaterialLinkPanel` は
-  **まだ `App.tsx` で live route**（`work-entry` / `work-model` / `ledgers` / `work-material-link`）。物理削除は
-  Phase D（UIC-10/11/13）でルートをリダイレクトへ置換した後に行う（先に消すと 404）。
+- **UIC-10 / CLEAN-03（WorkEntry・完了）**: `work-entry` ルートを Works 統一一覧（`/works`）へ**計測付き互換
+  リダイレクト**（`DeprecatedRedirect`）。作成は `WorksListPanel` のダイアログ（原作/自社作品）、編集は
+  3カードエディタ（`/works/:id`）が担うため機能損失なし。ナビ（`MasterLayout` / `DashboardPage`）も `/works` へ
+  repoint。`WorkEntryPanel.tsx`（445 行）は参照ゼロを確認して**物理削除**。
+- **CLEAN-03残（Phase D 待ち）**: `WorkModelPanel` / `LedgersPanel` / `WorkMaterialLinkPanel` は
+  **まだ `App.tsx` で live route**（`work-model` / `ledgers` / `work-material-link`）。物理削除は
+  Phase D（UIC-11/13）でルートをリダイレクトへ置換した後に行う（先に消すと 404）。
   `MaterialEntryPanel` は UIC-03 で素材 CRUD の常設面として存続（削除対象外）。`PubLicenseEntryPanel` は
   CLEAN-03 で削除済み。
+- **CLEAN-06（計測付きリダイレクト基盤）**: `src/components/DeprecatedRedirect.tsx` を新設し、廃止ルート到達を
+  `navigator.sendBeacon` で BFF（`server.ts` の `POST /api/_client-telemetry/deprecated-route`）へ通知→
+  Cloud Logging に `[deprecated-route] from=… to=…` を構造化出力。旧 URL がいつまで踏まれるかを集計し、
+  リダイレクト自体の撤去時期（CLEAN-09）の判断材料にする。適用: `work-entry` / `work-graph` / `pub-license` /
+  `conditions` / `pending-inspections` の 5 本（`index`→contracts と catch-all は既定遷移のため対象外）。
 
 - **FRM-03 ラチェット**: `scripts/audit/form_primitive_refs.sh`（Cloud Build `gate-form-primitives`）。
   文書フォーム面（`src/components/document/`、共通プリミティブ本体 `FormField.tsx`/`DocFormKit.tsx` 除外）の

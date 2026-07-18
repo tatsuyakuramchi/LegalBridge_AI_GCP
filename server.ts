@@ -122,6 +122,20 @@ async function startServer() {
     });
   });
 
+  // CLEAN-06: deprecated route アクセス計測。クライアントの DeprecatedRedirect が
+  //   旧 URL 到達時に sendBeacon で叩く。DB は持たず、構造化ログを stdout に出して
+  //   Cloud Logging で集計する(旧 URL がいつまで踏まれ続けるか=リダイレクト撤去の判断材料)。
+  //   注: この定義は下の app.all("/api/*") プロキシより前に置くこと(でないと上流へ転送される)。
+  app.post("/api/_client-telemetry/deprecated-route", (req, res) => {
+    const from = String(req.query.from || "").slice(0, 256);
+    const to = String(req.query.to || "").slice(0, 256);
+    console.log(
+      `[deprecated-route] ${new Date().toISOString()} from=${from} to=${to} ` +
+        `referer=${String(req.headers["referer"] || "").slice(0, 256)}`
+    );
+    res.status(204).end();
+  });
+
   // ── Phase 6: 同一オリジン BFF プロキシ ────────────────────────────
   // ブラウザは相対 /api/* を叩く(バンドルは VITE_API_SAME_ORIGIN=1 で
   // monkey-patch 休眠)。ここで src/lib/apiRoutingRules.ts の規則により
