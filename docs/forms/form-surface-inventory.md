@@ -78,7 +78,7 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 | form_surface_id | ルート | パネル/ページ | 基盤 | 方針 |
 |---|---|---|---|---|
 | WRK-list | `/works` | WorksListPanel | page-specific | 作品管理の正準入口。完全性 Badge 追加（DQ-04）。共通シェルへ（FRM-06） |
-| WRK-graph | `/works/:id` | WorkGraphPanel | page-specific | **V3LicenseMatrix 直接保存を撤去（UIC-02 / Phase C）。タブ分割（UIC-09）** |
+| WRK-graph | `/works/:id` | WorkGraphPanel | page-specific | V3LicenseMatrix 直接保存を撤去済（UIC-02 / Phase C 第1弾）→文書起票CTA。残: タブ分割（UIC-09） |
 | DOC-editor | `/documents/new` | DocumentEditorPage | Schema+DocumentForm | sticky アクションバー実装（UIC-04）。true readonly（UIC-06） |
 | MAT-list | `/matters` | MattersListPage | page-specific | nested interactive 解消（UIC-07）。カード対応（UIC-21） |
 | MAT-detail | `/matters/:matterId` | MatterDetailPage | page-specific | タブ化（UIC-20）。Matterのみ下書き（UIC-05） |

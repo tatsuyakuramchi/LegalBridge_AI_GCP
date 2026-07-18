@@ -27,7 +27,6 @@ import {
 } from "@/src/components/document/FinancialConditionTable"
 import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
 import { WorkPicker, toWorkPickerItem } from "@/src/components/work/WorkPicker"
-import { V3LicenseMatrix } from "@/src/components/document/V3LicenseMatrix"
 
 // 条件明細(condition_lines) → FinancialCondition(利用許諾明細入力の行)へ逆マップ。
 //   __clid に condition_line.id を退避し保存時の upsert キーにする(FinancialCondition には無い項目)。
@@ -461,55 +460,19 @@ export function WorkGraphPanel() {
     setMatEditId(null)
   }, [workId, loadGraph])
 
-  // 作品管理(原作ビュー)の v3 ライセンスマトリクス。原作の素材を構成要素LCとして扱い、
-  //   取引形態×LC(加算型対応)で条件を編集→MLCマスター器へ保存。マテリアル別の旧編集を置換。
-  const [v3Conds, setV3Conds] = React.useState<any[]>([])
-  const [v3Lcs, setV3Lcs] = React.useState<any[]>([])
-  const [v3Saving, setV3Saving] = React.useState(false)
-  const [v3Msg, setV3Msg] = React.useState<string | null>(null)
-  // 原作の素材 → LC を seed(編集済み rates は material_code で突合し保持)。
-  React.useEffect(() => {
-    const w = graph?.work
-    const mats: any[] = graph?.materials || []
-    if (!w || w.kind !== "licensed_in") return
-    setV3Lcs((prev) => {
-      const byCode = new Map((prev || []).map((l: any) => [l.material_code, l]))
-      return mats
-        .filter((m: any) => m.material_code)
-        .map((m: any) => ({
-          material_code: m.material_code,
-          name: m.material_name,
-          holder: m.rights_holder || "",
-          rates: (byCode.get(m.material_code) as any)?.rates || {},
-        }))
-    })
-  }, [graph])
-  const saveV3Matrix = async () => {
-    if (!workId) return
-    if (!Array.isArray(v3Conds) || v3Conds.length === 0) {
-      setV3Msg("取引形態を1つ以上追加してください")
-      return
-    }
-    setV3Saving(true)
-    setV3Msg(null)
-    try {
-      const r = await fetch(
-        `/api/works/${encodeURIComponent(workId)}/license-matrix`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ conds: v3Conds, lcs: v3Lcs }),
-        }
-      )
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const j = await r.json()
-      setV3Msg(`保存しました（条件明細 ${j?.linked ?? 0} 件）`)
-      await loadGraph(workId)
-    } catch (e: any) {
-      setV3Msg(`保存に失敗: ${String(e?.message || e)}`)
-    } finally {
-      setV3Saving(false)
-    }
+  // 設計 v1.4 Phase C(UIC-02): WorkGraph の V3LicenseMatrix 直接保存(旧 license-matrix API)を
+  //   撤去。原作(licensed_in)の利用許諾条件は「個別利用許諾条件書」文書フォームで起票する
+  //   (条件明細の唯一の書込み口＝Document Command)。原作(ledger_ref_id)= この source-ip の id を
+  //   引き継いで、文書フォームへ遷移する。既存の issueNewConditionDoc と同じ document-session 経路。
+  const createLicenseDocForSource = () => {
+    setSelectedIssue("")
+    setDocFormData({
+      サブライセンシー一覧: [],
+      // 原作(Ledger)を事前選択。licensed_in の workId は source-ip id で、individual_license_terms の
+      //   ledger_ref_id と同じ id 空間(GET /api/v3/source-ips)。
+      ...(workId ? { ledger_ref_id: workId } : {}),
+    } as any)
+    navigate(`/documents/new?template=individual_license_terms`)
   }
 
   // 増分⑥(§3.4): 原作(licensed_in)を開いたら「利用している自社作品」を逆引き。
@@ -1502,36 +1465,25 @@ export function WorkGraphPanel() {
                 </div>
               )}
 
-              {/* 原作単位の v3 ライセンスマトリクス(取引形態 × 構成要素LC・加算型対応)。
-                  原作の素材を構成要素LCとして料率を設定し、MLCマスター器へ保存する。
-                  マテリアル別の旧条件編集(FinancialConditionTable)を置換。 */}
+              {/* 設計 v1.4 Phase C(UIC-02): 原作の利用許諾条件は「個別利用許諾条件書」文書フォームで起票。
+                  旧 v3 ライセンスマトリクス(直接保存する license-matrix API)は撤去し、
+                  条件明細の唯一の書込み口＝Document Command へ一本化した。既存条件は下の素材一覧で閲覧。 */}
               {isSource && materials.length > 0 && (
                 <div className="space-y-1.5 rounded-md border border-indigo-200 bg-indigo-50/30 px-2.5 py-2">
                   <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-indigo-700">
-                    利用許諾条件（v3 マトリクス：取引形態 × 構成要素LC｜加算型対応）
+                    利用許諾条件（原作マスター）
                   </div>
                   <p className="text-[9px] text-muted-foreground/70">
-                    この原作の素材を構成要素LCとして、取引形態ごとに料率を設定します。加算型ONで適用料率＝各LC料率の合算。保存すると原作マスター(MLC)の条件明細へ登録され、利用許諾条件書フォームのコピー候補にもなります。
-                    <br />
-                    <span className="text-amber-700">⚠ このマトリクスは「新規登録（上書き）」用です。既にMLC条件がある原作で保存すると、ここに無い条件は消える可能性があります。既存条件の修正・削除は下の各マテリアルの「編集／削除」ボタンで行ってください。</span>
+                    この原作の素材ごとの取引形態・料率は<strong>「個別利用許諾条件書」文書フォーム</strong>で登録・修正します（データの唯一の入力口＝文書作成）。
+                    登録済みの条件は下の「素材（クリックで条件明細を確認）」で閲覧できます。
                   </p>
-                  <V3LicenseMatrix
-                    conds={v3Conds}
-                    lcs={v3Lcs}
-                    onChangeConds={setV3Conds}
-                    onChangeLcs={setV3Lcs}
-                  />
-                  {v3Msg && (
-                    <p className="text-[10px] font-mono text-indigo-700">{v3Msg}</p>
-                  )}
                   <div className="flex justify-end">
                     <button
                       type="button"
-                      onClick={() => void saveV3Matrix()}
-                      disabled={v3Saving}
-                      className="text-[10px] font-mono px-2 py-1 rounded border border-indigo-500 bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100 disabled:opacity-50"
+                      onClick={createLicenseDocForSource}
+                      className="text-[10px] font-mono px-2.5 py-1 rounded border border-indigo-500 bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100"
                     >
-                      {v3Saving ? "保存中…" : "保存（条件明細へ）"}
+                      文書フォームで条件を登録（個別利用許諾条件書）
                     </button>
                   </div>
                 </div>
@@ -1568,13 +1520,13 @@ export function WorkGraphPanel() {
                       )}
                       {isSource && matCondOpen === m.id && (
                         <div className="border-t border-border/60 p-2 space-y-2 bg-muted/20">
-                          {/* 条件の追加・編集は原作単位の v3 マトリクスに一本化(置換)。
+                          {/* 条件の追加・編集は「個別利用許諾条件書」文書フォームに一本化。
                               ここは既存条件の確認＋文書由来条件の紐づけ(下の details)のみ。 */}
                           <div className="space-y-1">
                             <p className="text-[10px] font-mono text-muted-foreground">
                               条件の追加・編集は上の
-                              <strong className="text-indigo-700">「利用許諾条件（v3 マトリクス）」</strong>
-                              で行います（取引形態 × 構成要素LC・加算型対応）。この素材はそのLCとして並びます。
+                              <strong className="text-indigo-700">「文書フォームで条件を登録（個別利用許諾条件書）」</strong>
+                              から行います（データの唯一の入力口＝文書作成）。この素材はその原作の構成要素として扱われます。
                             </p>
                             <div className="flex items-center justify-end">
                               <button

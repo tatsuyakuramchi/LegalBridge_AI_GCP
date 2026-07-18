@@ -10,12 +10,14 @@
 - 計測: `scripts/audit/condition_write_refs.sh`（`--detail` で該当行、`--gate N` で CI ゲート）
 - CI: `cloudbuild.yaml` の `gate-condition-endpoints`（admin-ui ビルドの先頭ステップ）
 - 目標: Phase C で **値書込み系を 0 件**、Phase D で source-ips→works 統合に伴い残面ごと撤去
+- 進捗: **18 → 17**（Phase C 第1弾で WorkGraphPanel の V3LicenseMatrix 直接保存 `license-matrix` を撤去し、
+  「個別利用許諾条件書」文書フォーム起票 CTA へ置換）
 
 ## 分類
 
 | 種別 | エンドポイント | 判定 | 撤去フェーズ |
 |---|---|---|---|
-| 値書込み | `POST /api/works/:id/license-matrix` | V3LicenseMatrix 直接保存（条件値の一括書込み） | **Phase C（UIC-02）** |
+| ~~値書込み~~ | ~~`POST /api/works/:id/license-matrix`~~ | ~~V3LicenseMatrix 直接保存~~ → **撤去済み（Phase C 第1弾）**。文書フォーム起票 CTA へ置換 | ✅ 完了（UIC-02） |
 | 値書込み | `POST/PUT/DELETE /api/v3/works/:id/component-lines` | コンポーネント明細の作成・置換・解除 | **Phase C / D** |
 | 値書込み | `PUT /api/v3/source-ips/:id/materials/:mid/conditions` | 素材条件の全置換 | **Phase C（UIC-03）** |
 | 値書込み | `POST /api/v3/source-ips/:id/materials/:mid/condition-lines` | 素材条件明細の作成 | **Phase C（UIC-03）** |
@@ -25,11 +27,11 @@
 > 注: `component-lines` は `WorkMaterialLinkPanel` では純粋なリンク／解除（`{ condition_line_id, source_material_id }`）、
 > `WorkGraphPanel` では明細作成にも使われる。前者は Phase D で Works マテリアルタブへ統合、後者は Phase C で文書起票へ置換する。
 
-## 参照箇所（Phase A ベースライン: 18）
+## 参照箇所（現状: 17。Phase A ベースライン 18 → Phase C 第1弾で 17）
 
 | ファイル | 参照数 | 主な用途 |
 |---|---|---|
-| `src/pages/master/WorkGraphPanel.tsx` | 7 | V3LicenseMatrix 保存・component-lines・素材条件 |
+| `src/pages/master/WorkGraphPanel.tsx` | 6 | ~~V3LicenseMatrix 保存~~(撤去済)・component-lines・素材条件 |
 | `src/pages/master/WorkMaterialLinkPanel.tsx` | 4 | component-lines リンク／解除（doc-comment 含む） |
 | `src/pages/master/MaterialEntryPanel.tsx` | 4 | 素材条件の作成・全置換・link-conditions |
 | `src/pages/master/UnlinkedConditionsPanel.tsx` | 2 | link-conditions（未リンク条件の紐付け） |
