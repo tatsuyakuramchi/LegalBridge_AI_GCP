@@ -21,8 +21,10 @@ LegalBridge は 3 つのサービスで構成されます。
 | **worker** | `services/worker`（Cloud Run） | **書き込み・ジョブ・文書生成**の中枢。PDF生成、採番、CloudSign送信、メール送信、検収/条件明細、Excel出力、Backlog webhook、Slack通知など。 |
 | **search-api** | `services/api`（Cloud Run） | **検索・閲覧ポータル**（IAP配下）。取引先/契約/条件明細の横断検索、ひな型プレビュー。一部マスター書込も担当。 |
 
-### admin-ui とバックエンドの通信（`src/lib/apiRouter.ts`）
-admin-ui は `fetch` を内部でフックし、**HTTPメソッドとパス**でルーティングします。
+### admin-ui とバックエンドの通信（同一オリジン BFF プロキシ / `src/lib/apiRoutingRules.ts`）
+admin-ui は **同一オリジンの BFF プロキシ**（`server.ts`）が `/api/*` を受け、
+`apiRoutingRules.ts` の `resolveApiTarget` により **HTTPメソッドとパス**でルーティングします
+（Phase 6）。旧 `src/lib/apiRouter.ts` の `fetch` フックは**休眠（レガシーフォールバック）**。
 
 - **GET（参照）** → 既定は search-api。ただし templates / numbering / cloudsign / email /
   documents / condition-lines / drafts 等の worker 専用 read は worker へ。

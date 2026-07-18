@@ -19,10 +19,14 @@
 | **legalbridge-search-api** | 読み取り系API＋検索ポータル（viewer向け）＋マスタ書込の正規実装 | `release/api` |
 | **legalbridge-document-worker** | 文書生成（PDF）・ジョブ・一括取込・書込み系 | `release/worker` |
 
-- **admin-ui（React）** は `apiRouter`（`src/lib/apiRouter.ts`）が `window.fetch` を
-  インターセプトし、`/api/*` を search-api（READ）／worker（WRITE）に振り分けます。
+- **admin-ui（React）** は **同一オリジンの BFF プロキシ**（`server.ts`）が `/api/*` を
+  受け、`src/lib/apiRoutingRules.ts` の `resolveApiTarget` により search-api（READ）／
+  worker（WRITE）へ振り分けます（Phase 6）。
   - 既定：GET → search-api、POST/PUT/PATCH/DELETE → worker。
-  - 例外（マスタ書込・条件明細・請求権・作品モデル等）は search-api へ明示ルート。
+  - 例外（マスタ書込・条件明細・請求権・作品モデル・`/api/v3/*` 等）は search-api へ明示ルート。
+  - 旧 `apiRouter`（`src/lib/apiRouter.ts`）の `window.fetch` monkey-patch は**休眠（レガシー
+    フォールバック）**。新規コードはドメインAPIクライアント（`matterClient`/`documentClient`/
+    `conditionClient` 等）→ BFF 経由を使う。
 - 認証はGCPの **IAP**（Google SSO）。アプリ側は `staff.app_role` で `admin`/`viewer` を判定。
   - **admin-ui = 管理者(admin)専用エディタ**、**viewer = search-api の検索ポータル**、という役割分担。
   - `ADMIN_UI_ENFORCE_ROLE=true`（既定OFF）で admin-ui を admin 限定ゲート化できる。
@@ -37,6 +41,21 @@
 ---
 
 ## 2. データモデル（中核テーブル）
+
+> **⚠ 現況（2026-07 更新・重要）— 条件データの SSOT 刷新**
+> 以下 §2.1〜2.3 の一部（ER 図・表・flow_direction 説明）は移行前の呼称が残っています。現行の真実源は次のとおり：
+> - **契約/伝票の実体は `documents` に一本化**、**条件明細は `condition_lines` に一本化**（migration 0101）。
+> - 旧 `contract_capabilities` / `capability_line_items` / `capability_financial_conditions` /
+>   `capability_expenses` / `capability_other_fees` は **`documents`/`condition_lines` 上の読取り専用互換VIEW**。
+>   `condition_lines` は `legacy_role`（cfc/cli/expense/other_fee）で種別を分け、`line_no` にオフセット
+>   （cli:+1000 / fee:+2000 / exp:+3000）が乗ります。
+> - **Phase 7 で互換VIEW への参照は読取り0・書込み0**（CI ゲート `compat_view_refs` で固定）。VIEW 本体は
+>   **G4（migration 0134）で DROP 予定**。以降は `documents`/`condition_lines` を直接参照します。
+> - **サブライセンス受領**は旧 `sublicense_deals` ではなく、`condition_lines`（`condition_kind='sublicense_out'`）
+>   ＋ `condition_receipts` で表現します。
+> - 詳細は `docs/condition_lines_unification_design.md` を参照。
+> - **業務の起点は「案件（Matter）」**：課題受信 → Matter に紐づく文書作成 → 締結/送信 → 検収/計算 →
+>   会計出力、という Matter 中心の動線です（運用は `docs/operation-manual-adminui-worker.md`）。
 
 全65テーブルのうち、業務で扱う中核は以下。ドメイン別に整理します。
 
