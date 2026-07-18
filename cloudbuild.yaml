@@ -42,6 +42,20 @@ steps:
       - --gate
       - "12"
 
+  # (FRM-03) 文書フォーム面の「独自Field・生input・旧フォームCSS」ラチェット。
+  #   入力は FormField / DocFormKit の共通プリミティブへ収斂させる方針。生の
+  #   <input>/<select>/<textarea>(共通プリミティブ本体は除外)と旧フォーム CSS
+  #   (retro-input 等)を「増やさない」。現状ベースライン: raw=28 / css=0。
+  #   raw 28 は V3LicenseMatrix 等の既存独自コンポーネント(Phase D 撤去まで凍結)。
+  - id: gate-form-primitives
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - scripts/audit/form_primitive_refs.sh
+      - --gate
+      - "28"
+      - "0"
+
   # (Phase 6) 旧 step 0「inject-portal-secret」は撤去した。
   #   共有シークレット(LB_PORTAL_SECRET)を VITE_API_PORTAL_SECRET として
   #   JS bundle に焼き込む方式を廃止し、server.ts の同一オリジン BFF プロキシが

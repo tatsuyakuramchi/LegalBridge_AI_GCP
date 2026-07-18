@@ -49,6 +49,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { DocumentForm } from "@/src/components/document/DocumentForm"
+import {
+  validateDocForm,
+  summarizeIssues,
+  type DocValidationIssue,
+} from "@/src/components/document/formValidation"
 import { RingiSelector } from "@/src/components/document/RingiSelector"
 import { resolveDirectionMode } from "@/src/components/document/templateDirectionMode"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
@@ -1281,6 +1286,16 @@ export function DocumentEditorPage() {
   // Phase 23.2: 旧 Live preview (formData 変更で自動再描画) は撤去。
   //   別タブで開く方式なのでクリック都度の発火だけ。
 
+  // UIC-08: 条件付き必須の除外(検証基盤 validateDocForm と生成前チェックで共用)。
+  //   service_master で乙が個人事業主のとき VENDOR_REP は不要(テンプレも非表示)。
+  const skipRequiredField = React.useCallback(
+    (id: string, fd: Record<string, any>) =>
+      selectedTemplate === "service_master" &&
+      id === "VENDOR_REP" &&
+      fd?.VENDOR_IS_CORPORATION === "個人",
+    [selectedTemplate]
+  )
+
   // opts.dbOnly=true: 文書(PDF)を発行せず DB 登録のみ行う。
   //   マスター登録と同じ「登録だけ」を通常フォームから実行するモード。
   //   worker 側は skipPdf フラグで PDF 生成 / Drive アップロードをスキップし、
@@ -1305,41 +1320,22 @@ export function DocumentEditorPage() {
       )
       return
     }
-    // Phase 16: クライアント側プレ検証 — templates_config.json で required=true
-    // のフィールドが未入力なら送信を止めて明確に伝える。
+    // UIC-08 (設計 v1.4 Phase B): クライアント側プレ検証を単一の検証基盤へ集約。
+    //   従来の「required=true が空か」だけの判定に加え、number/date の型と
+    //   動的明細(行内必須)も同じモジュールで見る。判定ロジックは
+    //   missingRequiredIds メモと共通(validateDocForm / skipRequiredField)。
     //
     // Phase 22.5: service_master で乙が個人事業主 (VENDOR_IS_CORPORATION = "個人")
     // のときは VENDOR_REP は不要 (テンプレも非表示) なので除外する。
-    // 将来同種の条件付き必須が増えるなら meta.requiredIf 等の汎用化を検討。
     const meta = templateMetadata[selectedTemplate]
     if (meta?.vars) {
-      const missing: { id: string; label: string }[] = []
-      Object.entries(meta.vars).forEach(([id, m]: [string, any]) => {
-        if (m?.required !== true) return
-        if (
-          selectedTemplate === "service_master" &&
-          id === "VENDOR_REP" &&
-          formData.VENDOR_IS_CORPORATION === "個人"
-        ) {
-          return
-        }
-        const v = formData[id]
-        const isEmpty =
-          v === undefined ||
-          v === null ||
-          (typeof v === "string" && v.trim() === "")
-        if (isEmpty) {
-          missing.push({ id, label: m.label || id })
-        }
+      const issues: DocValidationIssue[] = validateDocForm({
+        metadata: meta,
+        formData,
+        skipField: skipRequiredField,
       })
-      if (missing.length > 0) {
-        const preview = missing.slice(0, 5).map((m) => m.label).join("、")
-        const tail =
-          missing.length > 5 ? ` 他 ${missing.length - 5} 件` : ""
-        showNotification(
-          `必須項目が未入力です: ${preview}${tail}。最初の項目までスクロールします。`,
-          "error"
-        )
+      if (issues.length > 0) {
+        showNotification(summarizeIssues(issues), "error")
         // Phase 23 UX-J: 最初の未入力必須フィールドへ自動スクロール + フォーカス
         // Phase 23.0.4:
         //   - 祖先の <details> が閉じていると要素が display:none で到達不可なので
@@ -1349,7 +1345,7 @@ export function DocumentEditorPage() {
         //     (Wave1 で readonly select が増えたため)。
         //   - 前回 setTimeout の ring 解除が新規 wrap を巻き込まないよう
         //     ref で id を保持し、新規スクロール時にクリア。
-        const firstId = missing[0].id
+        const firstId = issues[0].id
         if (typeof window !== "undefined") {
           window.requestAnimationFrame(() => {
             const wrap = document.querySelector(
@@ -1774,25 +1770,19 @@ export function DocumentEditorPage() {
 
   // LB-F10 (§5.5.11) の一部: 固定文言(Draft valid / Live syncing)をやめ、
   //   実際の必須項目充足をフッター・右パネル・セクションナビに表示する。
-  //   判定は handleGenerate のプレ検証と同一ロジック
-  //   (required=true + service_master の個人事業主例外)。
+  //   判定は handleGenerate のプレ検証と同一ロジック(validateDocForm)。
+  //   ここは「必須未入力」の意味を保つため required kind のみ拾う
+  //   (型/明細エラーは生成時にブロックするがナビの件数には混ぜない)。
   const missingRequiredIds = React.useMemo(() => {
     const meta = templateMetadata[selectedTemplate]
     if (!meta?.vars) return [] as string[]
-    const ids: string[] = []
-    for (const [id, mv] of Object.entries<any>(meta.vars)) {
-      if (mv?.required !== true) continue
-      if (
-        selectedTemplate === "service_master" &&
-        id === "VENDOR_REP" &&
-        (formData as any)?.VENDOR_IS_CORPORATION === "個人"
-      )
-        continue
-      const v = (formData as any)?.[id]
-      if (v === undefined || v === null || (typeof v === "string" && v.trim() === ""))
-        ids.push(id)
-    }
-    return ids
+    return validateDocForm({
+      metadata: meta,
+      formData: formData as any,
+      skipField: skipRequiredField,
+    })
+      .filter((iss) => iss.kind === "required")
+      .map((iss) => iss.id)
   }, [selectedTemplate, formData, templateMetadata])
   const missingRequiredCount = missingRequiredIds.length
 

@@ -117,3 +117,17 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 - その他編集ルート: 10
 - 共通シェル移行済み: **0 / 全 surface**（R1 未着手）
 - レガシー条件エンドポイント参照: **18**（`docs/forms/legacy-condition-endpoints.md`）
+
+## 検証基盤・CI ラチェット（Phase B: UIC-08 / FRM-03）
+
+- **UIC-08 検証基盤**: `src/components/document/formValidation.ts` に `validateDocForm()` を新設。
+  文書生成前チェック（`DocumentEditorPage.handleGenerate`）とセクションナビの必須件数
+  （`missingRequiredIds`）を単一ソース化。従来の `required`（必須・空）判定に加え、
+  `number`/`date` 型の型検証と、動的明細（`type:"array"` / `itemRequired`）の行内検証を
+  「基盤」として実装（型/明細は False Positive を避ける保守的判定）。テンプレ固有の
+  明細ルールは `extraValidators` で差し込める拡張口を用意。
+- **FRM-03 ラチェット**: `scripts/audit/form_primitive_refs.sh`（Cloud Build `gate-form-primitives`）。
+  文書フォーム面（`src/components/document/`、共通プリミティブ本体 `FormField.tsx`/`DocFormKit.tsx` 除外）の
+  生 `<input>/<select>/<textarea>` と旧フォーム CSS（`retro-input` 等）を「増やさない」。
+  ベースライン: **raw_inputs=28 / legacy_css=0**（raw 28 は `V3LicenseMatrix` 等の既存独自
+  コンポーネントで Phase D 撤去まで凍結。`sublicenseOutTerms.tsx` の `retro-input` は本 wave で解消）。
