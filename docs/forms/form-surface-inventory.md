@@ -1,0 +1,119 @@
+# フォーム台帳 (Form Surface Inventory) — R0 / FRM-01
+
+設計 v1.4 §15「横断トラック R」の R0、および Issue FRM-01 の成果物。
+全編集 surface に **ID・所有者・旧／新基盤・撤去/移行方針** を登録し、以後の全フォーム UI リニューアル
+（AppFormShell 等の共通基盤への移行）と物理撤去（R6 / Phase H）の進捗計測の起点にする。
+
+- 基準日: 2026-07-18（Phase A ベースライン）
+- 基盤の凡例:
+  - `Schema` = `SchemaDocumentForm`（`documentFormSchemas.ts` の REGISTRY 経由）
+  - `DocumentForm(legacy)` = 旧 per-template 分岐フォールバック（FRM-04 / R2 で撤去対象）
+  - `page-specific` = ページ固有の手書きフォーム（R3〜R5 で共通シェルへ移行対象）
+- `共通シェル`列: `AppFormShell`/`FormField`/`ValidationSummary`/`DataQualityPanel`/`StickyActionBar`（R1 で新設予定）への移行状態。現状は全て未移行（`-`）。
+
+> この台帳は R トラックの各 wave / 各撤去 PR で更新する。新規の編集画面・Dialog・Drawer を追加する PR は、
+> ここへ `form_surface_id` を追記すること（設計 §文書管理ルール）。
+
+---
+
+## 1. 文書テンプレート（Document Editor 経由）
+
+Document Editor（`/documents/new`）が唯一の起票口。基盤は `documentFormSchemas.ts` の REGISTRY。
+**18 テンプレート中 16 が Schema 化済み、`sublicense_out_terms` は Schema（CTA 起点）、残り 2 が legacy fallback。**
+
+| form_surface_id | テンプレート | 基盤 | 共通シェル | 備考 |
+|---|---|---|---|---|
+| DOC-legal_response | 法務レター | Schema | - | |
+| DOC-notice_consent_pinf_freelance | 個人情報同意通知 | Schema(AUTO) | - | |
+| DOC-pub_master_individual | 出版基本契約(個人) | Schema | - | |
+| DOC-pub_master_corporate | 出版基本契約(法人) | Schema | - | |
+| DOC-license_master | 利用許諾基本契約 | Schema | - | |
+| DOC-service_master | 業務委託基本契約 | Schema | - | |
+| DOC-nda | NDA | Schema | - | |
+| DOC-sales_master_buyer | 売買基本(買主) | Schema | - | |
+| DOC-sales_master_standard | 売買基本(標準) | Schema | - | |
+| DOC-sales_master_credit | 売買基本(与信) | Schema | - | |
+| DOC-intl_purchase_order | 海外発注書 | Schema | - | |
+| DOC-maintenance_spec | 保守仕様書(別紙) | Schema | - | 動的配列 custom section |
+| DOC-inspection_certificate | 検収書 | Schema | - | bare section |
+| DOC-royalty_statement | 利用許諾料計算書 | Schema | - | bare + 3 effects |
+| DOC-purchase_order | 発注書 | Schema | - | 明細集計 effect は DocumentForm 残存 |
+| DOC-individual_license_terms | 個別利用許諾条件書 | Schema | - | v3 マトリクス bare section |
+| DOC-sublicense_out_terms | 再許諾条件書 | Schema | - | **CTA 起点（picker 未露出）。要 config 露出判断** |
+| DOC-pub_license_terms | 出版利用許諾条件書 | **DocumentForm(legacy)** | - | **FRM-04 / R2 残（重量級・要専用移行）** |
+| DOC-pub_additional_terms | 出版追加条件書 | Schema(AUTO) | - | ✅ FRM-04 で移行済（旧は独自セクション無し→AUTOで等価） |
+
+**未解決の残:** `pub_license_terms` の 1 件のみが旧 DocumentForm フォールバック（重量級：作品/原作ピッカー＋基本契約Lookup＋FinancialConditionTable＋PUBセクション並替）。R2 の専用移行対象。`pub_additional_terms` は FRM-04（Phase C）で AUTO へ移行済み。
+
+---
+
+## 2. マスター編集ルート（`/master/*`）
+
+| form_surface_id | ルート | パネル | 基盤 | 設計上の方針（v1.4） |
+|---|---|---|---|---|
+| MST-contracts | `/master/contracts` | ContractsPanel | page-specific | `/contracts` へ移動（UIC-15 / Phase E）。旧簡易登録撤去 |
+| MST-vendors | `/master/vendors` | VendorsPanel | page-specific | 参照マスターとして残置。search-api 旧UIは read-only 化済み（UIC-18） |
+| MST-work-entry | `/master/work-entry` | WorkEntryPanel | page-specific | **Works へ統合しリダイレクト（UIC-10 / Phase D）** |
+| MST-materials | `/master/materials` | MaterialEntryPanel | page-specific | **条件作成・全置換を撤去し素材CRUDへ限定（UIC-03 / Phase C）** |
+| MST-bulk-import | `/master/bulk-import` | BulkImportPanel | page-specific | Data Maintenance へ移動（UIC-17 / Phase E） |
+| MST-work-material-link | `/master/work-material-link` | WorkMaterialLinkPanel | page-specific | **Works マテリアルタブへ統合（UIC-11 / Phase D）** |
+| MST-sublicense-conditions | `/master/sublicense-conditions` | SublicenseConditionPanel | read-only + CTA | A系で read-only 化済み。再許諾は文書起票へ |
+| MST-unlinked-conditions | `/master/unlinked-conditions` | UnlinkedConditionsPanel | page-specific | link-conditions のみ（値は書かない）。維持 |
+| MST-billing | `/master/billing` | BillingTablePanel | page-specific | Finance へ移動（UIC-16 / Phase E） |
+| MST-billing-dashboard | `/master/billing-dashboard` | BillingDashboardPanel | page-specific | Finance へ移動（UIC-16 / Phase E） |
+| MST-pub-license | `/master/pub-license` | PubLicenseEntryPanel | 文書フォームへ委譲 | A系で postConditions 撤去済み。**UIC-12 で廃止→Document Editor 直起票** |
+| MST-merge | `/master/merge` | EntityMergePanel | page-specific | Data Maintenance へ移動（UIC-17 / Phase E） |
+| MST-ledgers | `/master/ledgers` | LedgersPanel | page-specific | **移行照合専用 read-only へ縮退（UIC-14 / Phase F）** |
+| MST-ringi | `/master/ringi` | RingiPanel | page-specific | 参照マスター/業務。共通シェルへ（FRM-07） |
+| MST-drafts | `/master/drafts` | DraftsPanel | page-specific | Data Maintenance へ移動（UIC-17 / Phase E） |
+| MST-receivable-map | `/master/receivable-map` | ReceivableMapPanel | page-specific | Finance 系。read-only 照合 |
+| MST-work-model | `/master/work-model` | WorkModelPanel | page-specific | **作品ツリー/派生を Works へ移植し廃止（UIC-13 / Phase D）** |
+| MST-staff | `/master/staff` | StaffPanel | page-specific | 参照マスター。共通シェルへ（FRM-07） |
+| MST-rules | `/master/rules` | RulesPanel | page-specific | 参照マスター |
+
+---
+
+## 3. 作品・文書・業務ルート（`/master` 外）
+
+| form_surface_id | ルート | パネル/ページ | 基盤 | 方針 |
+|---|---|---|---|---|
+| WRK-list | `/works` | WorksListPanel | page-specific | 作品管理の正準入口。完全性 Badge 追加（DQ-04）。共通シェルへ（FRM-06） |
+| WRK-graph | `/works/:id` | WorkGraphPanel | page-specific | V3LicenseMatrix 直接保存を撤去済（UIC-02 / Phase C 第1弾）→文書起票CTA。残: タブ分割（UIC-09） |
+| DOC-editor | `/documents/new` | DocumentEditorPage | Schema+DocumentForm | sticky アクションバー実装（UIC-04）。true readonly（UIC-06） |
+| MAT-list | `/matters` | MattersListPage | page-specific | nested interactive 解消（UIC-07）。カード対応（UIC-21） |
+| MAT-detail | `/matters/:matterId` | MatterDetailPage | page-specific | タブ化（UIC-20）。Matterのみ下書き（UIC-05） |
+| CND-hub | `/condition-lines` | ConditionsHubPage | page-specific | 条件は read/検索中心。値編集は文書へ |
+| DL-linkage | `/data-linkage` | DataLinkagePanel | page-specific | Data Maintenance 系 |
+| TPL-list/editor | `/templates`,`/templates/:id` | Templates* | page-specific | テンプレ管理（管理者フォーム型 FRM-10） |
+| SET-settings | `/settings` | SettingsPage | page-specific | 設定 |
+| IMP-imports | `/imports`,`/data-import`,`/excel-batches` | Import系 | page-specific | Data Maintenance へ集約（UIC-17） |
+
+---
+
+## 4. 新設予定（v1.4）
+
+| form_surface_id | ルート | 内容 | Issue |
+|---|---|---|---|
+| DE-work | `/data-entry/*` | 独立データ入力UI（作品/素材/権利根源の単独・補完登録） | DQ-05 |
+| DQ-center | `/data-quality` | Data Quality Center（完全性Issue一覧・修正導線） | DQ-06 |
+| FIN-home | `/finance` | Finance モジュール（Billing/ReceivableMap 移設） | UIC-16 |
+| DM-home | `/data-maintenance` | Import/Merge/Unlinked/Drafts 集約 | UIC-17 |
+| CTR-home | `/contracts` | 契約台帳（`/master/contracts` から移設） | UIC-15 |
+
+---
+
+## 5. 未棚卸し（R トラック実行時に追補）
+
+以下は本 R0 では routeレベルまで。R1 の共通基盤導入後、各 wave で個別に台帳化する。
+
+- **Dialog / Drawer**: 各パネル内のモーダル（作品インライン追加、取引先検索補完、明細行編集など）。FRM-11 で compact 共通フォームへ。
+- **インライン追加**: `DocumentForm` / schema 内の EntitySearchSelect からの原作・作品・取引先の即時作成（A系で matched-aware トースト対応済み）。
+- **旧検索ポータル（search-api SSR）**: 編集フォームは read-only/redirect 化対象（FRM-12 / UIC-18）。取引先はバナー誘導済み。
+
+## 集計（Phase A ベースライン）
+
+- 文書テンプレート: 18（Schema 17 + sublicense 1 → **legacy DocumentForm fallback 残 1**＝pub_license_terms のみ）
+- マスター編集ルート: 19
+- その他編集ルート: 10
+- 共通シェル移行済み: **0 / 全 surface**（R1 未着手）
+- レガシー条件エンドポイント参照: **18**（`docs/forms/legacy-condition-endpoints.md`）
