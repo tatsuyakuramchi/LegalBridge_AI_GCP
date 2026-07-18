@@ -40,10 +40,10 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 | DOC-purchase_order | 発注書 | Schema | - | 明細集計 effect は DocumentForm 残存 |
 | DOC-individual_license_terms | 個別利用許諾条件書 | Schema | - | v3 マトリクス bare section |
 | DOC-sublicense_out_terms | 再許諾条件書 | Schema | - | **CTA 起点（picker 未露出）。要 config 露出判断** |
-| DOC-pub_license_terms | 出版利用許諾条件書 | **DocumentForm(legacy)** | - | **FRM-04 / R2 撤去対象** |
-| DOC-pub_additional_terms | 出版追加条件書 | **DocumentForm(legacy)** | - | **FRM-04 / R2 撤去対象** |
+| DOC-pub_license_terms | 出版利用許諾条件書 | **DocumentForm(legacy)** | - | **FRM-04 / R2 残（重量級・要専用移行）** |
+| DOC-pub_additional_terms | 出版追加条件書 | Schema(AUTO) | - | ✅ FRM-04 で移行済（旧は独自セクション無し→AUTOで等価） |
 
-**未解決の残:** `pub_license_terms` / `pub_additional_terms` の 2 件が旧 DocumentForm フォールバック。R2（全文書 Schema 化）の対象。
+**未解決の残:** `pub_license_terms` の 1 件のみが旧 DocumentForm フォールバック（重量級：作品/原作ピッカー＋基本契約Lookup＋FinancialConditionTable＋PUBセクション並替）。R2 の専用移行対象。`pub_additional_terms` は FRM-04（Phase C）で AUTO へ移行済み。
 
 ---
 
@@ -112,7 +112,7 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 
 ## 集計（Phase A ベースライン）
 
-- 文書テンプレート: 18（Schema 16 + sublicense 1 + legacy 2）→ **legacy DocumentForm fallback 残 2**
+- 文書テンプレート: 18（Schema 17 + sublicense 1 → **legacy DocumentForm fallback 残 1**＝pub_license_terms のみ）
 - マスター編集ルート: 19
 - その他編集ルート: 10
 - 共通シェル移行済み: **0 / 全 surface**（R1 未着手）

@@ -297,6 +297,10 @@ const REGISTRY: Record<string, SchemaBuilder> = {
   individual_license_terms: (metadata) => individualLicenseTermsBuilder(metadata),
   // 再許諾条件書: 契約レス sublicense_out 条件を文書起点で作成(編集入口の一本化)。
   sublicense_out_terms: (metadata) => sublicenseOutTermsBuilder(metadata),
+  // 設計 v1.4 Phase C / FRM-04: 出版追加条件書。旧 DocumentForm では独自セクション無しの
+  //   汎用レンダリング(DbFillBar + config group 順)だったので、AUTO で等価に再現する。
+  //   取引先/担当の充填は DbFillBar と DocumentForm の hook(全 render 分岐で発火)が継続担当。
+  pub_additional_terms: AUTO,
 };
 
 export function isSchemaMigrated(templateId: string): boolean {
