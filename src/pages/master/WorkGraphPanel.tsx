@@ -18,73 +18,13 @@ import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useDocumentSession } from "@/src/context/AppDataContext"
 import { conditionClient } from "@/src/lib/api/conditionClient"
-import {
-  FinancialConditionTable,
-  calcMethodFromType,
-  buildFormulaText,
-  type FinancialCondition,
-  type CalcType,
-} from "@/src/components/document/FinancialConditionTable"
 import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
 import { WorkPicker, toWorkPickerItem } from "@/src/components/work/WorkPicker"
 
-// 条件明細(condition_lines) → FinancialCondition(利用許諾明細入力の行)へ逆マップ。
-//   __clid に condition_line.id を退避し保存時の upsert キーにする(FinancialCondition には無い項目)。
-function clToFc(c: any): any {
-  const scheme = c.payment_scheme
-  const royalty = scheme === "royalty"
-  const calc_type: CalcType = royalty ? "BASE_QTY_RATE" : scheme === "subscription" ? "SUBSCRIPTION" : "FIXED"
-  return {
-    __clid: c.id,
-    condition_no: c.source_seq_no ?? undefined,
-    condition_name: c.subject ?? "",
-    region_territory: c.region_territory ?? "",
-    region_language: c.region_language ?? "",
-    region_language_label: c.region_language_label ?? "",
-    calc_type,
-    calc_method: c.calc_method ?? calcMethodFromType(calc_type),
-    fixed_kind: scheme === "installment" ? "INSTALLMENT" : "LUMP",
-    unit_amount: !royalty && c.amount_ex_tax != null ? Number(c.amount_ex_tax) : undefined,
-    guarantee_type: c.mg_amount ? "MG" : c.ag_amount ? "AG" : "NONE",
-    rate_pct: c.rate_pct != null ? Number(c.rate_pct) : undefined,
-    base_price_label: c.base_price_label ?? "",
-    calc_period: c.calc_period ?? "",
-    calc_period_kind: c.calc_period_kind ?? undefined,
-    calc_period_close_month: c.calc_period_close_month ?? undefined,
-    currency: c.currency ?? "JPY",
-    formula_text: c.formula_text ?? "",
-    mg_amount: c.mg_amount != null ? Number(c.mg_amount) : undefined,
-    ag_amount: c.ag_amount != null ? Number(c.ag_amount) : undefined,
-    payment_terms: c.payment_terms ?? "",
-  }
-}
-
-// FinancialCondition → 一括保存用の行(condition_lines フィールド)へ順マップ。
-function fcToRow(fc: any): Record<string, any> {
-  const ct: CalcType | undefined = fc.calc_type
-  const royalty = ct === "BASE_QTY_RATE" || ct === "BASE_RATE"
-  const scheme = royalty ? "royalty" : ct === "SUBSCRIPTION" ? "subscription" : fc.fixed_kind === "INSTALLMENT" ? "installment" : "lump_sum"
-  return {
-    __clid: fc.__clid ?? null,
-    source_seq_no: fc.condition_no ?? null,
-    subject: fc.condition_name || fc.region_language_label || null,
-    payment_scheme: scheme,
-    rate_pct: royalty ? fc.rate_pct ?? null : null,
-    mg_amount: royalty ? fc.mg_amount ?? null : null,
-    ag_amount: royalty ? fc.ag_amount ?? null : null,
-    amount_ex_tax: !royalty ? fc.unit_amount ?? null : null,
-    base_price_label: royalty ? fc.base_price_label ?? null : null,
-    calc_method: fc.calc_method ?? calcMethodFromType(ct),
-    calc_period: fc.calc_period ?? null,
-    calc_period_kind: fc.calc_period_kind ?? null,
-    calc_period_close_month: fc.calc_period_close_month ?? null,
-    currency: fc.currency ?? "JPY",
-    formula_text: fc.formula_text || buildFormulaText(fc) || null,
-    payment_terms: fc.payment_terms ?? null,
-    region_territory: fc.region_territory || null,
-    region_language: fc.region_language || null,
-  }
-}
+// UIC-03 系撤去(設計 v1.4 Phase C / CLEAN): 原作ビューの「マテリアル単位 利用許諾条件 登録/編集」
+//   (固定3種フォーム・FinancialConditionTable 一括保存)は A系で read-only 化した際に UI が撤去され、
+//   ハンドラ(saveMatCond/saveMatFc/loadMatConds 等)と clToFc/fcToRow が孤児化していた。ここで撤去。
+//   条件値の作成・修正は文書フォーム(Document Command)へ一本化済み。既存条件の閲覧・リンクは残置。
 
 type Edge = {
   id: number
@@ -309,19 +249,9 @@ export function WorkGraphPanel() {
   // ピッカー強化: 選んだ原作のマテリアル候補と、明細ごとに選んだ原作マテリアル(lineId→material_id)。
   const [pickerMaterials, setPickerMaterials] = React.useState<any[]>([])
   const [pickerLineMat, setPickerLineMat] = React.useState<Record<number, string>>({})
-  // マテリアル単位 利用許諾条件 登録(原作ビュー): 開いているマテリアルと既存条件・入力フォーム。
+  // マテリアル単位の条件パネル: 開いているマテリアル(既存条件の閲覧＋文書番号リコール／リンク用)。
+  //   ※ 条件の新規登録・一括保存フォーム系 state は撤去(条件は文書フォームへ一本化)。
   const [matCondOpen, setMatCondOpen] = React.useState<number | null>(null)
-  const [matConds, setMatConds] = React.useState<any[]>([])
-  const [matForm, setMatForm] = React.useState<Record<string, string>>({ payment_scheme: "royalty" })
-  const [matSaving, setMatSaving] = React.useState(false)
-  const [matErr, setMatErr] = React.useState<string | null>(null)
-  // 利用許諾条件書(契約マスター)候補 — 登録時に文書を選んで補完するため。
-  const [licenseCaps, setLicenseCaps] = React.useState<any[]>([])
-  // 利用許諾明細(FinancialConditionTable)で編集する行と保存状態。
-  const [matFcRows, setMatFcRows] = React.useState<any[]>([])
-  const [matFcCap, setMatFcCap] = React.useState("")
-  const [matFcSaving, setMatFcSaving] = React.useState(false)
-  const [matFcErr, setMatFcErr] = React.useState<string | null>(null)
   // 登録済み条件の編集(インライン)。
   const [matEditId, setMatEditId] = React.useState<number | null>(null)
   const [matEditForm, setMatEditForm] = React.useState<Record<string, string>>({})
@@ -454,7 +384,6 @@ export function WorkGraphPanel() {
     setPickerMaterials([])
     setPickerLineMat({})
     setMatCondOpen(null)
-    setMatConds([])
     setMatRecallLines([])
     setMatRecallDoc("")
     setMatEditId(null)
@@ -678,59 +607,16 @@ export function WorkGraphPanel() {
     }
   }
 
-  // マテリアル単位 利用許諾条件 登録: 原作マテリアルの既存条件を取得。
-  const loadMatConds = async (mid: number) => {
-    try {
-      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`)
-      const d = await r.json()
-      const arr = Array.isArray(d) ? d : []
-      setMatConds(arr)
-      setMatFcRows(arr.map(clToFc)) // 利用許諾明細入力(表)用に逆マップ
-    } catch {
-      setMatConds([])
-      setMatFcRows([])
-    }
-  }
-  // 利用許諾明細(表)を condition_lines へ一括保存(upsert/delete)。
-  const saveMatFc = async (mid: number) => {
-    setMatFcSaving(true)
-    setMatFcErr(null)
-    try {
-      const rows = (matFcRows || []).map(fcToRow)
-      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/conditions`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ capability_id: matFcCap || null, rows }),
-      })
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}))
-        throw new Error(e?.error || `HTTP ${r.status}`)
-      }
-      await Promise.all([loadMatConds(mid), loadGraph(workId)])
-    } catch (e: any) {
-      setMatFcErr(String(e?.message || e))
-    } finally {
-      setMatFcSaving(false)
-    }
-  }
+  // (撤去) loadMatConds / saveMatFc: 原作マテリアルの条件を GET し FinancialConditionTable で
+  //   一括保存(素材条件の PUT API)していた孤児コード。UI は A系で read-only 化済み。
+  //   条件の閲覧は下の recall(文書番号)/構成ツリーで、修正は文書フォームで行う。
   // マテリアルをクリック→登録パネルを開閉。開いたら既存条件を読み込む。
   const toggleMatCond = (mid: number) => {
     if (matCondOpen === mid) { setMatCondOpen(null); return }
     setMatCondOpen(mid)
-    setMatForm({ payment_scheme: "royalty" })
-    setMatErr(null)
-    setMatConds([])
     setMatRecallDoc("")
     setMatRecallLines([])
     setMatEditId(null)
-    void loadMatConds(mid)
-    // 利用許諾条件書候補を一度だけ取得(登録時に文書を選んで紐づけるため)。
-    if (licenseCaps.length === 0) {
-      fetch("/api/v3/license-capabilities")
-        .then((r) => r.json())
-        .then((d) => setLicenseCaps(Array.isArray(d) ? d : []))
-        .catch(() => {})
-    }
   }
   // 構成ツリー(原作ビュー)から、そのマテリアルの条件編集パネルを開いて中カードへスクロール。
   const openMatEditor = (mid: number) => {
@@ -761,7 +647,7 @@ export function WorkGraphPanel() {
         ? { source_work_id: Number(workId), source_material_id: mid }
         : { source_material_id: null }
       await conditionClient.setGraphLink(line.id, body)
-      await Promise.all([loadMatConds(mid), loadGraph(workId), recallByDoc()])
+      await Promise.all([loadGraph(workId), recallByDoc()])
     } catch (e) {
       console.error("assignRecalled failed", e)
     }
@@ -820,7 +706,7 @@ export function WorkGraphPanel() {
         throw new Error(e?.error || `HTTP ${r.status}`)
       }
       setMatEditId(null)
-      await Promise.all([loadMatConds(mid), loadGraph(workId)])
+      await loadGraph(workId)
     } catch (e: any) {
       setMatEditErr(String(e?.message || e))
     } finally {
@@ -846,53 +732,14 @@ export function WorkGraphPanel() {
         const e = await r.json().catch(() => ({} as any))
         throw new Error(e?.error || `HTTP ${r.status}`)
       }
-      await Promise.all([loadMatConds(mid), loadGraph(workId)])
+      await loadGraph(workId)
     } catch (e: any) {
       window.alert(`削除に失敗: ${String(e?.message || e)}`)
     }
   }
 
-  // 利用許諾条件を登録(原作の器 capability 配下に condition_line 生成)。
-  const saveMatCond = async (mid: number) => {
-    setMatSaving(true)
-    setMatErr(null)
-    try {
-      const f = matForm
-      const body: Record<string, any> = {
-        capability_id: f.capability_id || null,
-        payment_scheme: f.payment_scheme,
-        subject: f.subject || null,
-        rights_attribution: f.rights_attribution || null,
-        term_start: f.term_start || null,
-        term_end: f.term_end || null,
-        region_territory: f.region_territory || null,
-        region_language: f.region_language || null,
-        notes: f.notes || null,
-      }
-      if (f.payment_scheme === "royalty") {
-        body.rate_pct = f.rate_pct || null
-        body.mg_amount = f.mg_amount || null
-        body.ag_amount = f.ag_amount || null
-      } else if (f.payment_scheme !== "subscription") {
-        body.amount_ex_tax = f.amount_ex_tax || null
-      }
-      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}))
-        throw new Error(e?.error || `HTTP ${r.status}`)
-      }
-      setMatForm({ payment_scheme: "royalty" })
-      await Promise.all([loadMatConds(mid), loadGraph(workId)])
-    } catch (e: any) {
-      setMatErr(String(e?.message || e))
-    } finally {
-      setMatSaving(false)
-    }
-  }
+  // (撤去) saveMatCond: 原作マテリアル配下へ条件明細を新規 POST していた孤児コード。
+  //   条件の新規作成は文書フォーム(Document Command)へ一本化済み。
 
   // (B) A1-軽量(§10.7「将来オプション: このエディタから個別条件書を起票→その場で条件明細を作る」):
   //   既存の文書作成フロー(/documents/new)を再利用して個別条件書を起票する。明細は文書(capability)
