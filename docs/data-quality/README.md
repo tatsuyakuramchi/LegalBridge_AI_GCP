@@ -17,7 +17,7 @@ admin-ui の Cloud Build では **適用されない**。
 | **DQ-02** | 評価エンジン（predicate 実行 → Issue upsert/auto-close → サマリー再計算）＋ API | ✅ 実装（`services/worker/src/services/dataQualityService.ts` ＋ `routes/dataQuality.ts`） |
 | **DQ-04** | 作品一覧・詳細へ 完全性 Badge・修正 CTA | ✅ 実装（admin-ui。`CompletenessBadge` / `CompletenessPanel` / `dataQualityClient`） |
 | DQ-05 | 独立データ入力 UI `/data-entry` | ⬜（admin-ui） |
-| DQ-06 | Data Quality Center `/data-quality` | ⬜（admin-ui） |
+| **DQ-06** | Data Quality Center `/data-quality` | ✅ 実装（admin-ui。`DataQualityCenter` ＋ client 拡張 getIssues/patchIssue/waiveIssue） |
 
 ## DQ-01 で入ったもの（0136）
 

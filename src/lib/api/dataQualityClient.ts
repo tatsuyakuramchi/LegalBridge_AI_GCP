@@ -35,6 +35,16 @@ export type DqIssue = {
   stage: string | null;
   due_at?: string | null;
   assignee_staff_id?: number | null;
+  detected_at?: string | null;
+  last_detected_at?: string | null;
+  resolution_note?: string | null;
+};
+
+export type DqIssueFilters = {
+  status?: string; // 既定 open。"all" で全件。
+  entity_type?: string;
+  severity?: string;
+  assignee_staff_id?: number;
 };
 
 export type DqEntityResult = { summary: DqSummary; open_issues: DqIssue[] };
@@ -58,6 +68,47 @@ export async function getEntityCompleteness(
 /** 作品の完全性(entity_type='work')。 */
 export function getWorkCompleteness(workId: number | string): Promise<DqEntityResult | null> {
   return getEntityCompleteness("work", workId);
+}
+
+/** Issue 一覧。失敗(未デプロイ等)時は null、成功で配列(0 件は [])。 */
+export async function getIssues(filters: DqIssueFilters = {}): Promise<DqIssue[] | null> {
+  try {
+    const qs = new URLSearchParams();
+    if (filters.status) qs.set("status", filters.status);
+    if (filters.entity_type) qs.set("entity_type", filters.entity_type);
+    if (filters.severity) qs.set("severity", filters.severity);
+    if (filters.assignee_staff_id != null) qs.set("assignee_staff_id", String(filters.assignee_staff_id));
+    const r = await apiGet<{ ok: boolean; issues: DqIssue[] }>(`/api/data-quality/issues?${qs.toString()}`);
+    if (!r || r.ok === false) return null;
+    return r.issues || [];
+  } catch {
+    return null;
+  }
+}
+
+/** Issue の 担当/期限/メモ 更新。失敗時は null。 */
+export async function patchIssue(
+  id: number,
+  body: { assignee_staff_id?: number | null; due_at?: string | null; resolution_note?: string | null }
+): Promise<DqIssue | null> {
+  try {
+    const r = await apiSend<{ ok: boolean; issue: DqIssue }>("PATCH", `/api/data-quality/issues/${id}`, body);
+    return r?.issue || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Issue を waive(例外)。失敗時は null。 */
+export async function waiveIssue(id: number, note: string): Promise<DqIssue | null> {
+  try {
+    const r = await apiSend<{ ok: boolean; issue: DqIssue }>("POST", `/api/data-quality/issues/${id}/waive`, {
+      resolution_note: note,
+    });
+    return r?.issue || null;
+  } catch {
+    return null;
+  }
 }
 
 /** 全件再評価 + サマリー再計算。失敗時は null。 */
