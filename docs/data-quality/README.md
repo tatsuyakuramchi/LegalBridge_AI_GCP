@@ -21,6 +21,7 @@ admin-ui の Cloud Build では **適用されない**。
 | **DQ-自動発火** | 保存後に該当エンティティだけ差分再評価（§8.4） | ✅ 実装（worker `evaluateEntity` ＋ `POST /entities/:type/:id/evaluate`、admin-ui は作品/条件/素材の保存で発火） |
 | **DQ-08** | 完全性ゲート（作品公開・案件完了のソフト確認） | ✅ 第1/2弾（admin-ui。請求開始ゲートは要・実機協働） |
 | **DQ-09** | 監査ログ（担当/期限/waive を 誰が/いつ/何を で記録） | ✅ 実装（`migrations/0137` ＋ worker `data_quality_issue_events` 記録・`GET /issues/:id/events`、DQ Center に「履歴」表示） |
+| **DQ-10** | 夜間 全件スキャン（Cloud Scheduler → 既存 rescan） | ✅ 手順化（[`nightly-rescan.md`](./nightly-rescan.md)。コード不要・冪等。評価 outbox は将来） |
 | **DQ-06** | Data Quality Center `/data-quality` | ✅ 実装（admin-ui。`DataQualityCenter` ＋ client 拡張 getIssues/patchIssue/waiveIssue） |
 
 ## DQ-01 で入ったもの（0136）
@@ -49,8 +50,9 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 
 **評価エンジン** `services/worker/src/services/dataQualityService.ts`:
 - ルールごとに「違反行の id を返す SQL(failingSql)」を持つ評価器を登録。実スキーマに対応する
-  **6 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
-  `MAT-RGT-002` / `COND-FIN-001`。
+  **8 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
+  `MAT-RGT-002` / `COND-FIN-001` / `COND-SCOPE-001`（許諾条件の地域・言語・期間）/
+  `WORK-REL-002`（Phase F: `work_relations` の自己参照検出）。
 - 評価 = 失敗集合を issue へ **upsert(open)** ／ 失敗しなくなったものを **auto-close(resolved)**。
   `status='waived'` は尊重して**再オープンしない**。
 - `entity_completeness_summary` を集計（blocker/error/warning 件数 ＋ score ＝ 100−blocker×40−error×15−warning×5、
