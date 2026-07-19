@@ -50,8 +50,9 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 
 **評価エンジン** `services/worker/src/services/dataQualityService.ts`:
 - ルールごとに「違反行の id を返す SQL(failingSql)」を持つ評価器を登録。実スキーマに対応する
-  **7 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
-  `MAT-RGT-002` / `COND-FIN-001` / `COND-SCOPE-001`（許諾条件の地域・言語・期間）。
+  **8 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
+  `MAT-RGT-002` / `COND-FIN-001` / `COND-SCOPE-001`（許諾条件の地域・言語・期間）/
+  `WORK-REL-002`（Phase F: `work_relations` の自己参照検出）。
 - 評価 = 失敗集合を issue へ **upsert(open)** ／ 失敗しなくなったものを **auto-close(resolved)**。
   `status='waived'` は尊重して**再オープンしない**。
 - `entity_completeness_summary` を集計（blocker/error/warning 件数 ＋ score ＝ 100−blocker×40−error×15−warning×5、

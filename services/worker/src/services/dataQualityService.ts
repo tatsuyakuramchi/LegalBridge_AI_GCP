@@ -79,6 +79,12 @@ const EVALUATORS: Evaluator[] = [
                         OR (region_language IS NULL OR btrim(region_language) = '')
                         OR (term_start IS NULL AND term_end IS NULL))`,
   },
+  // WORK-REL-002 (work_relation / BLOCKER): 自己参照が無い(child_work_id <> parent_work_id)。
+  //   Phase F 第1弾。多段の循環検出(再帰CTE)は後続スライスで拡張。work_relations(0138) が前提。
+  {
+    ruleCode: "WORK-REL-002",
+    failingSql: `SELECT id FROM work_relations WHERE child_work_id = parent_work_id`,
+  },
 ];
 
 /** 登録済みルール(評価器がある & is_active)を1件評価: open upsert + auto-close。 */
