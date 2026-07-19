@@ -88,6 +88,17 @@ const EVALUATORS: Evaluator[] = [
     failingSql: `SELECT id FROM work_relations WHERE child_work_id = parent_work_id`,
     requiresTable: "work_relations",
   },
+  // MAT-RGT-003 (material_rights_source / ERROR): 同一マテリアルに主要権利根源(is_primary)が複数無い。
+  //   Phase F 第2弾。厳密には期間/用途スコープだが、v1 は「マテリアル単位で is_primary が 2 件以上」を検出。
+  //   material_rights_sources(0139) が前提。バックフィルは 1:1 なので初期状態は違反 0。
+  {
+    ruleCode: "MAT-RGT-003",
+    failingSql: `SELECT id FROM material_rights_sources mrs
+                 WHERE mrs.is_primary
+                   AND (SELECT count(*) FROM material_rights_sources x
+                         WHERE x.material_id = mrs.material_id AND x.is_primary) > 1`,
+    requiresTable: "material_rights_sources",
+  },
 ];
 
 /** 評価器が要求するテーブルが存在するか(未作成なら skip 判定に使う)。 */
