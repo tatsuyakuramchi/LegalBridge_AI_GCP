@@ -53,6 +53,7 @@ import { useMatterMergeCart } from "@/src/context/MatterMergeCartContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { StaffPicker } from "@/src/components/cloudsign/StaffPicker"
 import { IssuePicker } from "@/src/components/IssuePicker"
+import { AppFormField } from "@/src/components/form"
 import {
   MATTER_STAGES,
   STAGE_LABEL,
@@ -815,12 +816,14 @@ export function MatterDetailPage() {
         <Card>
           <CardContent className="p-4 space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div className="space-y-1 md:col-span-2">
-                <Label className="text-[12px]">案件名</Label>
-                <Input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} className="h-8 text-[12px]" />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[12px]">相手方（取引先マスタから検索）</Label>
+              {/* FRM-08: Matter 編集フォームを共通 AppFormField へ（設計 §11.3）。 */}
+              <AppFormField label="案件名" htmlFor="matter_title" className="md:col-span-2">
+                <Input id="matter_title" value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} className="h-8 text-[12px]" />
+              </AppFormField>
+              <AppFormField
+                label="相手方（取引先マスタから検索）"
+                hint={edit.counterparty ? `選択中: ${edit.counterparty}` : undefined}
+              >
                 <VendorSearchSelect
                   vendors={vendors}
                   selectedCode={vendorCodeById(edit.vendor_id)}
@@ -828,22 +831,18 @@ export function MatterDetailPage() {
                     setEdit({ ...edit, vendor_id: v?.id ?? null, counterparty: v?.vendor_name ?? "" })
                   }
                 />
-                {edit.counterparty && (
-                  <p className="text-[11px] text-muted-foreground">選択中: {edit.counterparty}</p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[12px]">代表 Backlog 課題（Request から検索）</Label>
+              </AppFormField>
+              <AppFormField label="代表 Backlog 課題（Request から検索）">
                 <IssuePicker
                   issues={issues as any}
                   value={edit.primary_issue_key || undefined}
                   onSelect={(i) => setEdit({ ...edit, primary_issue_key: i?.issueKey ?? "" })}
                 />
-              </div>
+              </AppFormField>
               {/* LB-04: 案件の担当 / 期限 / ブロッカー(工程はヘッダーの即保存セレクトで変更) */}
-              <div className="space-y-1">
-                <Label className="text-[12px]">案件担当者</Label>
+              <AppFormField label="案件担当者" htmlFor="matter_owner">
                 <NativeSelect
+                  id="matter_owner"
                   value={edit.owner_staff_id ?? ""}
                   onChange={(e: any) =>
                     setEdit({ ...edit, owner_staff_id: e.target.value ? Number(e.target.value) : null })
@@ -860,29 +859,28 @@ export function MatterDetailPage() {
                       </option>
                     ))}
                 </NativeSelect>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[12px]">目標期限</Label>
+              </AppFormField>
+              <AppFormField label="目標期限" htmlFor="matter_due">
                 <Input
+                  id="matter_due"
                   type="date"
                   value={edit.target_due_date || ""}
                   onChange={(e) => setEdit({ ...edit, target_due_date: e.target.value })}
                   className="h-8 text-[12px]"
                 />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[12px]">ブロッカー（空欄 = ブロックなし）</Label>
+              </AppFormField>
+              <AppFormField label="ブロッカー（空欄 = ブロックなし）" htmlFor="matter_blocker">
                 <Input
+                  id="matter_blocker"
                   value={edit.blocked_reason || ""}
                   onChange={(e) => setEdit({ ...edit, blocked_reason: e.target.value })}
                   placeholder="例: 相手方の押印待ち"
                   className="h-8 text-[12px]"
                 />
-              </div>
-              <div className="space-y-1 md:col-span-2">
-                <Label className="text-[12px]">備考</Label>
-                <Textarea value={edit.remarks} onChange={(e) => setEdit({ ...edit, remarks: e.target.value })} className="text-[12px] min-h-[60px]" />
-              </div>
+              </AppFormField>
+              <AppFormField label="備考" htmlFor="matter_remarks" className="md:col-span-2">
+                <Textarea id="matter_remarks" value={edit.remarks} onChange={(e) => setEdit({ ...edit, remarks: e.target.value })} className="text-[12px] min-h-[60px]" />
+              </AppFormField>
             </div>
             <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-border">
               <span className="text-[11px] text-muted-foreground">重複案件の統合:</span>
