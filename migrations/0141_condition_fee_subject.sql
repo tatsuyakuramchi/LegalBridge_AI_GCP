@@ -16,7 +16,8 @@ ALTER TABLE condition_lines
 --   #1 fee_subject_override（今回追加＝当面 NULL）
 --   #2 material_rights_sources.fee_subject_name(＋suffix)  ← F3 でリンクした material_rights_source_id 経由
 --   #3 権利根源作品タイトル ＋「原作利用料」                ← mrs.source_work_id → works.title
---   #5 マテリアル名 ＋「利用料」                            ← 軸マテリアル material_ref_id / source_material_id
+--   #3' 条件の原作(source_work_id) タイトル ＋「原作利用料」  ← mrs 側が未設定でも condition_lines.source_work_id で補完
+--   #5 マテリアル名 ＋「利用料」                            ← 素材 source_material_id → work_materials.material_name
 --   （#4 権利根源作品群名は work_families 整理が F5 のため本弾では扱わない）
 --   名目が解決できない(全て NULL の)条件は snapshot も NULL のまま(MAT-FEE-002 で将来検出)。
 UPDATE condition_lines cl
@@ -26,15 +27,18 @@ UPDATE condition_lines cl
            COALESCE(
              NULLIF(btrim(cl2.fee_subject_override), ''),
              NULLIF(btrim(COALESCE(mrs.fee_subject_name, '') || COALESCE(mrs.fee_subject_suffix, '')), ''),
-             CASE WHEN NULLIF(btrim(sw.title), '') IS NOT NULL
-                  THEN '『' || btrim(sw.title) || '』原作利用料' END,
+             CASE WHEN NULLIF(btrim(msw.title), '') IS NOT NULL
+                  THEN '『' || btrim(msw.title) || '』原作利用料' END,
+             CASE WHEN NULLIF(btrim(csw.title), '') IS NOT NULL
+                  THEN '『' || btrim(csw.title) || '』原作利用料' END,
              CASE WHEN NULLIF(btrim(wm.material_name), '') IS NOT NULL
                   THEN btrim(wm.material_name) || '利用料' END
            ) AS resolved
       FROM condition_lines cl2
       LEFT JOIN material_rights_sources mrs ON mrs.id = cl2.material_rights_source_id
-      LEFT JOIN works sw           ON sw.id = mrs.source_work_id
-      LEFT JOIN work_materials wm  ON wm.id = COALESCE(cl2.material_ref_id, cl2.source_material_id)
+      LEFT JOIN works msw          ON msw.id = mrs.source_work_id
+      LEFT JOIN works csw          ON csw.id = cl2.source_work_id
+      LEFT JOIN work_materials wm  ON wm.id = cl2.source_material_id
   ) sub
  WHERE cl.id = sub.id
    AND cl.fee_subject_snapshot IS NULL
