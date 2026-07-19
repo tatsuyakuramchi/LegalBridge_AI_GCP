@@ -18,8 +18,10 @@ export interface DqDb {
   query: (text: string, params?: any[]) => Promise<any>;
 }
 
-/** ルール評価器: failingSql は対象テーブルの「違反行の id」を返す。 */
-type Evaluator = { ruleCode: string; failingSql: string };
+/** ルール評価器: failingSql は対象テーブルの「違反行の id」を返す。
+ *  requiresTable を持つ評価器は、そのテーブルが未作成なら skip(rescan 全体を止めない)。
+ *  Phase D/F でテーブルが後から入るため、migrate と worker デプロイの順序に依存しない安全弁。 */
+type Evaluator = { ruleCode: string; failingSql: string; requiresTable?: string };
 
 // 実スキーマに対応する評価器のみ登録。未実装(work_relations / material_rights_sources /
 //   fee_subject_snapshot 等)のルールは台帳にあってもここには無く、評価対象外(skip)。
@@ -84,8 +86,19 @@ const EVALUATORS: Evaluator[] = [
   {
     ruleCode: "WORK-REL-002",
     failingSql: `SELECT id FROM work_relations WHERE child_work_id = parent_work_id`,
+    requiresTable: "work_relations",
   },
 ];
+
+/** 評価器が要求するテーブルが存在するか(未作成なら skip 判定に使う)。 */
+async function tableExists(db: DqDb, name: string): Promise<boolean> {
+  try {
+    const r = await db.query(`SELECT to_regclass($1) AS oid`, [name]);
+    return r.rows?.[0]?.oid != null;
+  } catch {
+    return false;
+  }
+}
 
 /** 登録済みルール(評価器がある & is_active)を1件評価: open upsert + auto-close。 */
 async function evaluateOne(db: DqDb, ev: Evaluator): Promise<{ ruleCode: string; failing: number }> {
@@ -121,6 +134,7 @@ export async function evaluateAll(db: DqDb): Promise<{ evaluated: number; result
   const results: Array<{ ruleCode: string; failing: number }> = [];
   for (const ev of EVALUATORS) {
     if (!activeSet.has(ev.ruleCode)) continue;
+    if (ev.requiresTable && !(await tableExists(db, ev.requiresTable))) continue; // 未作成テーブルは skip
     results.push(await evaluateOne(db, ev));
   }
   return { evaluated: results.length, results };
@@ -142,6 +156,7 @@ export async function evaluateEntity(
   let evaluated = 0;
   for (const ev of EVALUATORS) {
     if (!activeSet.has(ev.ruleCode)) continue;
+    if (ev.requiresTable && !(await tableExists(db, ev.requiresTable))) continue; // 未作成テーブルは skip
     evaluated++;
     // このエンティティが失敗集合に居れば open へ upsert(waived は尊重して触らない)。
     await db.query(
