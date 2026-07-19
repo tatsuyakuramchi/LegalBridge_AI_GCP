@@ -79,8 +79,11 @@ function VendorForm({ mode }: { mode: "create" | "edit" | "readonly" }) {
   - **Matter 編集フォーム 済**: `MatterDetailPage` の案件編集（案件名/相手方/Backlog/担当/期限/
     ブロッカー/備考 の 7 フィールド）を、インライン `<Label>` 直書きから `AppFormField` へ。
     「選択中: …」は `hint` へ。各 input に id＋aria。
-  - ※ タスク追加は compact 横並びインライン＝FRM-11 で対応。Delivery/Inspection は概ね
-    SchemaDocumentForm ベース（文書フォーム）。統合カート/メール送信ダイアログは FRM-11。
+  - **Inspection 済**: `PendingInspectionsPage` の一括検収フォーム（検収日/検収者必須）を
+    `AppFormField` へ。検収者必須は `error`、案内 notice を warning トークンへ。
+  - ※ タスク追加は compact 横並びインライン＝FRM-11 で対応。Delivery/Inspection の**明細行編集**
+    （`DeliverableCards`/`DeliveryLineItemTable`/`InspectionExpenseSelector`）は LineEditor パターンで
+    FRM-02 の `LineEditor` 導入後に対応。統合カート/メール送信ダイアログは FRM-11。
 - FRM-09: 利用許諾計算・受領・支払・分配（Finance）
 - FRM-10: Import / Merge / Unlinked / Migration / Draft（管理者フォーム型）
 - FRM-11: Dialog / Drawer / インライン追加（compact 版）
