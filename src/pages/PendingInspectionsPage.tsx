@@ -6,7 +6,7 @@ import { useAppData } from "@/src/context/AppDataContext"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
+import { AppFormField } from "@/src/components/form"
 import { NativeSelect } from "@/components/ui/native-select"
 import {
   Dialog,
@@ -432,18 +432,23 @@ function BulkInspectionDialog({
           <DialogTitle>まとめて検収書作成（{pos.length} 件）</DialogTitle>
         </DialogHeader>
         <DialogBody className="space-y-3">
-          <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2.5 leading-relaxed">
+          {/* UIC-24: status 通知を warning トークンへ。 */}
+          <div className="text-[11px] text-warning bg-warning/10 border border-warning/40 rounded-md p-2.5 leading-relaxed">
             選択した発注書の<b>「未着手（未検収）の明細」を残額全額で検収</b>します。
             一部検収済み・対象外（発行済）の明細はスキップされます（それらは個別作成で）。
             検収は受領の承諾です。内容を確認のうえ実行してください。
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">検収日</Label>
-            <Input type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">検収者 *</Label>
-            <NativeSelect value={inspectorEmail} onChange={(e) => setInspectorEmail(e.target.value)}>
+          {/* FRM-08: 検収フォームを共通 AppFormField へ（設計 §11.3）。 */}
+          <AppFormField label="検収日" htmlFor="insp_date">
+            <Input id="insp_date" type="date" value={docDate} onChange={(e) => setDocDate(e.target.value)} />
+          </AppFormField>
+          <AppFormField
+            label="検収者"
+            htmlFor="insp_inspector"
+            required
+            error={!inspectorEmail ? "検収者は必須です" : undefined}
+          >
+            <NativeSelect id="insp_inspector" value={inspectorEmail} onChange={(e) => setInspectorEmail(e.target.value)}>
               <option value="">— 検収者を選択 —</option>
               {staffList.map((s: any) => (
                 <option key={s.email || s.slack_user_id} value={s.email || ""}>
@@ -451,8 +456,7 @@ function BulkInspectionDialog({
                 </option>
               ))}
             </NativeSelect>
-            {!inspectorEmail && <p className="text-[10px] text-destructive">検収者は必須です</p>}
-          </div>
+          </AppFormField>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" className="h-4 w-4" checked={genPdf} onChange={(e) => setGenPdf(e.target.checked)} />
             PDFも今すぐ生成する（オフ＝後でまとめて生成キューへ）

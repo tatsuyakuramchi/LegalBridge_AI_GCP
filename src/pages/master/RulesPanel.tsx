@@ -5,7 +5,7 @@ import { useAppData } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { AppFormField } from "@/src/components/form"
 import {
   Dialog,
   DialogContent,
@@ -213,10 +213,11 @@ export function RulesPanel() {
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  const required = /\*\s*$/.test(label)
+  const cleanLabel = label.replace(/\s*\*\s*$/, "")
   return (
-    <div className="space-y-1">
-      <Label>{label}</Label>
+    <AppFormField label={cleanLabel} required={required}>
       {children}
-    </div>
+    </AppFormField>
   )
 }
