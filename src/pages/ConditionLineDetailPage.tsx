@@ -1,5 +1,6 @@
 import * as React from "react"
 import { useParams, useNavigate } from "react-router-dom"
+import { CompletenessPanel } from "@/src/components/dataquality/CompletenessPanel"
 import {
   ArrowLeft,
   ExternalLink,
@@ -523,6 +524,9 @@ export function ConditionLineDetailPage() {
           )}
         </div>
       </header>
+
+      {/* DQ-04 可視化: この条件の完全性(未解消 BLOCKER 等)。未評価/未デプロイなら非表示。 */}
+      <CompletenessPanel entityType="condition" entityId={line.id} />
 
       {/* メトリクス */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
