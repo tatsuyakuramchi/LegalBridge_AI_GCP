@@ -19,10 +19,13 @@ const badgeVariants = cva(
         ghost: "border-transparent hover:bg-muted hover:text-muted-foreground",
         phosphor:
           "border-amber-600/40 bg-amber-50 text-amber-900 dark:bg-amber-950/40 dark:text-amber-300",
+        // UIC-24: 状態色トークン。手動 dark: 上書きを撤去し token が light/dark を吸収。
         success:
-          "border-emerald-600/40 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300",
+          "border-success/40 bg-success/10 text-success [a]:hover:bg-success/20",
+        warning:
+          "border-warning/40 bg-warning/10 text-warning [a]:hover:bg-warning/20",
         info:
-          "border-cyan-600/40 bg-cyan-50 text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200",
+          "border-info/40 bg-info/10 text-info [a]:hover:bg-info/20",
       },
     },
     defaultVariants: {

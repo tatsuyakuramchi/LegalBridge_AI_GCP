@@ -29,11 +29,11 @@ const TOP: Record<NonNullable<FormSectionProps['variant']>, string> = {
 };
 const TITLE: Record<NonNullable<FormSectionProps['variant']>, string> = {
   blue: 'text-sky-600',
-  amber: 'text-amber-600',
-  emerald: 'text-emerald-600',
+  amber: 'text-warning',       // UIC-24: status tone → token
+  emerald: 'text-success',
   indigo: 'text-indigo-600',
   cyan: 'text-cyan-600',
-  red: 'text-rose-600',
+  red: 'text-destructive',
   default: 'text-foreground',
 };
 

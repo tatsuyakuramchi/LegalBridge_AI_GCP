@@ -42,4 +42,7 @@ BLOCKER: "border-[hsl(var(--severity-blocker)_/_0.45)] text-[hsl(var(--severity-
 
 - 新規・改修コンポーネントは status/severity を**必ずトークン経由**にする。
 - 既存の `rose/amber/yellow/emerald/slate` 直書きは、触るタイミングでトークンへ置換（一括置換は非破壊確認が必要なため段階的に）。
-- 済: `DataQualityCenter` / `CompletenessPanel` の `SEV_CLS`。
+- 済: `DataQualityCenter` / `CompletenessPanel` の `SEV_CLS`（severity）、
+  `FormField`（必須未入力 warning）、`FormSection`（amber/emerald/red の status tone）、
+  `components/ui/badge`（success/warning/info variant を token 化・手動 dark: 撤去。全 `<Badge variant=...>` に波及）、
+  `CompletenessBadge`（blocker/error/warning/ok tone）。
