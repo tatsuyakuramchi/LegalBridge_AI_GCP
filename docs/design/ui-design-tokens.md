@@ -46,3 +46,4 @@ BLOCKER: "border-[hsl(var(--severity-blocker)_/_0.45)] text-[hsl(var(--severity-
   `FormField`（必須未入力 warning）、`FormSection`（amber/emerald/red の status tone）、
   `components/ui/badge`（success/warning/info variant を token 化・手動 dark: 撤去。全 `<Badge variant=...>` に波及）、
   `CompletenessBadge`（blocker/error/warning/ok tone）。
+  `components/ui/toast`（success 通知）、`components/ui/switch`（ON 状態）。
