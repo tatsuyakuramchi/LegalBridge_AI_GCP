@@ -218,7 +218,7 @@ export function MattersListPage() {
               //   [&>*]:pointer-events-none で行内テキストのクリックを overlay へ透過させる。
               <div
                 key={m.id}
-                className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-y-1 md:gap-2 px-3 py-2.5 border-b border-border/60 items-center text-left hover:bg-muted/40 transition-colors w-full [&>*]:pointer-events-none"
+                className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-y-1.5 md:gap-2 px-3 py-2.5 border-border/60 md:border-b max-md:mb-2 max-md:rounded-lg max-md:border max-md:bg-card items-start md:items-center text-left hover:bg-muted/40 transition-colors w-full [&>*]:pointer-events-none"
               >
                 {/* 行全体を案件詳細へ(単一のインタラクティブ要素)。 */}
                 <button
@@ -275,19 +275,21 @@ export function MattersListPage() {
                 </span>
                 {/* 担当 */}
                 <span className="text-[11px] font-mono truncate" title={m.owner_name || ""}>
+                  <span className="md:hidden text-muted-foreground">担当 </span>
                   {m.owner_name || "—"}
                 </span>
                 {/* 期限 */}
                 <span
-                  className={`text-center text-[11px] font-mono tabular-nums ${
+                  className={`text-left md:text-center text-[11px] font-mono tabular-nums ${
                     isOverdue(m) ? "text-destructive font-bold" : "text-muted-foreground"
                   }`}
                   title={isOverdue(m) ? "期限超過" : undefined}
                 >
+                  <span className="md:hidden text-muted-foreground">期限 </span>
                   {fmtShortDate(m.target_due_date)}
                 </span>
                 {/* 課題/文書/条件 (従来の件数はコンパクトに1列へ) */}
-                <span className="flex items-center justify-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
+                <span className="flex items-center justify-start md:justify-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
                   <span className="inline-flex items-center gap-0.5" title="課題">
                     <Layers className="h-3 w-3" /> {m.issue_count}
                   </span>
