@@ -15,10 +15,12 @@ import { NativeSelect } from "@/components/ui/native-select"
 import { cn } from "@/lib/utils"
 import {
   getIssues,
+  getIssueEvents,
   patchIssue,
   waiveIssue,
   rescanDataQuality,
   type DqIssue,
+  type DqIssueEvent,
 } from "@/src/lib/api/dataQualityClient"
 
 const SEV_CLS: Record<string, string> = {
@@ -44,6 +46,20 @@ export function DataQualityCenter() {
   const [issues, setIssues] = React.useState<DqIssue[] | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [rescanning, setRescanning] = React.useState(false)
+  // DQ-09 監査ログ: 行ごとの操作履歴(展開表示)。
+  const [eventsFor, setEventsFor] = React.useState<number | null>(null)
+  const [eventsData, setEventsData] = React.useState<DqIssueEvent[] | null>(null)
+  const [eventsLoading, setEventsLoading] = React.useState(false)
+
+  const toggleEvents = async (id: number) => {
+    if (eventsFor === id) { setEventsFor(null); return }
+    setEventsFor(id)
+    setEventsData(null)
+    setEventsLoading(true)
+    const r = await getIssueEvents(id)
+    setEventsData(r)
+    setEventsLoading(false)
+  }
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -204,7 +220,8 @@ export function DataQualityCenter() {
             </thead>
             <tbody>
               {filtered.map((it) => (
-                <tr key={it.id} className="border-t border-border/60 hover:bg-muted/20">
+                <React.Fragment key={it.id}>
+                <tr className="border-t border-border/60 hover:bg-muted/20">
                   <td className="px-3 py-1.5">
                     <span className={cn("rounded-sm border px-1 py-0.5 text-[9px] font-bold", SEV_CLS[it.severity])}>
                       {it.severity}
@@ -266,9 +283,40 @@ export function DataQualityCenter() {
                           waive
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => toggleEvents(it.id)}
+                        className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-muted"
+                        title="操作履歴(監査ログ)"
+                      >
+                        履歴
+                      </button>
                     </div>
                   </td>
                 </tr>
+                {eventsFor === it.id && (
+                  <tr className="bg-muted/20">
+                    <td colSpan={6} className="px-3 py-2">
+                      {eventsLoading ? (
+                        <span className="text-[11px] font-mono text-muted-foreground">読み込み中…</span>
+                      ) : !eventsData || eventsData.length === 0 ? (
+                        <span className="text-[11px] font-mono text-muted-foreground">操作履歴はありません（未評価/未デプロイの可能性）。</span>
+                      ) : (
+                        <ul className="space-y-0.5">
+                          {eventsData.map((ev) => (
+                            <li key={ev.id} className="text-[11px] font-mono text-muted-foreground">
+                              <span className="text-foreground">{new Date(ev.created_at).toLocaleString("ja-JP")}</span>
+                              {" · "}{ev.event_type}
+                              {ev.actor ? ` · ${ev.actor}` : " · (不明)"}
+                              {ev.note ? ` · ${ev.note}` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
