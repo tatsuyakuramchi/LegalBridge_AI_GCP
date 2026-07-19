@@ -18,6 +18,7 @@ admin-ui の Cloud Build では **適用されない**。
 | **DQ-04** | 作品一覧・詳細へ 完全性 Badge・修正 CTA | ✅ 実装（admin-ui。`CompletenessBadge` / `CompletenessPanel` / `dataQualityClient`） |
 | **DQ-04b** | DQ Center の 条件/素材「修正」を実画面へ接続 | ✅ 実装（issues API が親 work_id・条件 line_code を解決 → `/works/:id` `/condition-lines/:lineCode` へ導線） |
 | DQ-05 | 独立データ入力 UI `/data-entry` | ⬜（admin-ui） |
+| **DQ-自動発火** | 保存後に該当エンティティだけ差分再評価（§8.4） | ✅ 実装（worker `evaluateEntity` ＋ `POST /entities/:type/:id/evaluate`、admin-ui は作品保存で発火） |
 | **DQ-06** | Data Quality Center `/data-quality` | ✅ 実装（admin-ui。`DataQualityCenter` ＋ client 拡張 getIssues/patchIssue/waiveIssue） |
 
 ## DQ-01 で入ったもの（0136）

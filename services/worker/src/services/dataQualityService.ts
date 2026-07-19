@@ -110,6 +110,53 @@ export async function evaluateAll(db: DqDb): Promise<{ evaluated: number; result
   return { evaluated: results.length, results };
 }
 
+/** 単一エンティティの差分評価(DQ 自動発火 §8.4)。保存/リンク変更後にその1件だけ再評価して
+ *  issue を upsert/auto-close し、そのエンティティのサマリーを再計算する(全件 rescan 不要)。
+ *  waived は尊重(再オープンしない)。未実装ルールはスキップ。 */
+export async function evaluateEntity(
+  db: DqDb,
+  entityType: string,
+  entityId: number
+): Promise<{ evaluated: number }> {
+  const active = await db.query(
+    `SELECT rule_code FROM data_quality_rules WHERE is_active AND entity_type = $1`,
+    [entityType]
+  );
+  const activeSet = new Set<string>((active.rows || []).map((r: any) => r.rule_code));
+  let evaluated = 0;
+  for (const ev of EVALUATORS) {
+    if (!activeSet.has(ev.ruleCode)) continue;
+    evaluated++;
+    // このエンティティが失敗集合に居れば open へ upsert(waived は尊重して触らない)。
+    await db.query(
+      `INSERT INTO data_quality_issues (entity_type, entity_id, rule_code, severity)
+         SELECT r.entity_type, f.id, r.rule_code, r.severity
+           FROM data_quality_rules r
+           JOIN (${ev.failingSql}) f ON f.id = $2
+          WHERE r.rule_code = $1 AND r.is_active
+       ON CONFLICT (entity_type, entity_id, rule_code) DO UPDATE
+         SET status = 'open', last_detected_at = now(), resolved_at = NULL,
+             resolution_type = NULL, severity = EXCLUDED.severity
+         WHERE data_quality_issues.status <> 'waived'`,
+      [ev.ruleCode, entityId]
+    );
+    // このエンティティが失敗しなくなっていれば auto-close。
+    await db.query(
+      `UPDATE data_quality_issues i
+          SET status = 'resolved', resolved_at = now(), resolution_type = 'fixed'
+        WHERE i.rule_code = $1 AND i.entity_id = $2 AND i.status = 'open'
+          AND NOT EXISTS (SELECT 1 FROM (${ev.failingSql}) f WHERE f.id = i.entity_id)`,
+      [ev.ruleCode, entityId]
+    );
+  }
+  const table =
+    entityType === "work" ? "works" :
+    entityType === "material" ? "work_materials" :
+    entityType === "condition" ? "condition_lines" : null;
+  if (table) await recomputeSummaryFor(db, entityType, table, entityId);
+  return { evaluated };
+}
+
 // entity_completeness_summary 再計算に使う: rule_code → 完全性カテゴリの分類。
 const CATEGORY_CASE = `CASE
     WHEN rule_code IN ('WORK-ID-001','MAT-ID-001') THEN 'identity'
@@ -126,8 +173,10 @@ const rankToStatus = (expr: string) =>
   `CASE ${expr} WHEN 3 THEN 'blocker' WHEN 2 THEN 'error' WHEN 1 THEN 'warning' ELSE 'ok' END`;
 
 /** 指定 entity_type(work/material/condition)の全エンティティのサマリーを再計算。 */
-async function recomputeSummaryFor(db: DqDb, entityType: string, baseTable: string): Promise<void> {
+async function recomputeSummaryFor(db: DqDb, entityType: string, baseTable: string, entityId?: number): Promise<void> {
   // 分類別に「開いている issue の最悪 severity ランク」を出し、status 文字列へ写す。
+  //   entityId を渡すと、その1エンティティだけを再計算する(DQ 自動発火用)。
+  const idWhere = entityId != null ? " WHERE e.id = $2" : "";
   await db.query(
     `INSERT INTO entity_completeness_summary
        (entity_type, entity_id, identity_status, relationship_status, contract_status,
@@ -157,7 +206,7 @@ async function recomputeSummaryFor(db: DqDb, entityType: string, baseTable: stri
            CASE severity WHEN 'BLOCKER' THEN 3 WHEN 'ERROR' THEN 2 WHEN 'WARNING' THEN 1 ELSE 0 END AS sevrank
          FROM data_quality_issues WHERE entity_type = $1 AND status = 'open'
        ) x GROUP BY entity_id
-     ) a ON a.entity_id = e.id
+     ) a ON a.entity_id = e.id${idWhere}
      ON CONFLICT (entity_type, entity_id) DO UPDATE SET
        identity_status     = EXCLUDED.identity_status,
        relationship_status = EXCLUDED.relationship_status,
@@ -169,7 +218,7 @@ async function recomputeSummaryFor(db: DqDb, entityType: string, baseTable: stri
        warning_count       = EXCLUDED.warning_count,
        score               = EXCLUDED.score,
        evaluated_at        = now()`,
-    [entityType]
+    entityId != null ? [entityType, entityId] : [entityType]
   );
 }
 

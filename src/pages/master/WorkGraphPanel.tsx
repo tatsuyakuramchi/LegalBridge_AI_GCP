@@ -13,6 +13,7 @@ import * as React from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { RightsTreePanel } from "./RightsTreePanel"
 import { CompletenessPanel } from "@/src/components/dataquality/CompletenessPanel"
+import { evaluateEntity } from "@/src/lib/api/dataQualityClient"
 import { Globe } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -716,6 +717,8 @@ export function WorkGraphPanel() {
         const e = await r.json().catch(() => ({}))
         throw new Error(e?.error || `HTTP ${r.status}`)
       }
+      // DQ 自動発火(§8.4): 編集した条件だけ差分再評価(COND-FIN-001 等)。worker 未反映でも degrade。
+      await evaluateEntity("condition", matEditId)
       setMatEditId(null)
       await loadGraph(workId)
     } catch (e: any) {
@@ -843,6 +846,9 @@ export function WorkGraphPanel() {
         body: JSON.stringify(body),
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      // DQ 自動発火(§8.4): 保存した作品だけ差分再評価し、完全性 Badge/パネルを最新化する。
+      //   worker 未デプロイ等は client 側で握りつぶすため、保存フローは壊さない。
+      await evaluateEntity("work", workId)
       setEditing(false)
       await loadGraph(workId)
     } catch (e: any) {
