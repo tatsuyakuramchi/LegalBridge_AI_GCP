@@ -50,15 +50,18 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 
 **評価エンジン** `services/worker/src/services/dataQualityService.ts`:
 - ルールごとに「違反行の id を返す SQL(failingSql)」を持つ評価器を登録。実スキーマに対応する
-  **8 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
+  **9 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
   `MAT-RGT-002` / `COND-FIN-001` / `COND-SCOPE-001`（許諾条件の地域・言語・期間）/
-  `WORK-REL-002`（Phase F: `work_relations` の自己参照検出）。
+  `WORK-REL-002`（Phase F: `work_relations` の自己参照検出）/
+  `MAT-RGT-003`（Phase F: `material_rights_sources` の主要根源一意性）。
+- 後発テーブル依存の評価器（`work_relations`/`material_rights_sources` 等）は `requiresTable` を持ち、
+  `to_regclass` でテーブル存在を確認して**未作成なら skip**（migration 未適用でも rescan を止めない）。
 - 評価 = 失敗集合を issue へ **upsert(open)** ／ 失敗しなくなったものを **auto-close(resolved)**。
   `status='waived'` は尊重して**再オープンしない**。
 - `entity_completeness_summary` を集計（blocker/error/warning 件数 ＋ score ＝ 100−blocker×40−error×15−warning×5、
   ＋ 分類別 status を rule→category マッピングで算出）。runtime DDL は使わない（実行ロールの CREATE 権限に非依存）。
-- **未実装テーブル依存のルール（`work_relations`/`material_rights_sources`/`fee_subject_snapshot` 等）は
-  評価器を登録せずスキップ**（台帳には残す）。Phase D/F でテーブルが入り次第、評価器を追加する。
+- **未実装テーブル依存のルール（`fee_subject_snapshot` 等）は評価器を登録せずスキップ**（台帳には残す）。
+  Phase D/F でテーブルが入り次第、評価器を追加する（`work_relations`=F1・`material_rights_sources`=F2 済み）。
 
 **API** `services/worker/src/routes/dataQuality.ts`（§14.4）:
 `POST /api/data-quality/rescan`・`GET .../rules`・`GET .../issues`（絞込＋severity 順＋rule メタ join）・
