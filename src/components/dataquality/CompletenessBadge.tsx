@@ -15,14 +15,15 @@ export function CompletenessBadge({ summary, className }: { summary: DqSummary |
   const warn = summary.warning_count || 0;
 
   const tone = blk > 0 ? "blocker" : err > 0 ? "error" : warn > 0 ? "warning" : "ok";
+  // UIC-24: severity / success トークンへ。light/dark 両対応。
   const cls =
     tone === "blocker"
-      ? "border-rose-300 text-rose-700 bg-rose-50/60"
+      ? "border-[hsl(var(--severity-blocker)_/_0.45)] text-[hsl(var(--severity-blocker))] bg-[hsl(var(--severity-blocker)_/_0.1)]"
       : tone === "error"
-        ? "border-amber-300 text-amber-700 bg-amber-50/60"
+        ? "border-[hsl(var(--severity-error)_/_0.45)] text-[hsl(var(--severity-error))] bg-[hsl(var(--severity-error)_/_0.1)]"
         : tone === "warning"
-          ? "border-yellow-300 text-yellow-700 bg-yellow-50/50"
-          : "border-emerald-300 text-emerald-700 bg-emerald-50/50";
+          ? "border-[hsl(var(--severity-warning)_/_0.45)] text-[hsl(var(--severity-warning))] bg-[hsl(var(--severity-warning)_/_0.1)]"
+          : "border-success/40 text-success bg-success/10";
   const Icon = tone === "ok" ? ShieldCheck : tone === "warning" ? AlertTriangle : ShieldAlert;
   const label =
     tone === "ok"
