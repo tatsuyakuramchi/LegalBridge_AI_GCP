@@ -69,6 +69,16 @@ const EVALUATORS: Evaluator[] = [
                         OR base_price_label IS NULL OR btrim(base_price_label) = ''
                         OR currency IS NULL OR btrim(currency) = '')`,
   },
+  // COND-SCOPE-001 (condition / ERROR): 許諾(license)条件は地域・言語・期間がある。
+  //   region_territory / region_language は TEXT。期間は term_start / term_end のどちらかがあれば可。
+  {
+    ruleCode: "COND-SCOPE-001",
+    failingSql: `SELECT id FROM condition_lines
+                 WHERE transaction_kind = 'license'
+                   AND ((region_territory IS NULL OR btrim(region_territory) = '')
+                        OR (region_language IS NULL OR btrim(region_language) = '')
+                        OR (term_start IS NULL AND term_end IS NULL))`,
+  },
 ];
 
 /** 登録済みルール(評価器がある & is_active)を1件評価: open upsert + auto-close。 */
