@@ -21,6 +21,7 @@ admin-ui の Cloud Build では **適用されない**。
 | **DQ-自動発火** | 保存後に該当エンティティだけ差分再評価（§8.4） | ✅ 実装（worker `evaluateEntity` ＋ `POST /entities/:type/:id/evaluate`、admin-ui は作品/条件/素材の保存で発火） |
 | **DQ-08** | 完全性ゲート（作品公開・案件完了のソフト確認） | ✅ 第1/2弾（admin-ui。請求開始ゲートは要・実機協働） |
 | **DQ-09** | 監査ログ（担当/期限/waive を 誰が/いつ/何を で記録） | ✅ 実装（`migrations/0137` ＋ worker `data_quality_issue_events` 記録・`GET /issues/:id/events`、DQ Center に「履歴」表示） |
+| **DQ-10** | 夜間 全件スキャン（Cloud Scheduler → 既存 rescan） | ✅ 手順化（[`nightly-rescan.md`](./nightly-rescan.md)。コード不要・冪等。評価 outbox は将来） |
 | **DQ-06** | Data Quality Center `/data-quality` | ✅ 実装（admin-ui。`DataQualityCenter` ＋ client 拡張 getIssues/patchIssue/waiveIssue） |
 
 ## DQ-01 で入ったもの（0136）
