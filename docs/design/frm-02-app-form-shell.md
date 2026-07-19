@@ -64,7 +64,8 @@ function VendorForm({ mode }: { mode: "create" | "edit" | "readonly" }) {
 
 実フォームを段階移行して API を実地検証・洗練する:
 - FRM-06: Works / Material / Work Family / Rights Source
-- FRM-07: Vendor / Staff / Ringi / Routing
+- FRM-07: Vendor / Staff / Ringi / Routing（**Staff 済**: `StaffPanel` の page-local `Field()` を
+  `AppFormField` へ、必須氏名を `ValidationSummary` へ。§11.3 の禁止パターンを解消し API を実地検証）
 - FRM-08: Matter / Task / Delivery / Inspection（業務処理フォーム型）
 - FRM-09: 利用許諾計算・受領・支払・分配（Finance）
 - FRM-10: Import / Merge / Unlinked / Migration / Draft（管理者フォーム型）
