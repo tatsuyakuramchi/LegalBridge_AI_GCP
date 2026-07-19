@@ -66,6 +66,13 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 - API: rescan/rules/issues/summary/patch/waive を Express 実起動 + fetch で 200 応答・期待値を確認。
 - worker `tsc --noEmit`: エラー 0。
 
+## 初期データ是正（2026-07-18）
+
+実機投入直後の初回スキャン（BLOCKER 88 / ERROR ~52）に対し、構造的な残骸・誤フラグ・重複を是正。
+**BLOCKER 88→34・WORK-ID-001/WORK-REL-001 を 0** に。詳細は
+[`initial-data-remediation-20260718.md`](./initial-data-remediation-20260718.md)。
+残り（COND-FIN-001 34 / WORK-MAT-001 5 / MAT-RGT-002 18）は DQ Center の通常運用へ引き渡し。
+
 ## 次
 
 - **DQ-04**（admin-ui）: 作品一覧・詳細へ完全性 Badge・修正 CTA（`summary`/`issues` API を消費）。
