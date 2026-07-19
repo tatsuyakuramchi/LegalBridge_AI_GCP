@@ -52,6 +52,33 @@
 - 文書生成（発注書/個別・出版利用許諾）・債権マップ・条件読取りの E2E スモークが緑。
 - ロールバック: DROP は最終 migration 1 本（`DROP TABLE ... CASCADE`）。前段は各スライスで可逆。
 
+## H-3 精査で判明した id フロー（重要）
+
+`ledgers` 撤去は「原作選択＋素材作成フロー」の載せ替えで、id 意味論が層ごとに食い違う:
+
+- **保存層は works ベース(健全)**: `documents.ledger_ref_id` の FK は `works(id)`。実データ照合で
+  該当 5 文書すべて works.id に解決(ledgers.id には 0)。`documentSave.ts:286` が
+  `ledger_ref_id = input.ledger_ref_id ?? origWorkId`(origWorkId = `ledger_code`=`work_code` から
+  解決した works.id)で保存。
+- **一方 GET `/api/master/ledgers` は `id = ledgers.id` を返し**、POST `.../:id/materials` と
+  DELETE `.../:id` は `:id` を **ledgers.id** として解決する(`addMaterialToLedger` / `DELETE FROM ledgers`)。
+- つまり **表示・素材作成 API は ledgers.id キー / 保存は works.id キー**で混在。載せ替えは
+  GET の id を works.id に統一し、POST/DELETE/merge を works/work_materials へ切り替える必要がある。
+
+### H-3 の段階化（本番フォーム直結のため分割）
+
+- **H-3a(完了・本 PR)**: works 正準化。ledgers 固有の原作メタ(title_kana/creator_name/
+  publisher_name/division/alternative_titles)を works へ追加＋backfill(`0142`)。読み書き経路は不変＝
+  リスクゼロ。後続の GET 載せ替えで shape 互換を保つ土台。
+- **H-3b(要・専用対応)**: GET `/api/master/ledgers` の list を works(licensed_in) 由来へ、
+  `id = works.id` に統一。LedgersPanel/フォームの原作候補が不変であることを実機確認。
+- **H-4(要・専用対応)**: POST `.../:id/materials`・DELETE・entityMerge/workModel の
+  `DELETE FROM ledgers` を works.id/work_materials へ。**発注書・個別/出版利用許諾の原作選択と
+  素材作成を実機 E2E で検証**してからマージ。
+
+> H-3b/H-4 は 5 文書のみが対象で、本番の法務文書生成に直結する。専用セッションで
+> ドキュメントフォームの E2E(原作選択→素材追加→PDF 生成)を通してから実施すること。
+
 ## リスクと方針
 
 - 文書フォームの原作選択・素材作成は**現行運用で使用中**。H-3/H-4 は各スライスで新旧照合＋実機確認を必須とする。
