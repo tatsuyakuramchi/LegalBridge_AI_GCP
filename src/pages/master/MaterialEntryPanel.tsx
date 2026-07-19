@@ -30,6 +30,7 @@ import { WorkPicker, toWorkPickerItem, type WorkPickerItem } from "@/src/compone
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { DocumentNumberLookup, type LookedUpDocument } from "@/src/components/document/DocumentNumberLookup"
 import { MATERIAL_GENRES, normalizeGenre } from "@/lib/materialVocab"
+import { evaluateEntity } from "@/src/lib/api/dataQualityClient"
 
 // 種別(ジャンル)は正準語彙 MATERIAL_GENRES(lib/materialVocab)を使う(ゲームデザイン等を含む)。
 //   旧来のローカル固定リストは廃止し、3ファイル同期の正準ジャンルへ一本化。
@@ -453,6 +454,8 @@ export function MaterialEntryPanel() {
           throw new Error(e?.error || `マテリアル更新に失敗 (HTTP ${uRes.status})`)
         }
         showNotification?.(`属性を更新しました: ${editingCode}（金銭条件は文書フォームで編集します）`, "success")
+        // DQ 自動発火(§8.4): 保存した素材だけ差分再評価(MAT-ID-001/MAT-RGT-002)。worker 未反映でも degrade。
+        await evaluateEntity("material", editingId)
       } else {
         const mRes = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/materials`, {
           method: "POST",
@@ -468,6 +471,8 @@ export function MaterialEntryPanel() {
           `マテリアルを登録しました: ${material.material_code}（金銭条件は文書フォームで登録してください）`,
           "success"
         )
+        // DQ 自動発火(§8.4): 新規素材を差分再評価(MAT-ID-001/MAT-RGT-002)。
+        if (material?.id != null) await evaluateEntity("material", Number(material.id))
       }
       await loadMaterials(workId)
       backToGate()
