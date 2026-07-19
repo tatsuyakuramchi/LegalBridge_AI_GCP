@@ -656,7 +656,8 @@ export function registerWorkModelRoutes(
           `SELECT cw.*, w.title AS work_title, w.kind AS work_kind, s.title AS source_ip_title, p.product_name
              FROM contract_works cw
              LEFT JOIN works w ON w.id = cw.work_id
-             LEFT JOIN source_ips s ON s.id = cw.source_ip_id
+             -- Phase H-2: source_ips テーブル依存を撤去。works へ legacy_source_ip_id 経由で解決。
+             LEFT JOIN works s ON s.legacy_source_ip_id = cw.source_ip_id
              LEFT JOIN products p ON p.id = cw.product_id
             WHERE cw.contract_id = $1 ORDER BY cw.id`,
           [id]

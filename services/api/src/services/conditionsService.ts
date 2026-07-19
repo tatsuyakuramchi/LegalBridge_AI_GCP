@@ -240,7 +240,7 @@ export async function listConditions(
            AND cr.sent_at IS NULL) AS fulfill_cloudsign_draft_at`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
-       cli.source_ip_id, si.title AS source_ip_title, si.source_code,
+       cli.source_ip_id, w.title AS source_ip_title, w.work_code AS source_code,
        cli.work_id, w.title AS work_title, w.work_code,
        cli.master_contract_id, mc.contract_title AS master_contract_title,
        mc.document_number AS master_contract_number,
@@ -248,7 +248,6 @@ export async function listConditions(
        cli.status_flags, COALESCE(cli.is_inbound, FALSE) AS is_inbound,
        cli.flow_direction`;
   const linkJoins = `
-    LEFT JOIN source_ips si ON si.id = cli.source_ip_id
     LEFT JOIN works w ON w.id = cli.work_id
     LEFT JOIN contracts mc ON mc.id = cli.master_contract_id
     LEFT JOIN ringi_records rr ON rr.id = cli.ringi_id`;
