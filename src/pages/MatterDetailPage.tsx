@@ -48,6 +48,7 @@ import {
 import { useAppData } from "@/src/context/AppDataContext"
 import { matterClient } from "@/src/lib/api/matterClient"
 import { apiRequest } from "@/src/lib/api/httpClient"
+import { getIssues } from "@/src/lib/api/dataQualityClient"
 import { useMatterMergeCart } from "@/src/context/MatterMergeCartContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { StaffPicker } from "@/src/components/cloudsign/StaffPicker"
@@ -272,6 +273,22 @@ export function MatterDetailPage() {
 
   // ヘッダーのステータスはその場で即保存(編集フォームを開かずに変えたいケースが大半)。
   async function changeStatus(next: string) {
+    // DQ-08 完全性ゲート(§8.7): 「完了(closed)」にする時、束ねた条件の未解消 BLOCKER を確認(ソフトゲート)。
+    //   worker 未反映/未評価なら BLOCKER 0 とみなし素通り(degrade)。
+    if (next === "closed" && data?.matter?.status !== "closed") {
+      const condIds = new Set<number>((data?.conditions || []).map((c: any) => Number(c.id)))
+      if (condIds.size > 0) {
+        const issues = await getIssues({ entity_type: "condition", severity: "BLOCKER", status: "open" })
+        const blockers = (issues || []).filter((i) => condIds.has(Number(i.entity_id)))
+        if (blockers.length > 0) {
+          const ok = window.confirm(
+            `この案件の条件に未解消の BLOCKER が ${blockers.length} 件あります。\n` +
+              `完全性が不足したまま「完了」にしますか？（推奨: 先に修正してから完了）`
+          )
+          if (!ok) return
+        }
+      }
+    }
     try {
       await run(matterClient.update(matterId, { status: next }), "ステータスを更新しました")
       await load()
