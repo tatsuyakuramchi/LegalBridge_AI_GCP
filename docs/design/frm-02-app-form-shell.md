@@ -76,6 +76,11 @@ function VendorForm({ mode }: { mode: "create" | "edit" | "readonly" }) {
   - ※ Vendor の住所/口座の **compact 反復サブフォーム**（直書き `<Label>`）は FRM-11 で対応。
   - ※ Routing 専用フォーム UI は無し（`apiRoutingRules` は設定ファイル）。
 - FRM-08: Matter / Task / Delivery / Inspection（業務処理フォーム型）
+  - **Matter 編集フォーム 済**: `MatterDetailPage` の案件編集（案件名/相手方/Backlog/担当/期限/
+    ブロッカー/備考 の 7 フィールド）を、インライン `<Label>` 直書きから `AppFormField` へ。
+    「選択中: …」は `hint` へ。各 input に id＋aria。
+  - ※ タスク追加は compact 横並びインライン＝FRM-11 で対応。Delivery/Inspection は概ね
+    SchemaDocumentForm ベース（文書フォーム）。統合カート/メール送信ダイアログは FRM-11。
 - FRM-09: 利用許諾計算・受領・支払・分配（Finance）
 - FRM-10: Import / Merge / Unlinked / Migration / Draft（管理者フォーム型）
 - FRM-11: Dialog / Drawer / インライン追加（compact 版）
