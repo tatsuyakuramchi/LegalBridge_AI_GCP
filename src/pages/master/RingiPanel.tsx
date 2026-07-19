@@ -25,7 +25,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
+import { AppFormField } from "@/src/components/form"
 import { useAppData } from "@/src/context/AppDataContext"
 import {
   Dialog,
@@ -565,6 +565,8 @@ export function RingiPanel() {
   )
 }
 
+// FRM-07: 共通フォーム基盤へ委譲。ページ独自の field 描画を廃し AppFormField に一本化
+//   (設計 §11.3)。末尾 " *" は必須マーカーとして解釈し AppFormField.required へ。
 function Field({
   label,
   children,
@@ -574,10 +576,11 @@ function Field({
   children: React.ReactNode
   className?: string
 }) {
+  const required = /\*\s*$/.test(label)
+  const cleanLabel = label.replace(/\s*\*\s*$/, "")
   return (
-    <div className={`space-y-1 ${className || ""}`}>
-      <Label>{label}</Label>
+    <AppFormField label={cleanLabel} required={required} className={className}>
       {children}
-    </div>
+    </AppFormField>
   )
 }

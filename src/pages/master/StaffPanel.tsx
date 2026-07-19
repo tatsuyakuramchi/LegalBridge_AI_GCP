@@ -18,7 +18,7 @@ import {
   DialogBody,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
+import { AppFormField, ValidationSummary } from "@/src/components/form"
 
 const empty = { staff_name: "", department: "", slack_user_id: "", email: "" }
 
@@ -38,6 +38,9 @@ export function StaffPanel() {
 
   const open = !!editing || creating
   const data = creating ? draft : editing
+  // 必須: 氏名（FRM-02 ValidationSummary / AppFormField で表示）。
+  const nameError: string | null =
+    open && !String(data?.staff_name || "").trim() ? "氏名は必須です" : null
   const set = (patch: any) => {
     if (creating) setDraft({ ...draft, ...patch })
     else setEditing({ ...editing, ...patch })
@@ -223,36 +226,45 @@ export function StaffPanel() {
             </DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            <Field label="氏名 *">
+            <ValidationSummary issues={nameError ? [{ id: "name", level: "error", message: "氏名を入力してください", fieldId: "staff_name" }] : []} />
+            <AppFormField label="氏名" htmlFor="staff_name" required error={nameError}>
               <Input
+                id="staff_name"
                 value={data?.staff_name || ""}
                 onChange={(e) => set({ staff_name: e.target.value })}
               />
-            </Field>
-            <Field label="部署">
+            </AppFormField>
+            <AppFormField label="部署" htmlFor="staff_dept">
               <Input
+                id="staff_dept"
                 value={data?.department || ""}
                 onChange={(e) => set({ department: e.target.value })}
               />
-            </Field>
-            <Field label="Slack User ID">
+            </AppFormField>
+            <AppFormField
+              label="Slack User ID"
+              htmlFor="staff_slack"
+              hint={editing ? "登録後は変更できません" : undefined}
+            >
               <Input
+                id="staff_slack"
                 value={data?.slack_user_id || ""}
                 disabled={!!editing}
                 onChange={(e) => set({ slack_user_id: e.target.value })}
                 placeholder="U12345678"
               />
-            </Field>
-            <Field label="メール">
+            </AppFormField>
+            <AppFormField label="メール" htmlFor="staff_email">
               <Input
+                id="staff_email"
                 type="email"
                 value={data?.email || ""}
                 onChange={(e) => set({ email: e.target.value })}
               />
-            </Field>
+            </AppFormField>
             {/* 統合 Phase 3: 役割(app_role)管理。既存担当者かつメール有りのみ。 */}
             {!creating && (
-              <Field label="役割 (app_role)">
+              <AppFormField label="役割 (app_role)" state="referenced">
                 {data?.email ? (
                   <div className="flex items-center gap-2">
                     <Button
@@ -292,28 +304,19 @@ export function StaffPanel() {
                     メール登録後に役割を変更できます。
                   </p>
                 )}
-              </Field>
+              </AppFormField>
             )}
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={close} disabled={saving}>
               キャンセル
             </Button>
-            <Button onClick={save} disabled={saving}>
+            <Button onClick={save} disabled={saving || !!nameError}>
               {saving ? "保存中…" : "保存"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-1">
-      <Label>{label}</Label>
-      {children}
     </div>
   )
 }
