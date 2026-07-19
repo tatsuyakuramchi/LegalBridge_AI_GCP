@@ -142,12 +142,12 @@ async function computeNode(work: WorkRow, allDeals: any[]) {
     const ur = await query(
       `SELECT DISTINCT cc.id AS capability_id, cc.document_number, cc.contract_category,
               v.vendor_name AS licensor_name,
-              si.title AS source_ip_title, si.source_code,
+              si.title AS source_ip_title, si.work_code AS source_code,
               fc.rate_pct, fc.mg_amount, fc.region_language_label AS rate_basis
          FROM condition_lines cli
          JOIN documents cc ON cc.id = cli.capability_id
          LEFT JOIN vendors v ON v.id = cc.vendor_id
-         LEFT JOIN source_ips si ON si.id = cli.source_ip_id
+         LEFT JOIN works si ON si.id = cli.source_work_id
          LEFT JOIN LATERAL (
            SELECT f.rate_pct, f.mg_amount, f.condition_name AS region_language_label
              FROM condition_lines f
