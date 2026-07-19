@@ -717,6 +717,8 @@ export function WorkGraphPanel() {
         const e = await r.json().catch(() => ({}))
         throw new Error(e?.error || `HTTP ${r.status}`)
       }
+      // DQ 自動発火(§8.4): 編集した条件だけ差分再評価(COND-FIN-001 等)。worker 未反映でも degrade。
+      await evaluateEntity("condition", matEditId)
       setMatEditId(null)
       await loadGraph(workId)
     } catch (e: any) {
