@@ -24,10 +24,11 @@ import {
 } from "@/src/lib/api/dataQualityClient"
 
 const SEV_CLS: Record<string, string> = {
-  BLOCKER: "border-rose-300 text-rose-700 bg-rose-50/60",
-  ERROR: "border-amber-300 text-amber-700 bg-amber-50/60",
-  WARNING: "border-yellow-300 text-yellow-700 bg-yellow-50/50",
-  INFO: "border-slate-300 text-slate-600 bg-slate-50/50",
+  // UIC-24: 状態色トークン(severity-*)を使用。emerald/rose 直書きを撤去し light/dark 両対応に。
+  BLOCKER: "border-[hsl(var(--severity-blocker)_/_0.45)] text-[hsl(var(--severity-blocker))] bg-[hsl(var(--severity-blocker)_/_0.1)]",
+  ERROR: "border-[hsl(var(--severity-error)_/_0.45)] text-[hsl(var(--severity-error))] bg-[hsl(var(--severity-error)_/_0.1)]",
+  WARNING: "border-[hsl(var(--severity-warning)_/_0.45)] text-[hsl(var(--severity-warning))] bg-[hsl(var(--severity-warning)_/_0.1)]",
+  INFO: "border-border text-muted-foreground bg-muted/50",
 }
 const ENTITY_LABEL: Record<string, string> = {
   work: "作品", material: "素材", condition: "条件", work_relation: "作品関係",

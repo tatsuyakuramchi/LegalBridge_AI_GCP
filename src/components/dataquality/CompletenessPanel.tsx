@@ -10,10 +10,11 @@ import { cn } from "@/lib/utils";
 import { getEntityCompleteness, type DqEntityResult, type DqIssue } from "@/src/lib/api/dataQualityClient";
 
 const SEV_CLS: Record<string, string> = {
-  BLOCKER: "border-rose-300 text-rose-700 bg-rose-50/60",
-  ERROR: "border-amber-300 text-amber-700 bg-amber-50/60",
-  WARNING: "border-yellow-300 text-yellow-700 bg-yellow-50/50",
-  INFO: "border-slate-300 text-slate-600 bg-slate-50/50",
+  // UIC-24: 状態色トークン(severity-*)を使用。light/dark 両対応。
+  BLOCKER: "border-[hsl(var(--severity-blocker)_/_0.45)] text-[hsl(var(--severity-blocker))] bg-[hsl(var(--severity-blocker)_/_0.1)]",
+  ERROR: "border-[hsl(var(--severity-error)_/_0.45)] text-[hsl(var(--severity-error))] bg-[hsl(var(--severity-error)_/_0.1)]",
+  WARNING: "border-[hsl(var(--severity-warning)_/_0.45)] text-[hsl(var(--severity-warning))] bg-[hsl(var(--severity-warning)_/_0.1)]",
+  INFO: "border-border text-muted-foreground bg-muted/50",
 };
 
 export function CompletenessPanel({
