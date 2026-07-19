@@ -83,7 +83,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
       ? 'bg-muted/40 text-muted-foreground/80 border-transparent cursor-not-allowed select-text'
       : 'bg-transparent',
     error && 'border-destructive focus:border-destructive',
-    isRequired && isEmpty && !isReadOnly && 'border-amber-500/60 bg-amber-50/40'
+    isRequired && isEmpty && !isReadOnly && 'border-warning/60 bg-warning/10'
   );
 
   return (
@@ -113,7 +113,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
             <span
               className={cn(
                 'font-bold leading-none',
-                isEmpty ? 'text-red-600' : 'text-amber-600'
+                isEmpty ? 'text-destructive' : 'text-warning'
               )}
               title={isEmpty ? '必須項目（未入力）' : '必須項目'}
               aria-label={isEmpty ? '必須項目（未入力）' : '必須項目'}
@@ -187,7 +187,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
                 {norm === false && '✓ '}False
               </button>
               {norm === undefined && (
-                <span className="text-[11px] font-mono text-amber-600 italic">
+                <span className="text-[11px] font-mono text-warning italic">
                   未選択
                 </span>
               )}
@@ -244,7 +244,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
               ? 'bg-muted/40 text-muted-foreground/80 cursor-not-allowed'
               : 'bg-card',
             error && 'border-destructive',
-            isRequired && isEmpty && !isReadOnly && 'border-amber-500/60 bg-amber-50/40'
+            isRequired && isEmpty && !isReadOnly && 'border-warning/60 bg-warning/10'
           )}
           placeholder={placeholder || `Enter ${label}…`}
         />
