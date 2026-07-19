@@ -89,6 +89,26 @@ export async function getIssues(filters: DqIssueFilters = {}): Promise<DqIssue[]
   }
 }
 
+export type DqIssueEvent = {
+  id: number;
+  event_type: string;
+  actor: string | null;
+  detail: any;
+  note: string | null;
+  created_at: string;
+};
+
+/** Issue の監査ログ(操作履歴: 誰が/いつ/何を)。失敗(未デプロイ等)時は null(degrade)。 */
+export async function getIssueEvents(id: number): Promise<DqIssueEvent[] | null> {
+  try {
+    const r = await apiGet<{ ok: boolean; events: DqIssueEvent[] }>(`/api/data-quality/issues/${id}/events`);
+    if (!r || r.ok === false) return null;
+    return r.events || [];
+  } catch {
+    return null;
+  }
+}
+
 /** Issue の 担当/期限/メモ 更新。失敗時は null。 */
 export async function patchIssue(
   id: number,

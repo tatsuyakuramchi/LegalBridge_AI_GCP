@@ -18,7 +18,9 @@ admin-ui の Cloud Build では **適用されない**。
 | **DQ-04** | 作品一覧・詳細へ 完全性 Badge・修正 CTA | ✅ 実装（admin-ui。`CompletenessBadge` / `CompletenessPanel` / `dataQualityClient`） |
 | **DQ-04b** | DQ Center の 条件/素材「修正」を実画面へ接続 | ✅ 実装（issues API が親 work_id・条件 line_code を解決 → `/works/:id` `/condition-lines/:lineCode` へ導線） |
 | DQ-05 | 独立データ入力 UI `/data-entry` | ⬜（admin-ui） |
-| **DQ-自動発火** | 保存後に該当エンティティだけ差分再評価（§8.4） | ✅ 実装（worker `evaluateEntity` ＋ `POST /entities/:type/:id/evaluate`、admin-ui は作品保存で発火） |
+| **DQ-自動発火** | 保存後に該当エンティティだけ差分再評価（§8.4） | ✅ 実装（worker `evaluateEntity` ＋ `POST /entities/:type/:id/evaluate`、admin-ui は作品/条件/素材の保存で発火） |
+| **DQ-08** | 完全性ゲート（作品公開・案件完了のソフト確認） | ✅ 第1/2弾（admin-ui。請求開始ゲートは要・実機協働） |
+| **DQ-09** | 監査ログ（担当/期限/waive を 誰が/いつ/何を で記録） | ✅ 実装（`migrations/0137` ＋ worker `data_quality_issue_events` 記録・`GET /issues/:id/events`、DQ Center に「履歴」表示） |
 | **DQ-06** | Data Quality Center `/data-quality` | ✅ 実装（admin-ui。`DataQualityCenter` ＋ client 拡張 getIssues/patchIssue/waiveIssue） |
 
 ## DQ-01 で入ったもの（0136）

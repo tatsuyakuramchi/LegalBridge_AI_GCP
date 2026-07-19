@@ -23,6 +23,28 @@ export function registerDataQualityRoutes(app: Express, deps: DataQualityDeps) {
   const guard: RequestHandler = deps.requirePortalSecret || ((_req, _res, next) => next());
   const jsonBody = express.json({ limit: "256kb" });
 
+  // DQ-09 監査ログ: Issue への操作を data_quality_issue_events に記録する。
+  //   actor は IAP 由来の x-user-email(無ければ NULL=不明)。記録失敗は本処理を止めない。
+  const actorOf = (req: any): string | null =>
+    (req.headers["x-user-email"] as string) || (req.headers["x-lb-user-email"] as string) || null;
+  const logEvent = async (
+    issueId: number,
+    eventType: string,
+    actor: string | null,
+    detail?: any,
+    note?: string | null
+  ) => {
+    try {
+      await db.query(
+        `INSERT INTO data_quality_issue_events (issue_id, event_type, actor, detail, note)
+         VALUES ($1, $2, $3, $4::jsonb, $5)`,
+        [issueId, eventType, actor, detail != null ? JSON.stringify(detail) : null, note || null]
+      );
+    } catch {
+      /* 監査ログの失敗は握りつぶす(本処理を優先) */
+    }
+  };
+
   // 全件再評価 + サマリー再計算。
   app.post("/api/data-quality/rescan", guard, async (_req, res) => {
     try {
@@ -147,6 +169,7 @@ export function registerDataQualityRoutes(app: Express, deps: DataQualityDeps) {
         params
       );
       if (!r.rows[0]) return res.status(404).json({ ok: false, error: "not found" });
+      await logEvent(id, "update", actorOf(req), b, b.resolution_note ?? null);
       res.json({ ok: true, issue: r.rows[0] });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
@@ -165,7 +188,26 @@ export function registerDataQualityRoutes(app: Express, deps: DataQualityDeps) {
         [id, note || null]
       );
       if (!r.rows[0]) return res.status(404).json({ ok: false, error: "not found" });
+      await logEvent(id, "waive", actorOf(req), null, note || null);
       res.json({ ok: true, issue: r.rows[0] });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // DQ-09 監査ログ: Issue の操作履歴(誰が/いつ/何を)。
+  app.get("/api/data-quality/issues/:id/events", guard, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const r = await db.query(
+        `SELECT id, event_type, actor, detail, note, created_at
+           FROM data_quality_issue_events
+          WHERE issue_id = $1
+          ORDER BY created_at DESC
+          LIMIT 100`,
+        [id]
+      );
+      res.json({ ok: true, events: r.rows });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
