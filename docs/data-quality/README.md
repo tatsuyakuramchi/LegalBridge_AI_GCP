@@ -61,7 +61,10 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 - `entity_completeness_summary` を集計（blocker/error/warning 件数 ＋ score ＝ 100−blocker×40−error×15−warning×5、
   ＋ 分類別 status を rule→category マッピングで算出）。runtime DDL は使わない（実行ロールの CREATE 権限に非依存）。
 - **未実装テーブル依存のルール（`fee_subject_snapshot` 等）は評価器を登録せずスキップ**（台帳には残す）。
-  Phase D/F でテーブルが入り次第、評価器を追加する（`work_relations`=F1・`material_rights_sources`=F2 済み）。
+  Phase D/F でテーブルが入り次第、評価器を追加する（`work_relations`=F1・`material_rights_sources`=F2 済み。
+  F3 で `condition_lines.material_rights_source_id` をバックフィル）。
+  `COND-RGT-001`（条件に material_rights_source_id 必須・BLOCKER）は件数影響が大きいため、
+  バックフィル被覆率を実データで確認してから有効化する（現状は評価器未登録）。
 
 **API** `services/worker/src/routes/dataQuality.ts`（§14.4）:
 `POST /api/data-quality/rescan`・`GET .../rules`・`GET .../issues`（絞込＋severity 順＋rule メタ join）・
