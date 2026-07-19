@@ -108,10 +108,10 @@ export function Sidebar() {
         </div>
         <div className="leading-tight">
           <p className="text-[13px] font-mono font-bold uppercase tracking-[0.18em]">
-            {isEva ? "NERV" : "Arcs"}
+            {isEva ? "NERV" : skin === "clean" ? "LegalBridge" : "Arcs"}
           </p>
           <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
-            {isEva ? "MAGI · SYSTEM" : "Legal · OS"}
+            {isEva ? "MAGI · SYSTEM" : skin === "clean" ? "AI Legal Ops" : "Legal · OS"}
           </p>
         </div>
       </div>

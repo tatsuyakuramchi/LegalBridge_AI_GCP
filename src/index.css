@@ -18,7 +18,7 @@
 @theme inline {
   --font-sans: 'Geist Variable', 'Hiragino Sans', system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', 'JetBrains Mono', 'Menlo', monospace;
-  --font-heading: var(--font-sans);
+  --font-heading: var(--font-mono);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -67,29 +67,27 @@
 }
 
 :root {
-  /* UIC-Skin: LegalBridge clean — cool light gray canvas + white cards + blue primary.
-   * 参照デザイン(発注書作成)に合わせた corporate/clean 基調。旧 paper-terminal は
-   * git 履歴に保持。 */
-  --background: 210 24% 98%;
-  --foreground: 222 40% 15%;
-  --card: 0 0% 100%;
-  --card-foreground: 222 40% 15%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 40% 15%;
-  --primary: 221 83% 53%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 210 40% 96%;
-  --secondary-foreground: 222 40% 20%;
-  --muted: 210 30% 96%;
-  /* ユニバーサルデザイン: 補助テキストのコントラストを確保(slate-500 相当)。 */
-  --muted-foreground: 215 18% 40%;
-  --accent: 214 45% 94%;
-  --accent-foreground: 221 83% 40%;
-  --destructive: 0 72% 48%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 214 26% 89%;
-  --input: 214 26% 86%;
-  --ring: 221 83% 53%;
+  /* Paper terminal — warm off-white with amber phosphor（retro/STD スキンの基底） */
+  --background: 40 40% 97%;
+  --foreground: 30 20% 12%;
+  --card: 40 30% 99%;
+  --card-foreground: 30 20% 12%;
+  --popover: 40 30% 99%;
+  --popover-foreground: 30 20% 12%;
+  --primary: 30 20% 12%;
+  --primary-foreground: 40 40% 97%;
+  --secondary: 36 25% 92%;
+  --secondary-foreground: 30 20% 18%;
+  --muted: 36 20% 94%;
+  /* ユニバーサルデザイン: 補助テキストのコントラストを引き上げ(42%→34%)。 */
+  --muted-foreground: 30 10% 34%;
+  --accent: 36 25% 88%;
+  --accent-foreground: 30 20% 18%;
+  --destructive: 8 70% 45%;
+  --destructive-foreground: 40 40% 97%;
+  --border: 30 12% 80%;
+  --input: 30 12% 84%;
+  --ring: 30 30% 30%;
 
   --phosphor: 28 95% 45%;          /* amber phosphor */
   --phosphor-foreground: 40 40% 97%;
@@ -99,17 +97,17 @@
   --grid: 30 15% 88%;
 
   /* UIC-24 状態色(light / paper terminal)。AA コントラストを満たす彩度・明度。 */
-  --success: 152 58% 32%;
-  --success-foreground: 0 0% 100%;
-  --warning: 33 92% 42%;
-  --warning-foreground: 0 0% 100%;
-  --info: 221 76% 48%;
-  --info-foreground: 0 0% 100%;
-  --severity-blocker: 0 72% 46%;
-  --severity-error: 24 85% 42%;
-  --severity-warning: 33 92% 42%;
+  --success: 145 60% 30%;
+  --success-foreground: 40 40% 97%;
+  --warning: 38 92% 38%;
+  --warning-foreground: 30 20% 12%;
+  --info: 200 72% 36%;
+  --info-foreground: 40 40% 97%;
+  --severity-blocker: 8 72% 44%;
+  --severity-error: 24 85% 40%;
+  --severity-warning: 42 92% 38%;
 
-  --radius: 0.5rem;
+  --radius: 0.25rem;
 }
 
 .dark {
@@ -305,6 +303,119 @@
   background-image: linear-gradient(135deg, hsl(247 74% 63%), hsl(248 96% 80%)) !important;
   color: #fff !important;
   box-shadow: 0 6px 16px hsl(247 74% 63% / 0.32);
+}
+
+/*
+ * Clean / LegalBridge skin — corporate clean。参照デザイン(発注書作成 画面)基調。
+ * クールライトグレー地 + 純白カード + ブルー primary + 角丸 + sans 一貫。
+ * skin.tsx の既定スキン("clean")。retro/eva/macos とは独立した自己完結パレット。
+ * 目的: レトロ・ターミナルの等幅/大文字/シャープ角/phosphor を取り除き、
+ *       クリーンな企業系 UI へ。レガシ .tech-*/.retro-tag も clean 化する。
+ */
+[data-skin="clean"] {
+  --background: 210 24% 98%;         /* cool light gray canvas */
+  --foreground: 222 40% 15%;         /* slate ink */
+  --card: 0 0% 100%;                 /* white cards */
+  --card-foreground: 222 40% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 40% 15%;
+  --primary: 221 83% 53%;            /* blue-600 */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 40% 20%;
+  --muted: 210 30% 96%;
+  --muted-foreground: 215 18% 40%;   /* slate-500(AA) */
+  --accent: 214 45% 94%;
+  --accent-foreground: 221 83% 40%;
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 26% 89%;             /* cool light rule */
+  --input: 214 26% 88%;
+  --ring: 221 83% 53%;
+
+  --phosphor: 221 83% 53%;           /* selection/glow = blue */
+  --phosphor-foreground: 0 0% 100%;
+  --amber: 33 92% 48%;
+  --amber-foreground: 0 0% 100%;
+  --cyan: 190 80% 42%;
+  --grid: 214 30% 93%;
+
+  /* 状態色(clean / 白背景で AA)。 */
+  --success: 152 58% 34%;
+  --success-foreground: 0 0% 100%;
+  --warning: 33 90% 44%;
+  --warning-foreground: 0 0% 100%;
+  --info: 221 76% 50%;
+  --info-foreground: 0 0% 100%;
+  --severity-blocker: 0 72% 48%;
+  --severity-error: 24 82% 46%;
+  --severity-warning: 33 90% 44%;
+
+  --radius: 0.625rem;                /* 丸み(≈10px) */
+
+  --font-heading: var(--font-sans);  /* 見出しも sans。等幅/大文字をやめる */
+}
+
+/* 地: フラットなクールライトグレー(スキャンライン/ビネット無し)。 */
+[data-skin="clean"] body {
+  background-image: none;
+  background-color: hsl(var(--background));
+}
+
+/* 見出し: 通常ケース・太め・字間タイト。 */
+[data-skin="clean"] h1,
+[data-skin="clean"] h2,
+[data-skin="clean"] h3,
+[data-skin="clean"] h4,
+[data-skin="clean"] h5,
+[data-skin="clean"] h6 {
+  text-transform: none;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+
+/* サイドバー/トップバーを純白＋薄い境界に(フロスト無しのフラット)。 */
+[data-skin="clean"] aside,
+[data-skin="clean"] header {
+  background-color: hsl(0 0% 100%) !important;
+}
+
+/* シェル(ヘッダー/サイドバー)の等幅・大文字・広字間を一括で clean 化。
+ * JSX の font-mono/uppercase/tracking を skin スコープで無効化(shell 限定)。 */
+[data-skin="clean"] header,
+[data-skin="clean"] header *,
+[data-skin="clean"] aside,
+[data-skin="clean"] aside * {
+  font-family: var(--font-sans) !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+/* アクティブなナビ: ブルーのソフトスラブ。 */
+[data-skin="clean"] .eva-panel [aria-current="page"] {
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  box-shadow: 0 4px 12px hsl(var(--primary) / 0.25);
+}
+
+/* レガシ terminal クラスを clean 化(rounded-none/font-mono/大文字/字間を解除)。 */
+[data-skin="clean"] .tech-input {
+  border-radius: var(--radius);
+  font-family: var(--font-sans);
+}
+[data-skin="clean"] .tech-label {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+[data-skin="clean"] .retro-tag {
+  font-family: var(--font-sans);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+[data-skin="clean"] .retro-tag::before {
+  content: none;
 }
 
 @layer utilities {

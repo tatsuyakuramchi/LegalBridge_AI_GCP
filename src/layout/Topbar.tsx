@@ -77,7 +77,7 @@ export function Topbar() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          {skin === "eva" ? "NERV" : "ARCS"}
+          {skin === "eva" ? "NERV" : skin === "clean" ? "LegalBridge" : "ARCS"}
         </span>
         <ChevronRight className="h-3 w-3 text-muted-foreground" />
         <div className="leading-none">
