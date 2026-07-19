@@ -6,6 +6,7 @@ import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { AppFormField } from "@/src/components/form"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -1530,11 +1531,12 @@ function Field({
   children: React.ReactNode
   className?: string
 }) {
+  const required = /\*\s*$/.test(label)
+  const cleanLabel = label.replace(/\s*\*\s*$/, "")
   return (
-    <div className={`space-y-1 ${className || ""}`}>
-      <Label>{label}</Label>
+    <AppFormField label={cleanLabel} required={required} className={className}>
       {children}
-    </div>
+    </AppFormField>
   )
 }
 
