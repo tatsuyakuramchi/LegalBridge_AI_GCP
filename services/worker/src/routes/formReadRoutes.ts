@@ -485,8 +485,10 @@ async function readCapabilityFinancialRowsForDisplay(
           FROM documents lc
           LEFT JOIN royalty_payments rp ON lc.id = rp.license_contract_id
           LEFT JOIN manufacturing_events me ON lc.id = me.license_contract_id
-          LEFT JOIN vendors v ON (lc.licensor = v.vendor_name)
-          LEFT JOIN external_assets ea ON lc.linked_asset_id = ea.id
+          -- Phase 23 移行残: 旧 license_contracts.licensor / linked_asset_id は documents に無い。
+          --   documents の実列(vendor_id=許諾者取引先 / external_asset_id)で結合する。
+          LEFT JOIN vendors v ON v.id = lc.vendor_id
+          LEFT JOIN external_assets ea ON ea.id = lc.external_asset_id
           WHERE lc.contract_category = 'license'
             AND (lc.backlog_issue_key = $1 OR rp.backlog_issue_key = $1)
           ORDER BY rp.created_at DESC, me.created_at DESC LIMIT 1
@@ -495,11 +497,11 @@ async function readCapabilityFinancialRowsForDisplay(
         if (result.rows.length > 0) {
           const row = result.rows[0];
 
-          context["Licensor_名称"] = row.licensor || "";
-          context["Licensor_氏名会社名"] = row.licensor || "";
+          context["Licensor_名称"] = row.vendor_name || "";
+          context["Licensor_氏名会社名"] = row.vendor_name || "";
           context["Licensee_名称"] = "株式会社アークライト";
 
-          context["CONTRACTOR_NAME"] = row.vendor_name || row.licensor || "";
+          context["CONTRACTOR_NAME"] = row.vendor_name || "";
           context["CONTRACTOR_ADDRESS"] = row.vendor_address || "";
           context["CONTRACTOR_EMAIL"] = row.vendor_email || "";
           context["PROJECT_TITLE"] = row.product_name || "";
@@ -542,7 +544,7 @@ async function readCapabilityFinancialRowsForDisplay(
 
           context["manufacturingIssueKey"] = key;
           context["licenseIssueKey"] = row.backlog_issue_key || "";
-          context["licensor"] = row.licensor || "";
+          context["licensor"] = row.vendor_name || "";
           context["licensee"] = "株式会社アークライト";
           context["originalWork"] = row.original_work || "";
           context["productName"] = row.product_name || "";
