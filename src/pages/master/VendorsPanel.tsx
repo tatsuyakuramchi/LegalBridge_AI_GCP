@@ -26,6 +26,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
+import { AppFormField } from "@/src/components/form"
 import { NativeSelect } from "@/components/ui/native-select"
 import { cn } from "@/lib/utils"
 
@@ -1359,6 +1360,9 @@ export function VendorsPanel() {
   )
 }
 
+// FRM-07: 主フォームの field 描画を共通 AppFormField に一本化(設計 §11.3)。
+//   末尾 " *" は必須マーカーとして required へ。住所/口座の compact 反復サブフォーム
+//   (直書き <Label>) は FRM-11(compact 共通フォーム)で別途対応。
 function Field({
   label,
   children,
@@ -1368,11 +1372,12 @@ function Field({
   children: React.ReactNode
   className?: string
 }) {
+  const required = /\*\s*$/.test(label)
+  const cleanLabel = label.replace(/\s*\*\s*$/, "")
   return (
-    <div className={`space-y-1 ${className || ""}`}>
-      <Label>{label}</Label>
+    <AppFormField label={cleanLabel} required={required} className={className}>
       {children}
-    </div>
+    </AppFormField>
   )
 }
 
