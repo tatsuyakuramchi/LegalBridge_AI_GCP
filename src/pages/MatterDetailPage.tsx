@@ -128,6 +128,9 @@ export function MatterDetailPage() {
   const [edit, setEdit] = React.useState<any>({})
   // 閲覧主体UI: 案件情報の編集フォームは普段は畳んでおく。
   const [editOpen, setEditOpen] = React.useState(false)
+  // UIC-20: 詳細をタブ化。ヘッダー/次アクション(コックピット)は常時表示し、下部の
+  //   課題 / 文書 / 条件・履歴 をタブで切替えてスクロールを削減する。
+  const [tab, setTab] = React.useState<"issues" | "docs" | "side">("issues")
 
   // sub-forms
   const [newIssue, setNewIssue] = React.useState({ backlog_issue_key: "", relation: "related" })
@@ -1170,8 +1173,32 @@ export function MatterDetailPage() {
         <Metric label="最終送信" value={fmtDate(lastSentAt)} />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-4 items-start">
-        {/* 左カラム: 日常操作(課題の統合・文書の送信) */}
+      {/* UIC-20: 下部をタブ化（コックピット=ヘッダー/次アクションは上に常時表示） */}
+      <div>
+        <div className="flex items-center gap-1 border-b border-border mb-4 overflow-x-auto">
+          {([
+            ["issues", "課題", data.issues.length],
+            ["docs", "文書", data.documents.length],
+            ["side", "条件・履歴", condSummary.total],
+          ] as const).map(([key, label, n]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`shrink-0 -mb-px border-b-2 px-3.5 py-2 font-mono text-[12.5px] font-bold transition-colors ${
+                tab === key
+                  ? "border-foreground text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {label}
+              <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">{n}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* タブ: 課題（束ね + Backlog統合） */}
+        {tab === "issues" && (
         <div className="space-y-4 min-w-0">
           {/* 課題（束ね + Backlog統合） */}
           <Card>
@@ -1274,7 +1301,11 @@ export function MatterDetailPage() {
               </div>
             </CardContent>
           </Card>
+        </div>)}
 
+        {/* タブ: 文書 + Driveファイル */}
+        {tab === "docs" && (
+        <div className="space-y-4 min-w-0">
           {/* 文書（送信ボタン直付け + 最終送信情報） */}
           <Card>
             <CardContent className="p-4">
@@ -1420,9 +1451,10 @@ export function MatterDetailPage() {
               </div>
             </CardContent>
           </Card>
-        </div>
+        </div>)}
 
-        {/* 右カラム: サマリー(条件明細・アクティビティ・備考) */}
+        {/* タブ: 条件明細 + アクティビティ + 備考 */}
+        {tab === "side" && (
         <div className="space-y-4 min-w-0">
           <Card>
             <CardContent className="p-4">
@@ -1520,7 +1552,7 @@ export function MatterDetailPage() {
               )}
             </CardContent>
           </Card>
-        </div>
+        </div>)}
       </div>
 
       {/* Backlog統合ダイアログ(詳細オプション): 統合先変更・削除モード・引き継ぎ・理由 */}
