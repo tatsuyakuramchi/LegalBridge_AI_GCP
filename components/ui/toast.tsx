@@ -43,7 +43,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     },
     success: {
       icon: <CheckCircle2 className="h-4 w-4" />,
-      cls: "border-emerald-600/40 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200",
+      cls: "border-success/40 bg-success/10 text-success",
     },
     error: {
       icon: <AlertCircle className="h-4 w-4" />,

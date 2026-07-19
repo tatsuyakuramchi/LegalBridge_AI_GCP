@@ -22,8 +22,8 @@ function Switch({
         "peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full",
         "border border-foreground/30",
         "transition-colors outline-none",
-        // ON / OFF の背景色を明確化
-        "data-[checked]:bg-emerald-600 data-[checked]:border-emerald-700",
+        // ON / OFF の背景色を明確化（UIC-24: success トークンで light/dark 両対応）
+        "data-[checked]:bg-success data-[checked]:border-success",
         "data-[unchecked]:bg-muted",
         "focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50",
         className
