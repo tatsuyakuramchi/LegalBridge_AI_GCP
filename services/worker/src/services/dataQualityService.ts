@@ -99,6 +99,33 @@ const EVALUATORS: Evaluator[] = [
                          WHERE x.material_id = mrs.material_id AND x.is_primary) > 1`,
     requiresTable: "material_rights_sources",
   },
+  // MAT-RGT-001 (material / BLOCKER): 外部権利マテリアル(owned 以外)に主要な権利根源が1件以上ある。
+  //   Phase F 第2弾で material_rights_sources を導入・バックフィル済み(初期違反 0)。
+  {
+    ruleCode: "MAT-RGT-001",
+    failingSql: `SELECT wm.id FROM work_materials wm
+                 WHERE COALESCE(wm.rights_type, '') <> 'owned'
+                   AND NOT EXISTS (SELECT 1 FROM material_rights_sources m WHERE m.material_id = wm.id)`,
+    requiresTable: "material_rights_sources",
+  },
+  // COND-RGT-001 (condition / BLOCKER): 素材を指す条件に権利根源リンク(material_rights_source_id)がある。
+  //   F3(0140) で material_rights_source_id を追加・バックフィル済み。素材参照(source_material_id)を持つ
+  //   条件のうち権利根源未リンクを検出。
+  {
+    ruleCode: "COND-RGT-001",
+    failingSql: `SELECT id FROM condition_lines
+                 WHERE source_material_id IS NOT NULL
+                   AND material_rights_source_id IS NULL`,
+  },
+  // MAT-FEE-002 (condition / BLOCKER): 計算書発行済み(素材に royalty_statement あり)の条件に
+  //   利用料名目 snapshot(F4, 0141)が保存されている。発行済みで snapshot 欠落を検出。
+  {
+    ruleCode: "MAT-FEE-002",
+    failingSql: `SELECT cl.id FROM condition_lines cl
+                 WHERE cl.fee_subject_snapshot IS NULL
+                   AND EXISTS (SELECT 1 FROM royalty_statements rs
+                                WHERE rs.work_material_id = cl.source_material_id)`,
+  },
 ];
 
 /** 評価器が要求するテーブルが存在するか(未作成なら skip 判定に使う)。 */
