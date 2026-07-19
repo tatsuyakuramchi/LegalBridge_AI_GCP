@@ -73,31 +73,29 @@ export function AppFormField({
   const badge = state ? STATE_BADGE[state] : undefined;
 
   return (
-    <div className={cn("flex flex-col gap-1", className)}>
+    <div className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-center gap-2">
-        <label
-          htmlFor={htmlFor}
-          className="text-[11px] font-mono font-bold uppercase tracking-[0.08em] text-foreground"
-        >
+        <label htmlFor={htmlFor} className="text-sm font-medium text-foreground">
           {label}
+          {required && (
+            <span className="ml-0.5 text-destructive" aria-hidden>
+              *
+            </span>
+          )}
         </label>
-        {required ? (
-          <span className="text-[10px] font-mono text-destructive" aria-hidden>
-            必須
-          </span>
-        ) : recommended ? (
-          <span className="text-[10px] font-mono text-warning" aria-hidden>
+        {recommended && !required ? (
+          <span className="text-[11px] font-medium text-warning" aria-hidden>
             推奨
           </span>
-        ) : (
-          <span className="text-[10px] font-mono text-muted-foreground" aria-hidden>
+        ) : !required && !recommended ? (
+          <span className="text-[11px] text-muted-foreground" aria-hidden>
             任意
           </span>
-        )}
+        ) : null}
         {badge && (
           <span
             className={cn(
-              "text-[9px] font-mono uppercase tracking-wider rounded-sm border px-1 py-px",
+              "text-[10px] font-medium uppercase tracking-wide rounded-full border px-1.5 py-px",
               badge.cls
             )}
           >
@@ -105,14 +103,14 @@ export function AppFormField({
           </span>
         )}
         {code && (
-          <span className="text-[8.5px] font-mono text-muted-foreground border border-border rounded px-1 bg-muted/40">
+          <span className="text-[10px] font-mono text-muted-foreground border border-border rounded px-1 bg-muted/50">
             {code}
           </span>
         )}
       </div>
 
       {description && (
-        <p id={descId} className="text-[11px] text-muted-foreground leading-snug">
+        <p id={descId} className="text-xs text-muted-foreground leading-snug">
           {description}
         </p>
       )}
@@ -120,18 +118,18 @@ export function AppFormField({
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">{children}</div>
         {unit && (
-          <span className="shrink-0 text-[11px] font-mono text-muted-foreground">{unit}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{unit}</span>
         )}
       </div>
 
       {error ? (
-        <p id={errId} role="alert" className="text-[11px] font-mono text-destructive">
+        <p id={errId} role="alert" className="text-xs text-destructive">
           {error}
         </p>
       ) : warning ? (
-        <p className="text-[11px] font-mono text-warning">{warning}</p>
+        <p className="text-xs text-warning">{warning}</p>
       ) : hint ? (
-        <p className="text-[11px] text-muted-foreground italic">{hint}</p>
+        <p className="text-xs text-muted-foreground italic">{hint}</p>
       ) : null}
     </div>
   );
