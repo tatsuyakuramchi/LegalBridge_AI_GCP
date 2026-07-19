@@ -50,10 +50,12 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 
 **評価エンジン** `services/worker/src/services/dataQualityService.ts`:
 - ルールごとに「違反行の id を返す SQL(failingSql)」を持つ評価器を登録。実スキーマに対応する
-  **9 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
+  **12 ルールを実装**: `WORK-ID-001` / `WORK-REL-001` / `WORK-MAT-001` / `MAT-ID-001` /
   `MAT-RGT-002` / `COND-FIN-001` / `COND-SCOPE-001`（許諾条件の地域・言語・期間）/
   `WORK-REL-002`（Phase F: `work_relations` の自己参照検出）/
-  `MAT-RGT-003`（Phase F: `material_rights_sources` の主要根源一意性）。
+  `MAT-RGT-003`（Phase F: `material_rights_sources` の主要根源一意性）/
+  `MAT-RGT-001`（外部権利マテリアルの権利根源1件以上）/
+  `COND-RGT-001`（素材条件の権利根源リンク）/`MAT-FEE-002`（発行済み条件の名目 snapshot 保存）。
 - 後発テーブル依存の評価器（`work_relations`/`material_rights_sources` 等）は `requiresTable` を持ち、
   `to_regclass` でテーブル存在を確認して**未作成なら skip**（migration 未適用でも rescan を止めない）。
 - 評価 = 失敗集合を issue へ **upsert(open)** ／ 失敗しなくなったものを **auto-close(resolved)**。
@@ -64,8 +66,8 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
   Phase D/F でテーブルが入り次第、評価器を追加する（`work_relations`=F1・`material_rights_sources`=F2 済み。
   F3 で `condition_lines.material_rights_source_id`、F4 で `fee_subject_override`/`fee_subject_snapshot` を追加＝
   §6.6 の解決順で現在名目をベースライン凍結）。
-  `COND-RGT-001`（条件に material_rights_source_id 必須・BLOCKER）／`MAT-FEE-002`（fee_subject_snapshot 保存・
-  BLOCKER）は件数影響が大きいため、バックフィル被覆率を実データで確認してから有効化する（現状は評価器未登録）。
+  `COND-RGT-001`／`MAT-RGT-001`／`MAT-FEE-002`（BLOCKER）は被覆率を実データで測定（それぞれ 14 / 0 / 0 件）してから
+  有効化済み。BLOCKER 急増が無いことを確認した上で評価器を登録した。
 
 **API** `services/worker/src/routes/dataQuality.ts`（§14.4）:
 `POST /api/data-quality/rescan`・`GET .../rules`・`GET .../issues`（絞込＋severity 順＋rule メタ join）・
