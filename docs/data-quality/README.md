@@ -87,6 +87,12 @@ WORK-ID/FAM/REL・MAT-ID/RGT/DOC/FEE・WORK-MAT・COND-ROUTE/RGT/FIN/SCOPE・WOR
 [`initial-data-remediation-20260718.md`](./initial-data-remediation-20260718.md)。
 残り（COND-FIN-001 34 / WORK-MAT-001 5 / MAT-RGT-002 18）は DQ Center の通常運用へ引き渡し。
 
+## Phase F 照合（2026-07-19）
+
+- **F5: `source_ips` / `ledgers` ↔ `works` 統合照合** — レガシー原作台帳の移行は 0033/0076 で
+  実質完了済みと確認。真の未移行は 0 件（orphan はテスト残骸 3・code 差異の移行済み 1）。詳細は
+  [`f5-source-ips-ledgers-reconciliation-20260719.md`](./f5-source-ips-ledgers-reconciliation-20260719.md)。
+
 ## 次
 
 - **DQ-04**（admin-ui）: 作品一覧・詳細へ完全性 Badge・修正 CTA（`summary`/`issues` API を消費）。
