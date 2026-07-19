@@ -31,6 +31,7 @@ import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect
 import { DocumentNumberLookup, type LookedUpDocument } from "@/src/components/document/DocumentNumberLookup"
 import { MATERIAL_GENRES, normalizeGenre } from "@/lib/materialVocab"
 import { evaluateEntity } from "@/src/lib/api/dataQualityClient"
+import { AppFormField } from "@/src/components/form"
 
 // 種別(ジャンル)は正準語彙 MATERIAL_GENRES(lib/materialVocab)を使う(ゲームデザイン等を含む)。
 //   旧来のローカル固定リストは廃止し、3ファイル同期の正準ジャンルへ一本化。
@@ -46,20 +47,19 @@ const ACQUISITION_TYPES = ["", "license", "buyout_commission", "in_house"]
 
 type Refs = { condition_lines: number; documents: number }
 
+// FRM-06: Material フォームの field 描画を共通 AppFormField へ委譲（設計 §11.3）。
+//   col=データキーの chip / auto=自動採番 → state="derived"（導出）/ req → required / help → description。
 function Field(props: { label: string; col?: string; help?: string; req?: boolean; auto?: boolean; children: React.ReactNode }) {
   return (
-    <div className="space-y-1">
-      <div className="flex items-baseline gap-2 flex-wrap">
-        <label className="font-mono text-[11px] font-bold">{props.label}</label>
-        {props.req && <span className="text-[10px] font-mono font-bold text-rose-600">*必須</span>}
-        {props.col && (
-          <span className="font-mono text-[8.5px] text-muted-foreground border border-border rounded px-1 bg-muted/40">{props.col}</span>
-        )}
-        {props.auto && <span className="font-mono text-[8.5px] text-amber-600 border border-amber-500 rounded px-1">自動採番</span>}
-      </div>
-      {props.help && <p className="font-mono text-[9.5px] text-muted-foreground leading-snug">{props.help}</p>}
+    <AppFormField
+      label={props.label}
+      required={props.req}
+      description={props.help}
+      code={props.col}
+      state={props.auto ? "derived" : undefined}
+    >
       {props.children}
-    </div>
+    </AppFormField>
   )
 }
 

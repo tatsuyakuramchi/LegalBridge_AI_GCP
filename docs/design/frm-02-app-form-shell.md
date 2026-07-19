@@ -64,6 +64,11 @@ function VendorForm({ mode }: { mode: "create" | "edit" | "readonly" }) {
 
 実フォームを段階移行して API を実地検証・洗練する:
 - FRM-06: Works / Material / Work Family / Rights Source
+  - **Material 済**: `MaterialEntryPanel` の page-local `Field()`（col=データキー chip / auto=自動採番 /
+    req / help）を `AppFormField` アダプタへ。`AppFormField` に `code`（データキー chip）prop を追加。
+    auto → `state="derived"`。
+  - ※ Works / Work Family / Rights Source は `WorkGraphPanel`（3カードエディタ）に**インラインで直書き**
+    （`Field()` seam 無し）。フィールド単位の移行が必要なため後続スライスで対応。
 - FRM-07: Vendor / Staff / Ringi / Routing（**完了**）
   - `StaffPanel`: page-local `Field()` を `AppFormField` へ、必須氏名を `ValidationSummary` へ。
   - `RingiPanel` / `VendorsPanel`: page-local `Field()` を `AppFormField` への薄いアダプタ化

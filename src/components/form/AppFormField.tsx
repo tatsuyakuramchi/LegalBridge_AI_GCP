@@ -32,6 +32,8 @@ export interface AppFormFieldProps {
   description?: React.ReactNode;
   /** 入力単位（右端に淡色表示）。 */
   unit?: React.ReactNode;
+  /** データキー/カラム名の小チップ（例: material_code）。技術参照用。 */
+  code?: string;
   /** エラー（赤・セクション/サマリーへも集約される想定）。 */
   error?: string | null;
   /** 警告（アンバー）。 */
@@ -58,6 +60,7 @@ export function AppFormField({
   recommended,
   description,
   unit,
+  code,
   error,
   warning,
   hint,
@@ -99,6 +102,11 @@ export function AppFormField({
             )}
           >
             {badge.label}
+          </span>
+        )}
+        {code && (
+          <span className="text-[8.5px] font-mono text-muted-foreground border border-border rounded px-1 bg-muted/40">
+            {code}
           </span>
         )}
       </div>
