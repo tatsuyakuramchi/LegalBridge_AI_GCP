@@ -11,7 +11,7 @@
  */
 import type { Express, RequestHandler } from "express";
 import express from "express";
-import { rescan } from "../services/dataQualityService.ts";
+import { rescan, evaluateEntity } from "../services/dataQualityService.ts";
 
 export interface DataQualityDeps {
   query: (text: string, params?: any[]) => Promise<any>;
@@ -27,6 +27,19 @@ export function registerDataQualityRoutes(app: Express, deps: DataQualityDeps) {
   app.post("/api/data-quality/rescan", guard, async (_req, res) => {
     try {
       const out = await rescan(db);
+      res.json({ ok: true, ...out });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 単一エンティティの差分評価(DQ 自動発火 §8.4)。保存後に該当1件だけ再評価する。
+  app.post("/api/data-quality/entities/:type/:id/evaluate", guard, async (req, res) => {
+    try {
+      const type = String(req.params.type);
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const out = await evaluateEntity(db, type, id);
       res.json({ ok: true, ...out });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });

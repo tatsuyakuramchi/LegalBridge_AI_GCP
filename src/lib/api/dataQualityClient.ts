@@ -114,6 +114,22 @@ export async function waiveIssue(id: number, note: string): Promise<DqIssue | nu
   }
 }
 
+/** 単一エンティティの差分再評価(DQ 自動発火)。保存/リンク変更後に呼ぶ。失敗時は null(degrade)。 */
+export async function evaluateEntity(
+  entityType: string,
+  entityId: number | string
+): Promise<{ evaluated: number } | null> {
+  try {
+    return await apiSend<{ ok: boolean; evaluated: number }>(
+      "POST",
+      `/api/data-quality/entities/${encodeURIComponent(entityType)}/${encodeURIComponent(String(entityId))}/evaluate`,
+      {}
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** 全件再評価 + サマリー再計算。失敗時は null。 */
 export async function rescanDataQuality(): Promise<{ evaluated: number } | null> {
   try {
