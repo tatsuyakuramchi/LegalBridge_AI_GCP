@@ -18,7 +18,7 @@
 @theme inline {
   --font-sans: 'Geist Variable', 'Hiragino Sans', system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', 'JetBrains Mono', 'Menlo', monospace;
-  --font-heading: var(--font-mono);
+  --font-heading: var(--font-sans);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -67,27 +67,29 @@
 }
 
 :root {
-  /* Paper terminal — warm off-white with amber phosphor */
-  --background: 40 40% 97%;
-  --foreground: 30 20% 12%;
-  --card: 40 30% 99%;
-  --card-foreground: 30 20% 12%;
-  --popover: 40 30% 99%;
-  --popover-foreground: 30 20% 12%;
-  --primary: 30 20% 12%;
-  --primary-foreground: 40 40% 97%;
-  --secondary: 36 25% 92%;
-  --secondary-foreground: 30 20% 18%;
-  --muted: 36 20% 94%;
-  /* ユニバーサルデザイン: 補助テキストのコントラストを引き上げ(42%→34%)。 */
-  --muted-foreground: 30 10% 34%;
-  --accent: 36 25% 88%;
-  --accent-foreground: 30 20% 18%;
-  --destructive: 8 70% 45%;
-  --destructive-foreground: 40 40% 97%;
-  --border: 30 12% 80%;
-  --input: 30 12% 84%;
-  --ring: 30 30% 30%;
+  /* UIC-Skin: LegalBridge clean — cool light gray canvas + white cards + blue primary.
+   * 参照デザイン(発注書作成)に合わせた corporate/clean 基調。旧 paper-terminal は
+   * git 履歴に保持。 */
+  --background: 210 24% 98%;
+  --foreground: 222 40% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 40% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 40% 15%;
+  --primary: 221 83% 53%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 40% 20%;
+  --muted: 210 30% 96%;
+  /* ユニバーサルデザイン: 補助テキストのコントラストを確保(slate-500 相当)。 */
+  --muted-foreground: 215 18% 40%;
+  --accent: 214 45% 94%;
+  --accent-foreground: 221 83% 40%;
+  --destructive: 0 72% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 214 26% 89%;
+  --input: 214 26% 86%;
+  --ring: 221 83% 53%;
 
   --phosphor: 28 95% 45%;          /* amber phosphor */
   --phosphor-foreground: 40 40% 97%;
@@ -97,17 +99,17 @@
   --grid: 30 15% 88%;
 
   /* UIC-24 状態色(light / paper terminal)。AA コントラストを満たす彩度・明度。 */
-  --success: 145 60% 30%;
-  --success-foreground: 40 40% 97%;
-  --warning: 38 92% 38%;
-  --warning-foreground: 30 20% 12%;
-  --info: 200 72% 36%;
-  --info-foreground: 40 40% 97%;
-  --severity-blocker: 8 72% 44%;
-  --severity-error: 24 85% 40%;
-  --severity-warning: 42 92% 38%;
+  --success: 152 58% 32%;
+  --success-foreground: 0 0% 100%;
+  --warning: 33 92% 42%;
+  --warning-foreground: 0 0% 100%;
+  --info: 221 76% 48%;
+  --info-foreground: 0 0% 100%;
+  --severity-blocker: 0 72% 46%;
+  --severity-error: 24 85% 42%;
+  --severity-warning: 33 92% 42%;
 
-  --radius: 0.25rem;
+  --radius: 0.5rem;
 }
 
 .dark {
