@@ -355,7 +355,7 @@ export function VendorsPanel() {
           <SlidersHorizontal />
           詳細検索{filterActive ? " ●" : ""}
         </Button>
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {filtered.length} / {vendors.length} 件
         </span>
         <div className="flex-1" />
@@ -415,7 +415,7 @@ export function VendorsPanel() {
 
       {/* ── CSV：修正(既存出力) / 新規(空テンプレ) / 取込 を明確化 ─────── */}
       <div className="flex items-center gap-2 flex-wrap p-2.5 border border-border rounded-lg bg-muted/20">
-        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">CSV</span>
+        <span className="text-[10px] font-semibold text-muted-foreground">CSV</span>
 
         {/* 修正用：既存データを出力 → 修正 → 取込 */}
         <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer ml-1">
@@ -511,10 +511,10 @@ export function VendorsPanel() {
                   {v.vendor_code}
                 </Badge>
               </div>
-              <p className="text-sm font-mono font-bold uppercase line-clamp-2">
+              <p className="text-sm font-semibold line-clamp-2">
                 {v.vendor_name}
               </p>
-              <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+              <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
                 {v.trade_name || "—"}
               </p>
             </CardContent>
@@ -522,7 +522,7 @@ export function VendorsPanel() {
         ))}
         {filtered.length === 0 && (
           <div className="col-span-full p-12 text-center border border-dashed border-border rounded-md">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
               No vendors registered.
             </p>
           </div>
@@ -611,7 +611,7 @@ export function VendorsPanel() {
                 disabled={!creating && !editing}
                 onChange={(e) => set({ vendor_rep: e.target.value })}
               />
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 法人の場合のみ記入。肩書込みで契約書 / 発注書 / 検収書 PDF の
                 代表者欄に転記されます (個人事業主は省略可)。
               </p>
@@ -780,7 +780,7 @@ export function VendorsPanel() {
             {/* 住所 (1:N + 優先)。★ = メイン住所 → 発注書/検収書 PDF の住所欄に転記。 */}
             <div className="col-span-2 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                <Label className="text-xs font-semibold">
                   住所 ({Array.isArray(data?.addresses) ? data.addresses.length : 0} 件)
                 </Label>
                 {(creating || editing) && (
@@ -799,11 +799,11 @@ export function VendorsPanel() {
                   </Button>
                 )}
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
                 ★ = メイン住所。発注書 / 検収書 PDF の住所欄に転記されます。複数登録時は 1 件だけ ★ にしてください (なければ先頭を自動で ★)。
               </p>
               {!Array.isArray(data?.addresses) || data.addresses.length === 0 ? (
-                <div className="text-[11px] font-mono text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
+                <div className="text-[11px] text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
                   住所が未登録です{creating || editing ? " — 上の「住所を追加」から登録してください" : ""}
                 </div>
               ) : (
@@ -813,7 +813,7 @@ export function VendorsPanel() {
                       key={idx}
                       className={cn(
                         "rounded-sm border p-2.5 space-y-2",
-                        a.is_primary ? "border-emerald-300 bg-emerald-50/50" : "border-border bg-card"
+                        a.is_primary ? "border-success/40 bg-success/5" : "border-border bg-card"
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -822,8 +822,8 @@ export function VendorsPanel() {
                           disabled={!creating && !editing}
                           onClick={() => set({ addresses: data.addresses.map((x: VendorAddress, i: number) => ({ ...x, is_primary: i === idx })) })}
                           className={cn(
-                            "inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 border rounded-sm transition-colors",
-                            a.is_primary ? "border-emerald-500 bg-emerald-100 text-emerald-800" : "border-border text-muted-foreground hover:border-foreground"
+                            "inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 border rounded-sm transition-colors",
+                            a.is_primary ? "border-success bg-success/15 text-success" : "border-border text-muted-foreground hover:border-foreground"
                           )}
                           title="この住所をメイン住所にする"
                         >
@@ -847,7 +847,7 @@ export function VendorsPanel() {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">ラベル</Label>
+                          <Label className="text-[10px] font-medium text-muted-foreground">ラベル</Label>
                           <Input
                             placeholder="例: 本社 / 配送先"
                             value={a.address_label || ""}
@@ -856,7 +856,7 @@ export function VendorsPanel() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">郵便番号</Label>
+                          <Label className="text-[10px] font-medium text-muted-foreground">郵便番号</Label>
                           <Input
                             placeholder="例: 150-0001"
                             value={a.postal_code || ""}
@@ -865,7 +865,7 @@ export function VendorsPanel() {
                           />
                         </div>
                         <div className="space-y-1 col-span-2">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">住所 *</Label>
+                          <Label className="text-[10px] font-medium text-muted-foreground">住所 *</Label>
                           <Input
                             placeholder="例: 東京都渋谷区…"
                             value={a.address || ""}
@@ -893,9 +893,9 @@ export function VendorsPanel() {
                   }
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-mono">源泉徴収を行う</span>
+                <span className="text-xs">源泉徴収を行う</span>
               </label>
-              <p className="text-[10px] font-mono text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground">
                 個人取引先は通常 ON (Excel 出力で 10.21% 自動控除)
               </p>
             </Field>
@@ -910,7 +910,7 @@ export function VendorsPanel() {
                   }
                   className="h-4 w-4"
                 />
-                <span className="text-xs font-mono">インボイス発行事業者</span>
+                <span className="text-xs">インボイス発行事業者</span>
               </label>
             </Field>
             <Field label="インボイス登録番号" className="col-span-2">
@@ -930,7 +930,7 @@ export function VendorsPanel() {
             <SectionHead label="SEC · 04 / 振込先" />
             <div className="col-span-2 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                <Label className="text-xs font-semibold">
                   振込先口座 ({Array.isArray(data?.bank_accounts) ? data.bank_accounts.length : 0} 件)
                 </Label>
                 {(creating || editing) && (
@@ -949,11 +949,11 @@ export function VendorsPanel() {
                   </Button>
                 )}
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
                 ★ = メイン振込先。検収書 PDF / 会計 Excel の振込先に転記されます。複数登録時は 1 件だけ ★ にしてください (なければ先頭を自動で ★)。
               </p>
               {!Array.isArray(data?.bank_accounts) || data.bank_accounts.length === 0 ? (
-                <div className="text-[11px] font-mono text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
+                <div className="text-[11px] text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
                   振込先が未登録です{creating || editing ? " — 上の「振込先を追加」から登録してください" : ""}
                 </div>
               ) : (
@@ -963,7 +963,7 @@ export function VendorsPanel() {
                       key={idx}
                       className={cn(
                         "rounded-sm border p-2.5 space-y-2",
-                        b.is_primary ? "border-emerald-300 bg-emerald-50/50" : "border-border bg-card"
+                        b.is_primary ? "border-success/40 bg-success/5" : "border-border bg-card"
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -972,8 +972,8 @@ export function VendorsPanel() {
                           disabled={!creating && !editing}
                           onClick={() => set({ bank_accounts: data.bank_accounts.map((x: VendorBankAccount, i: number) => ({ ...x, is_primary: i === idx })) })}
                           className={cn(
-                            "inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 border rounded-sm transition-colors",
-                            b.is_primary ? "border-emerald-500 bg-emerald-100 text-emerald-800" : "border-border text-muted-foreground hover:border-foreground"
+                            "inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 border rounded-sm transition-colors",
+                            b.is_primary ? "border-success bg-success/15 text-success" : "border-border text-muted-foreground hover:border-foreground"
                           )}
                           title="この口座をメイン振込先にする"
                         >
@@ -997,7 +997,7 @@ export function VendorsPanel() {
                       </div>
                       {/* 区分: 国内 / 海外。海外は SWIFT/IBAN 等の項目に切替。 */}
                       <div className="flex items-center gap-2">
-                        <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">区分</Label>
+                        <Label className="text-[10px] font-medium text-muted-foreground">区分</Label>
                         <div className="inline-flex rounded-sm border border-border overflow-hidden">
                           {(["domestic", "overseas"] as const).map((sc) => (
                             <button
@@ -1006,7 +1006,7 @@ export function VendorsPanel() {
                               disabled={!creating && !editing}
                               onClick={() => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_scope: sc }; set({ bank_accounts: next }) }}
                               className={cn(
-                                "px-2.5 py-0.5 text-[10px] font-mono uppercase tracking-wider transition-colors",
+                                "px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wide transition-colors",
                                 (b.account_scope || "domestic") === sc ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground"
                               )}
                             >
@@ -1017,7 +1017,7 @@ export function VendorsPanel() {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1 col-span-2">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">ラベル</Label>
+                          <Label className="text-[10px] font-medium text-muted-foreground">ラベル</Label>
                           <Input
                             placeholder="例: メイン / 給与振込 / USD口座"
                             value={b.bank_label || ""}
@@ -1029,57 +1029,57 @@ export function VendorsPanel() {
                         {(b.account_scope || "domestic") === "overseas" ? (
                           <>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行名 (英字)</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">銀行名 (英字)</Label>
                               <Input placeholder="Bank of Example" value={b.bank_name || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_name: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">SWIFT / BIC</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">SWIFT / BIC</Label>
                               <Input placeholder="EXAMPLEXXX" value={b.swift_bic || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, swift_bic: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">IBAN</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">IBAN</Label>
                               <Input placeholder="(IBAN 制度のある国)" value={b.iban || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, iban: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Routing No. / ABA</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">Routing No. / ABA</Label>
                               <Input placeholder="(米国等)" value={b.routing_number || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, routing_number: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座番号 / Account No.</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">口座番号 / Account No.</Label>
                               <Input value={b.account_number || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_number: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座名義 (英字)</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">口座名義 (英字)</Label>
                               <Input placeholder="ACCOUNT HOLDER NAME" value={b.account_holder_name || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_holder_name: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行所在国 (ISO 2字)</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">銀行所在国 (ISO 2字)</Label>
                               <Input placeholder="US / GB / DE…" maxLength={2} value={b.bank_country || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_country: e.target.value.toUpperCase() }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">通貨 (ISO 3字)</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">通貨 (ISO 3字)</Label>
                               <Input placeholder="USD / EUR / JPY…" maxLength={3} value={b.currency || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, currency: e.target.value.toUpperCase() }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1 col-span-2">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行住所</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">銀行住所</Label>
                               <Input value={b.bank_address || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_address: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">中継銀行 SWIFT</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">中継銀行 SWIFT</Label>
                               <Input placeholder="(任意)" value={b.intermediary_bank_swift || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, intermediary_bank_swift: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">中継銀行名</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">中継銀行名</Label>
                               <Input placeholder="(任意)" value={b.intermediary_bank_name || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, intermediary_bank_name: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
@@ -1087,17 +1087,17 @@ export function VendorsPanel() {
                         ) : (
                           <>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行名</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">銀行名</Label>
                               <Input value={b.bank_name || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_name: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">支店名</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">支店名</Label>
                               <Input value={b.branch_name || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, branch_name: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座種別</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">口座種別</Label>
                               <NativeSelect value={b.account_type || "普通"} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_type: e.target.value }; set({ bank_accounts: next }) }}>
                                 <option value="普通">普通</option>
@@ -1106,12 +1106,12 @@ export function VendorsPanel() {
                               </NativeSelect>
                             </div>
                             <div className="space-y-1">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座番号</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">口座番号</Label>
                               <Input value={b.account_number || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_number: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
                             <div className="space-y-1 col-span-2">
-                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座名義 (カナ)</Label>
+                              <Label className="text-[10px] font-medium text-muted-foreground">口座名義 (カナ)</Label>
                               <Input value={b.account_holder_kana || ""} disabled={!creating && !editing}
                                 onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_holder_kana: e.target.value }; set({ bank_accounts: next }) }} />
                             </div>
@@ -1150,7 +1150,7 @@ export function VendorsPanel() {
                    発注書 / 検収書テンプレの「取引先担当者」フィールドに転記。 */}
             <div className="col-span-2 mt-2 border-t border-border pt-3 space-y-2">
               <div className="flex items-center justify-between">
-                <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                <Label className="text-xs font-semibold">
                   取引先 窓口担当者 ({Array.isArray(data?.contacts) ? data.contacts.length : 0} 件)
                 </Label>
                 {(creating || editing) && (
@@ -1179,7 +1179,7 @@ export function VendorsPanel() {
                   </Button>
                 )}
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
                 <strong>取引先側</strong>の窓口になる人を登録 (= 相手方の連絡先)。
                 当社側の担当者は <strong>マスター &gt; スタッフ</strong> 画面で別途管理してください。
                 <br />
@@ -1188,7 +1188,7 @@ export function VendorsPanel() {
                 (なければ先頭を自動で ★)。
               </p>
               {!Array.isArray(data?.contacts) || data.contacts.length === 0 ? (
-                <div className="text-[11px] font-mono text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
+                <div className="text-[11px] text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
                   担当者がまだ登録されていません{creating || editing ? " — 上の「追加」ボタンから追加してください" : ""}
                 </div>
               ) : (
@@ -1199,7 +1199,7 @@ export function VendorsPanel() {
                       className={cn(
                         "rounded-sm border p-2.5 space-y-2",
                         c.is_primary
-                          ? "border-emerald-300 bg-emerald-50/50"
+                          ? "border-success/40 bg-success/5"
                           : "border-border bg-card"
                       )}
                     >
@@ -1217,9 +1217,9 @@ export function VendorsPanel() {
                             set({ contacts: next })
                           }}
                           className={cn(
-                            "inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 border rounded-sm transition-colors",
+                            "inline-flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 border rounded-sm transition-colors",
                             c.is_primary
-                              ? "border-emerald-500 bg-emerald-100 text-emerald-800"
+                              ? "border-success bg-success/15 text-success"
                               : "border-border text-muted-foreground hover:border-foreground"
                           )}
                           title="このメンバーをメイン担当者にする"
@@ -1258,7 +1258,7 @@ export function VendorsPanel() {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1 col-span-2">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                          <Label className="text-[10px] font-medium text-muted-foreground">
                             氏名 *
                           </Label>
                           <Input
@@ -1273,7 +1273,7 @@ export function VendorsPanel() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                          <Label className="text-[10px] font-medium text-muted-foreground">
                             部署
                           </Label>
                           <Input
@@ -1291,7 +1291,7 @@ export function VendorsPanel() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                          <Label className="text-[10px] font-medium text-muted-foreground">
                             役職
                           </Label>
                           <Input
@@ -1306,7 +1306,7 @@ export function VendorsPanel() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                          <Label className="text-[10px] font-medium text-muted-foreground">
                             メール
                           </Label>
                           <Input
@@ -1322,7 +1322,7 @@ export function VendorsPanel() {
                           />
                         </div>
                         <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                          <Label className="text-[10px] font-medium text-muted-foreground">
                             電話
                           </Label>
                           <Input
@@ -1385,7 +1385,7 @@ function Field({
 function SectionHead({ label }: { label: string }) {
   return (
     <div className="col-span-2 mt-3 pt-2 border-t border-border">
-      <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-foreground/70">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
         {label}
       </span>
     </div>
