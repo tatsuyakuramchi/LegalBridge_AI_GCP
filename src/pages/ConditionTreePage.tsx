@@ -86,10 +86,10 @@ const sum = (rows: Row[]) => rows.reduce((a, r) => a + (Number(r.amount_ex_tax) 
 // 契約状態(contract_capabilities.contract_status)。マスター(ContractsPanel)と同一語彙。
 const CONTRACT_STATUS: Record<string, { label: string; cls: string }> = {
   draft: { label: "作成中", cls: "bg-muted text-muted-foreground" },
-  awaiting_signature: { label: "締結待ち", cls: "bg-amber-500/15 text-amber-600" },
-  executed: { label: "締結中", cls: "bg-emerald-500/15 text-emerald-600" },
+  awaiting_signature: { label: "締結待ち", cls: "bg-warning text-warning" },
+  executed: { label: "締結中", cls: "bg-success text-success" },
   expired: { label: "満了", cls: "bg-muted text-muted-foreground" },
-  terminated: { label: "解約済", cls: "bg-red-500/15 text-red-600 line-through" },
+  terminated: { label: "解約済", cls: "bg-destructive text-destructive line-through" },
 }
 function StatusPill({ s }: { s: string }) {
   if (!s) return null
@@ -108,7 +108,7 @@ function DirPill({ dir }: { dir: "in" | "out" | "" }) {
     <span
       className={cn(
         "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-mono font-bold uppercase tracking-[0.08em]",
-        isOut ? "bg-emerald-500/15 text-emerald-600" : "bg-indigo-500/15 text-indigo-600"
+        isOut ? "bg-success text-success" : "bg-primary text-primary"
       )}
       title={isOut ? "アウト：当社が提供している権利（受領）" : "イン：当社が受けている権利（支払）"}
     >
@@ -121,12 +121,12 @@ function DirPill({ dir }: { dir: "in" | "out" | "" }) {
 function LeafRow({ r }: { key?: React.Key; r: Row }) {
   return (
     <div className="flex items-center gap-3 px-3 py-1.5 border-t border-border/50 hover:bg-muted/40">
-      <span className="text-[10px] font-mono text-muted-foreground tab-mono w-20 shrink-0">
+      <span className="text-[10px] text-muted-foreground tab-mono w-20 shrink-0">
         {r.payment_date || r.delivery_date || "—"}
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-mono">{r.item_name || r.contract_title || "—"}</p>
-        <p className="truncate text-[10px] font-mono text-muted-foreground">
+        <p className="truncate text-[10px] text-muted-foreground">
           {[CAT_LABEL[r.contract_category] || r.contract_category, r.vendor_name, r.document_number]
             .filter(Boolean)
             .join(" · ")}
@@ -172,10 +172,10 @@ function Node({
         {accent && <span className="h-4 w-1 shrink-0 rounded-full" style={{ background: accent }} />}
         {icon}
         <span className="min-w-0 flex-1 truncate text-[13px] font-mono font-bold">{label}</span>
-        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-mono font-bold text-muted-foreground tab-mono">
+        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground tab-mono">
           {count}
         </span>
-        <span className="shrink-0 w-28 text-right text-[11px] font-mono tab-mono text-muted-foreground">
+        <span className="shrink-0 w-28 text-right text-[11px] tab-mono text-muted-foreground">
           {yen(total)}
         </span>
       </button>
@@ -270,8 +270,8 @@ export function ConditionTreePage() {
         <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
           {([
             ["all", "すべて", "bg-foreground text-background"],
-            ["executed", "有効中", "bg-emerald-600 text-white"],
-            ["terminated", "解約済", "bg-red-600 text-white"],
+            ["executed", "有効中", "bg-success text-white"],
+            ["terminated", "解約済", "bg-destructive text-white"],
           ] as const).map(([v, label, onCls]) => (
             <button
               key={v}
@@ -310,18 +310,18 @@ export function ConditionTreePage() {
           <option value="sales">売買</option>
           <option value="nda">NDA</option>
         </select>
-        <label className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground">
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <input type="checkbox" checked={includeAll} onChange={(e) => setIncludeAll(e.target.checked)} />
           旧版も
         </label>
         <button
           type="button"
           onClick={fetchRows}
-          className="h-9 rounded-md bg-foreground px-4 text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-background"
+          className="h-9 rounded-md bg-foreground px-4 text-[11px] font-bold uppercase tracking-[0.14em] text-background"
         >
           検索
         </button>
-        <div className="ml-auto flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
+        <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
           <span>{shown.length} 件 / {groups.length} {AXES.find((a) => a.key === axis)?.label}</span>
           <button type="button" onClick={expandAll} className="underline hover:text-foreground">全展開</button>
           <button type="button" onClick={() => setExpanded(new Set())} className="underline hover:text-foreground">全閉じ</button>
@@ -334,7 +334,7 @@ export function ConditionTreePage() {
       ) : groups.length === 0 ? (
         <div className="p-16 text-center border border-dashed border-border rounded-md">
           <Inbox className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">該当する条件明細がありません</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">該当する条件明細がありません</p>
         </div>
       ) : (
         <div className="border border-border rounded-md overflow-hidden divide-y divide-border">
@@ -370,9 +370,9 @@ export function ConditionTreePage() {
                 label={g.label} count={g.rows.length} total={sum(g.rows)}
               >
                 {sub("/out", "OUT ・ 当社が提供している権利（受領）",
-                  <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600" />, "rgb(16 185 129)", outRows)}
+                  <ArrowUpRight className="h-3.5 w-3.5 text-success" />, "rgb(16 185 129)", outRows)}
                 {sub("/in", "IN ・ 当社が受けている権利（支払）",
-                  <ArrowDownLeft className="h-3.5 w-3.5 text-indigo-600" />, "rgb(99 102 241)", inRows)}
+                  <ArrowDownLeft className="h-3.5 w-3.5 text-primary" />, "rgb(99 102 241)", inRows)}
                 {sub("/na", "方向未設定", null, "hsl(var(--border))", naRows)}
               </Node>
             )

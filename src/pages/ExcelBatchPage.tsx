@@ -186,7 +186,7 @@ export const ExcelBatchPage: React.FC = () => {
             <FileSpreadsheet className="w-5 h-5" />
             Excel 一括出力キュー（担当者区切り）
           </h1>
-          <p className="text-[10px] font-mono text-muted-foreground mt-1">
+          <p className="text-[10px] text-muted-foreground mt-1">
             発行済みだが Excel 未生成の 検収書 / 利用許諾料計算書 を
             <b>検収担当者ごと</b>にまとめて表示。出力は 担当者 × 支払期日 × 種別 ごとに
             1 ファイル (複数行) です。
@@ -216,8 +216,8 @@ export const ExcelBatchPage: React.FC = () => {
           className={cn(
             "border rounded-sm px-4 py-2 text-[11px] font-mono flex flex-col gap-1.5",
             lastResult.failed > 0
-              ? "bg-amber-50 border-amber-200 text-amber-900"
-              : "bg-emerald-50 border-emerald-200 text-emerald-900"
+              ? "bg-warning/10 border-warning/40 text-warning"
+              : "bg-success/10 border-success/40 text-success"
           )}
         >
           <div className="flex items-center gap-2">
@@ -251,7 +251,7 @@ export const ExcelBatchPage: React.FC = () => {
       )}
 
       {error && (
-        <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[11px] font-mono flex items-start gap-2">
+        <div className="border border-destructive/40 bg-destructive/10 text-destructive rounded-sm px-4 py-2 text-[11px] font-mono flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           {error}
         </div>
@@ -261,10 +261,10 @@ export const ExcelBatchPage: React.FC = () => {
       {!groups || total === 0 ? (
         <div className="text-center py-12 border border-dashed border-input rounded-sm bg-muted/10">
           <PackageOpen className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
-          <p className="text-[12px] font-mono text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Excel 未発行の 検収書 / 利用許諾料計算書 はありません。
           </p>
-          <p className="text-[10px] font-mono text-muted-foreground/60 mt-1">
+          <p className="text-[10px] text-muted-foreground/60 mt-1">
             文書を発行 (確定) すると、ここに出力待ちとして表示されます。
           </p>
         </div>
@@ -304,7 +304,7 @@ export const ExcelBatchPage: React.FC = () => {
                       {insp.count} 件
                     </span>
                     {fileCount > 1 && (
-                      <span className="text-[10px] font-mono text-muted-foreground">
+                      <span className="text-[10px] text-muted-foreground">
                         ({fileCount} ファイル)
                       </span>
                     )}
@@ -313,7 +313,7 @@ export const ExcelBatchPage: React.FC = () => {
                     type="button"
                     onClick={() => exportInspector(insp)}
                     disabled={busy}
-                    className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
+                    className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
                     title="この担当者の Excel を作成 (支払期日/種別ごとに別ファイル)"
                   >
                     {busy ? (
@@ -330,12 +330,12 @@ export const ExcelBatchPage: React.FC = () => {
                   <div className="border-t border-border px-4 py-3 space-y-3 bg-muted/10">
                     {insp.groups.map((g) => (
                       <div key={g.key} className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono text-muted-foreground">
+                        <div className="flex items-center gap-2 flex-wrap text-[10px] text-muted-foreground">
                           <span
                             className={cn(
                               "px-1.5 py-0.5 rounded-sm uppercase tracking-wider",
                               g.category === "royalty_statement"
-                                ? "bg-blue-50 text-blue-700"
+                                ? "bg-primary/10 text-primary"
                                 : "bg-muted"
                             )}
                           >

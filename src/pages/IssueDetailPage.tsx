@@ -107,7 +107,7 @@ function LifecycleBadge({ status }: { status?: string }) {
   const s = status || "final"
   if (s === "final") {
     return (
-      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+      <Badge className="bg-success text-white hover:bg-success">
         final
       </Badge>
     )
@@ -623,7 +623,7 @@ export function IssueDetailPage() {
       <button
         type="button"
         onClick={() => navigate("/requests")}
-        className="inline-flex items-center gap-1.5 text-[12px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+        className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
       >
         <ArrowLeft className="h-4 w-4" />
         依頼一覧に戻る
@@ -631,21 +631,21 @@ export function IssueDetailPage() {
 
       {/* ── 統一課題(契約)への導線。この課題が属する新課題へジャンプ ───── */}
       {unifiedLinks.length > 0 && (
-        <div className="rounded-sm border border-indigo-200 bg-indigo-50/60 px-3 py-2 flex items-center gap-2 flex-wrap">
-          <GitMerge className="h-4 w-4 text-indigo-700 shrink-0" />
-          <span className="text-[11px] font-mono text-indigo-900">この課題が属する統一課題(契約):</span>
+        <div className="rounded-sm border border-primary/40 bg-primary/10 px-3 py-2 flex items-center gap-2 flex-wrap">
+          <GitMerge className="h-4 w-4 text-primary shrink-0" />
+          <span className="text-[11px] font-mono text-primary">この課題が属する統一課題(契約):</span>
           {unifiedLinks.map((u) => (
             <button
               key={u.capability_id}
               type="button"
               onClick={() => navigate(`/unified/${u.capability_id}`)}
-              className="text-[11px] font-mono font-bold underline text-indigo-800 hover:text-indigo-950"
+              className="text-[11px] font-mono font-bold underline text-primary hover:text-primary"
               title={`${u.vendor_name || ""} ${u.contract_title || ""}`.trim()}
             >
               {u.document_number || `cap${u.capability_id}`}
             </button>
           ))}
-          <span className="text-[10px] font-mono text-indigo-700/70">締結+支払を1画面で</span>
+          <span className="text-[10px] font-mono text-primary">締結+支払を1画面で</span>
         </div>
       )}
 
@@ -656,10 +656,10 @@ export function IssueDetailPage() {
             <Badge variant="outline" className="font-mono">
               {issueKey}
             </Badge>
-            <h2 className="text-2xl font-mono font-bold tracking-tight leading-snug">
+            <h2 className="text-2xl font-semibold tracking-tight leading-snug">
               {issue?.summary || "(件名未取得)"}
             </h2>
-            <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
               <span className="flex items-center gap-1">
                 <User className="h-3 w-3" />
                 {issue?.assignee?.name || issue?.registeredUser || "system"}
@@ -725,7 +725,7 @@ export function IssueDetailPage() {
                   className={cn(
                     "inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-mono border",
                     done
-                      ? "border-emerald-600/40 text-emerald-700 bg-emerald-500/10"
+                      ? "border-success text-success bg-success"
                       : "border-border text-muted-foreground"
                   )}
                   title={done ? "作成済み" : "未作成"}
@@ -764,7 +764,7 @@ export function IssueDetailPage() {
                     { openPanel: true }
                   )
             }
-            className={cn("gap-1.5", mergeCart.has(issueKey) && "border-emerald-600 text-emerald-700")}
+            className={cn("gap-1.5", mergeCart.has(issueKey) && "border-success text-success")}
             title="この課題を統合カートに入れる。籠に集めた課題から統合先を選んで統合する"
           >
             <ShoppingCart className="h-3.5 w-3.5" />
@@ -796,7 +796,7 @@ export function IssueDetailPage() {
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
                   {overviewFields.map((f) => (
                     <div key={f.label} className="flex items-baseline gap-2">
-                      <dt className="shrink-0 w-20 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                      <dt className="shrink-0 w-20 text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                         {f.label}
                       </dt>
                       <dd className="min-w-0 flex-1 text-xs font-mono break-words text-foreground">
@@ -832,7 +832,7 @@ export function IssueDetailPage() {
           </Card>
         ) : !lineSummary || lineSummary.lines.length === 0 ? (
           <Card>
-            <CardContent className="px-4 py-6 text-center text-xs font-mono text-muted-foreground">
+            <CardContent className="px-4 py-6 text-center text-xs text-muted-foreground">
               この課題に紐づく条件明細はまだありません。
             </CardContent>
           </Card>
@@ -846,16 +846,16 @@ export function IssueDetailPage() {
                 ["次アクション", lineSummary.summary.next_actions || 0],
               ].map(([label, value]) => (
                 <div key={String(label)} className="border border-border rounded-sm px-3 py-2">
-                  <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                     {label}
                   </div>
-                  <div className="text-lg font-mono font-bold">{value}</div>
+                  <div className="text-lg font-semibold">{value}</div>
                 </div>
               ))}
             </div>
             <div className="border border-border rounded-sm px-3 py-2 space-y-2">
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                   現在フェイズ
                 </span>
                 <Badge variant="outline" className="font-mono">
@@ -869,7 +869,7 @@ export function IssueDetailPage() {
                     className={cn(
                       "h-8 border rounded-sm flex items-center justify-center text-[10px] font-mono",
                       stage.done
-                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                        ? "border-success/40 bg-success/10 text-success"
                         : "border-border text-muted-foreground"
                     )}
                   >
@@ -896,7 +896,7 @@ export function IssueDetailPage() {
                               {line.subject || "(件名なし)"}
                             </span>
                           </div>
-                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
                             <span>{relationText(line.relations)}</span>
                             <span>{line.payment_scheme || "scheme未設定"}</span>
                             <span>{statusText(line.status)}</span>
@@ -985,7 +985,7 @@ export function IssueDetailPage() {
                           <div
                             className={cn(
                               "h-full transition-all",
-                              isDone ? "bg-emerald-600" : "bg-foreground"
+                              isDone ? "bg-success" : "bg-foreground"
                             )}
                             style={{ width: `${pct}%` }}
                           />
@@ -993,14 +993,14 @@ export function IssueDetailPage() {
                       )}
                       {Array.isArray(line.recent_events) && line.recent_events.length > 0 && (
                         <div className="border-t border-border pt-2 space-y-1">
-                          <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+                          <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                             最近の実績
                           </div>
                           <div className="flex flex-wrap gap-1.5">
                             {line.recent_events.slice(0, 3).map((ev, index) => (
                               <span
                                 key={`${line.id}-ev-${index}`}
-                                className="text-[10px] font-mono border border-border rounded-sm px-2 py-1 text-muted-foreground"
+                                className="text-[10px] border border-border rounded-sm px-2 py-1 text-muted-foreground"
                               >
                                 {ev.event_type || "event"} · {fmtDate(ev.occurred_at)} ·{" "}
                                 {ev.document_number || ev.backlog_issue_key || "文書なし"}
@@ -1043,7 +1043,7 @@ export function IssueDetailPage() {
         ) : docs.length === 0 ? (
           <div className="p-12 text-center border border-dashed border-border rounded-xl">
             <Inbox className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-            <p className="text-[13px] font-mono text-muted-foreground">
+            <p className="text-[13px] text-muted-foreground">
               この課題に紐づく文書はまだありません。
             </p>
           </div>
@@ -1074,7 +1074,7 @@ export function IssueDetailPage() {
                       </span>
                       <LifecycleBadge status={d.lifecycle_status} />
                     </div>
-                    <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                       <span className="font-mono">
                         {d.document_number || "(採番なし)"}
                       </span>
@@ -1091,7 +1091,7 @@ export function IssueDetailPage() {
                         onClick={() =>
                           navigate(`/condition-lines/${encodeURIComponent(d.line_code!)}`)
                         }
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
+                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                         title="対応する条件明細を見る"
                       >
                         <ListChecks className="h-3 w-3" />
@@ -1103,7 +1103,7 @@ export function IssueDetailPage() {
                         href={d.drive_link}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
+                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                         title="Drive で開く"
                       >
                         <ExternalLink className="h-3 w-3" />
@@ -1114,7 +1114,7 @@ export function IssueDetailPage() {
                       <button
                         type="button"
                         onClick={() => setChooserDoc(d)}
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-2 py-1 rounded-md"
+                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-success dark:text-success hover:text-success transition-colors border border-success/40 hover:border-success px-2 py-1 rounded-md"
                         title="この文書を送信（クラウドサイン / メール）"
                       >
                         ✉ 送信
@@ -1123,7 +1123,7 @@ export function IssueDetailPage() {
                     <button
                       type="button"
                       onClick={() => reopen(d.id)}
-                      className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
+                      className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                       title="この文書を再編集"
                     >
                       <Pencil className="h-3 w-3" />
@@ -1144,7 +1144,7 @@ export function IssueDetailPage() {
             <DialogTitle>まとめてクラウドサインで送信</DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            <div className="text-xs font-mono text-muted-foreground leading-relaxed">
+            <div className="text-xs text-muted-foreground leading-relaxed">
               対象 {selDocs.size} 件を 1 つの書類にまとめて送信します：
               <ul className="mt-1 space-y-0.5">
                 {Array.from(selDocs).map((dn) => {
@@ -1225,7 +1225,7 @@ export function IssueDetailPage() {
                 {csRouteLoading && <span className="ml-2 text-muted-foreground">ルート取得中…</span>}
               </Label>
               {csInternal.length === 0 ? (
-                <p className="text-[11px] font-mono text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   社内署名者なし（部署ルート未設定 or 無し）。下で追加できます。
                 </p>
               ) : (
@@ -1330,7 +1330,7 @@ export function IssueDetailPage() {
                 <option value="draft">CloudSign で署名欄/印影を配置してから送信（下書き作成）</option>
               </NativeSelect>
             </div>
-            <p className="text-[11px] font-mono text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               ※ 各文書は Drive 上のPDFが必要。設定で「許可宛先」を設定中は、<b>全署名者・CC（社内含む）のメールが許可宛先に入っている必要</b>があります。「下書き作成」を選ぶと CloudSign の編集画面が開きます。英語は webhook 有効時に制限される場合あり。
             </p>
           </DialogBody>
@@ -1353,7 +1353,7 @@ export function IssueDetailPage() {
             <DialogTitle>送信方法を選択</DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-2.5">
-            <div className="text-xs font-mono text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               {chooserDoc ? templateLabel(chooserDoc.template_type) : ""}{" "}
               {chooserDoc?.document_number}
             </div>
@@ -1381,7 +1381,7 @@ export function IssueDetailPage() {
               ✍ クラウドサインで送信
             </Button>
             {!isDrivePdf(chooserDoc?.drive_link) && (
-              <p className="text-[10px] font-mono text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground">
                 ※ クラウドサインは Drive 上に PDF がある正本のみ送信できます。
               </p>
             )}
@@ -1396,7 +1396,7 @@ export function IssueDetailPage() {
             <DialogTitle>メールで送信</DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            <div className="text-xs font-mono text-muted-foreground">
+            <div className="text-xs text-muted-foreground">
               {emailDoc ? templateLabel(emailDoc.template_type) : ""}{" "}
               {emailDoc?.document_number}
             </div>
@@ -1470,7 +1470,7 @@ export function IssueDetailPage() {
                 placeholder="cc@example.co.jp"
               />
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               内容を確認のうえ「送信」を押してください。PDF を添付して送信します。
             </p>
           </DialogBody>
