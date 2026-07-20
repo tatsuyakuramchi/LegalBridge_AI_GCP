@@ -285,6 +285,8 @@ import {
   deleteVendorForce,
   listVendorOrphans,
   attachVendorOrphan,
+  redactVendor,
+  redactVendors,
 } from "./src/services/vendorMasterService.ts";
 // Phase 17z-4: Staff マスター + Contracts (LegalOn 取込) を Master タブ群に統合。
 import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
@@ -1373,7 +1375,9 @@ async function startServer() {
         const limit = Number(req.query.limit) || undefined;
         const offset = Number(req.query.offset) || undefined;
         const result = await listVendors({ q, limit, offset });
-        res.json({ ok: true, ...result });
+        // §12: viewer には口座/反社/与信を返さない(admin はそのまま)。
+        const role = await resolveAppRole(req);
+        res.json({ ok: true, ...result, rows: redactVendors(result.rows, role) });
       } catch (error: any) {
         console.error("GET /api/master/vendors failed:", error);
         res
@@ -1406,7 +1410,9 @@ async function startServer() {
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
-        const csv = await getVendorExportCsv(codes);
+        // §12: viewer には口座/反社/与信の列値を空欄化して返す。
+        const role = await resolveAppRole(req);
+        const csv = await getVendorExportCsv(codes, role);
         const stamp = new Date().toISOString().slice(0, 10);
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
         res.setHeader(
@@ -1437,7 +1443,9 @@ async function startServer() {
             .status(404)
             .json({ ok: false, error: `vendor not found: ${code}` });
         }
-        res.json(v);
+        // §12: viewer には口座/反社/与信を返さない(admin はそのまま)。
+        const role = await resolveAppRole(req);
+        res.json(redactVendor(v, role));
       } catch (error: any) {
         console.error("GET /api/master/vendors/:code failed:", error);
         res
