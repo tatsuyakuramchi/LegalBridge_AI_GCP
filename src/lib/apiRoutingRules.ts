@@ -120,11 +120,11 @@ export const READ_PATHS_ON_POST: RegExp[] = [
   //   二重実装は使わない。サブパス (/:code 詳細 GET, /import-csv,
   //   /upload-change-request の multipart) は対象外なので末尾を厳密に判定。
   /^\/api\/master\/vendors(?:\?|$)/,
-  // 統合 Phase 3: スタッフ役割変更 (PATCH /api/master/staff/:email/role) は
-  //   search-api の正規実装(staff.app_role 更新 + 監査ログ)を本体とする。
-  //   既定で PATCH は worker へ振られるため、ここで READ(search-api)へ明示する。
-  //   portal_secret 経由で requireAppRole を無条件通過する。
-  /^\/api\/master\/staff\/[^/]+\/role(?:\?|$)/,
+  // 全UIリニューアル A(ステップ1): スタッフ役割変更 (PATCH
+  //   /api/master/staff/:email/role) は worker へ移設済み(search-api 読取専用化)。
+  //   worker が同仕様(app_role 更新 + staff_role_change 監査ログ)を提供し、staging
+  //   で検証済み。既定で PATCH は worker(write)へ振られるため、ここでの search-api
+  //   への明示 pin を撤去した。search-api 側の当該ルートは soak 後に撤去(ステップ2)。
   // 統合 P3-2: 条件明細の紐付け更新 (PUT /api/conditions/:id/links) は
   //   search-api の正規実装。既定で PUT は worker へ振られるため明示。
   /^\/api\/conditions\/\d+\/links(?:\?|$)/,
