@@ -485,17 +485,17 @@ export function MaterialEntryPanel() {
 
   const completeness = (m: any) => {
     const refs = refsById[m.id]
-    if (!m.material_name || !String(m.material_name).trim()) return { label: "⛔ 空", cls: "text-rose-600 border-rose-500 bg-rose-500/10" }
-    if (refs && refs.condition_lines === 0) return { label: "⚠ 金銭条件なし", cls: "text-amber-600 border-amber-500 bg-amber-500/10" }
-    return { label: "✓ 完成", cls: "text-emerald-600 border-emerald-500 bg-emerald-500/10" }
+    if (!m.material_name || !String(m.material_name).trim()) return { label: "⛔ 空", cls: "text-destructive border-destructive bg-destructive/10" }
+    if (refs && refs.condition_lines === 0) return { label: "⚠ 金銭条件なし", cls: "text-warning border-warning bg-warning/10" }
+    return { label: "✓ 完成", cls: "text-success border-success bg-success/10" }
   }
 
   return (
     <div className="max-w-3xl space-y-6">
       <div>
         <p className="retro-tag mb-1.5">MST · MATERIAL ENTRY</p>
-        <h3 className="text-lg font-mono font-bold">原作マテリアル 登録・編集（work_materials）</h3>
-        <p className="text-xs font-mono text-muted-foreground mt-1">
+        <h3 className="text-lg font-bold">原作マテリアル 登録・編集（work_materials）</h3>
+        <p className="text-xs text-muted-foreground mt-1">
           原作を選ぶ → 既存素材を検索して編集/削除、無ければ新規作成。金銭条件を付帯必須で登録し、結合キー material_code は自動採番・不変。
         </p>
       </div>
@@ -519,27 +519,27 @@ export function MaterialEntryPanel() {
       </div>
 
       {!workId ? (
-        <p className="font-mono text-[11px] text-muted-foreground py-4">まず原作を選択してください。</p>
+        <p className="text-[11px] text-muted-foreground py-4">まず原作を選択してください。</p>
       ) : view === "gate" ? (
         /* 検索ゲート: 既存素材の一覧(選んで編集/削除) + 新規作成 */
         <div className="rounded-xl border border-border border-t-[3px] border-t-violet-500 bg-card p-5 space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
-            <h4 className="font-mono text-[13px] font-bold text-violet-600">既存の原作マテリアル</h4>
+            <h4 className="text-[13px] font-bold text-info">既存の原作マテリアル</h4>
             <Button size="sm" onClick={startNew} className="font-mono text-[11px]">
               <Plus className="h-3.5 w-3.5" />
               新規マテリアルを作成
             </Button>
           </div>
-          <p className="font-mono text-[9.5px] text-muted-foreground leading-snug">
+          <p className="text-[9.5px] text-muted-foreground leading-snug">
             まず既存を確認。完成度(空/金銭条件なし/完成)と参照(文書/条件明細)を表示。編集は属性 PUT＋金銭条件 追記、
             削除は参照チェック付き(参照ありは強制確認・文書スナップショットは残す)。コードは不変。
           </p>
           {listLoading ? (
-            <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground py-4">
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-4">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> 読み込み中…
             </div>
           ) : materials.length === 0 ? (
-            <p className="font-mono text-[11px] text-muted-foreground py-4">この原作に素材はありません。「新規マテリアルを作成」から登録してください。</p>
+            <p className="text-[11px] text-muted-foreground py-4">この原作に素材はありません。「新規マテリアルを作成」から登録してください。</p>
           ) : (
             <div className="overflow-x-auto border border-border rounded-lg">
               <table className="w-full font-mono text-[10.5px]" style={{ fontVariantNumeric: "tabular-nums" }}>
@@ -559,18 +559,18 @@ export function MaterialEntryPanel() {
                     const comp = completeness(m)
                     return (
                       <tr key={m.id} className="border-t border-border">
-                        <td className="px-2 py-1.5 text-sky-700">{m.material_code || `#${m.id}`}</td>
-                        <td className={`px-2 py-1.5 ${!m.material_name ? "text-rose-600" : ""}`}>{m.material_name || "（名称なし）"}</td>
+                        <td className="px-2 py-1.5 text-primary">{m.material_code || `#${m.id}`}</td>
+                        <td className={`px-2 py-1.5 ${!m.material_name ? "text-destructive" : ""}`}>{m.material_name || "（名称なし）"}</td>
                         <td className="px-2 py-1.5">{refs ? `${refs.condition_lines} 件` : "…"}</td>
                         <td className="px-2 py-1.5">
                           <span className={`inline-block border rounded px-1.5 py-0.5 text-[8.5px] font-bold ${comp.cls}`}>{comp.label}</span>
                         </td>
                         <td className="px-2 py-1.5 text-muted-foreground">{refs ? `文書 ${refs.documents} / 条件 ${refs.condition_lines}` : "…"}</td>
                         <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          <button type="button" className="inline-flex items-center gap-1 border border-sky-500 text-sky-600 rounded px-1.5 py-0.5 mr-1 hover:bg-sky-500/10" onClick={() => startEdit(m)}>
+                          <button type="button" className="inline-flex items-center gap-1 border border-primary text-primary rounded px-1.5 py-0.5 mr-1 hover:bg-primary/10" onClick={() => startEdit(m)}>
                             <Pencil className="h-3 w-3" /> 編集
                           </button>
-                          <button type="button" className="inline-flex items-center gap-1 border border-rose-500 text-rose-600 rounded px-1.5 py-0.5 hover:bg-rose-500/10" onClick={() => deleteMaterial(m)}>
+                          <button type="button" className="inline-flex items-center gap-1 border border-destructive text-destructive rounded px-1.5 py-0.5 hover:bg-destructive/10" onClick={() => deleteMaterial(m)}>
                             <Trash2 className="h-3 w-3" /> 削除
                           </button>
                         </td>
@@ -585,7 +585,7 @@ export function MaterialEntryPanel() {
       ) : (
         <>
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-[11px]">
-            {editingId ? <Pencil className="h-3.5 w-3.5 text-sky-600" /> : <Plus className="h-3.5 w-3.5 text-emerald-600" />}
+            {editingId ? <Pencil className="h-3.5 w-3.5 text-primary" /> : <Plus className="h-3.5 w-3.5 text-success" />}
             {editingId ? <>編集中: <b>{editingCode}</b>（コードは不変。既存の金銭条件を読み込んで編集・追加・削除できます）</> : <>新規マテリアルを作成</>}
             <button type="button" className="ml-auto text-muted-foreground hover:text-destructive inline-flex items-center gap-1" onClick={backToGate}>
               <Search className="h-3.5 w-3.5" /> 一覧に戻る
@@ -645,7 +645,7 @@ export function MaterialEntryPanel() {
                 onSelect={(v) => { setRightsVendorCode(v?.vendor_code || ""); setRightsVendorId(v?.id ?? null) }}
               />
               {editingId && rightsVendorId != null && !rightsVendorCode && (
-                <p className="font-mono text-[9px] text-muted-foreground">現在の権利元 vendor ID: {rightsVendorId}（変更する場合のみ選択）</p>
+                <p className="text-[9px] text-muted-foreground">現在の権利元 vendor ID: {rightsVendorId}（変更する場合のみ選択）</p>
               )}
             </Field>
 
@@ -683,8 +683,8 @@ export function MaterialEntryPanel() {
           {/* UIC-03: 金銭条件は文書フォームで登録・修正(素材CRUDへ限定)。条件明細の唯一の書込み口＝Document Command。 */}
           <div className="rounded-xl border border-border border-t-[3px] border-t-emerald-500 bg-card p-5 space-y-3">
             <div>
-              <h4 className="font-mono text-[13px] font-bold text-emerald-600">金銭条件（文書フォームで登録）</h4>
-              <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
+              <h4 className="text-[13px] font-bold text-success">金銭条件（文書フォームで登録）</h4>
+              <p className="text-[9.5px] text-muted-foreground leading-snug mt-1">
                 条件値（取引形態・料率など）の作成・修正は「利用許諾条件書」文書フォームで行います（データの唯一の入力口＝文書作成）。
                 下のボタンで素材を保存し、原作・素材・許諾者を引き継いで文書フォームへ移動します。
               </p>
@@ -699,9 +699,9 @@ export function MaterialEntryPanel() {
 
             {/* 出版: 基本契約書(ARC-PUB)。条件書は基本契約番号を参照する。 */}
             {docKind === "publication" && (
-              <div className="rounded-md border border-sky-500 bg-sky-500/10 p-2.5 space-y-2">
-                <div className="font-mono text-[10px] font-bold text-sky-700">出版等許諾基本契約書（ARC-PUB）</div>
-                <p className="font-mono text-[9px] text-muted-foreground leading-snug">
+              <div className="rounded-md border border-primary bg-primary/10 p-2.5 space-y-2">
+                <div className="text-[10px] font-bold text-primary">出版等許諾基本契約書（ARC-PUB）</div>
+                <p className="text-[9px] text-muted-foreground leading-snug">
                   条件書は基本契約に紐づきます。既存の基本契約書を検索して番号を引き継ぐか、無ければ先に作成してください。
                 </p>
                 <DocumentNumberLookup
@@ -712,21 +712,21 @@ export function MaterialEntryPanel() {
                 />
                 {pubBaseDoc ? (
                   <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
-                    <FileText className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+                    <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
                     <span className="font-bold">{pubBaseDoc.document_number}</span>
                     <span className="text-muted-foreground truncate">{pubBaseDoc.derived_title}</span>
                     <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPubBaseDoc(null)}>解除</button>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[9px] text-muted-foreground">基本契約書が無い場合:</span>
+                    <span className="text-[9px] text-muted-foreground">基本契約書が無い場合:</span>
                     <select className="h-7 rounded border border-border bg-background px-1.5 text-[10px] font-mono" value={pubBaseType} onChange={(e) => setPubBaseType(e.target.value as any)}>
                       <option value="individual">個人版</option>
                       <option value="corporate">法人版</option>
                     </select>
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 border border-sky-500 text-sky-600 rounded px-2 py-1 font-mono text-[10px] hover:bg-sky-500/10"
+                      className="inline-flex items-center gap-1 border border-primary text-primary rounded px-2 py-1 font-mono text-[10px] hover:bg-primary/10"
                       onClick={handoffToBaseContract}
                     >
                       <FileOutput className="h-3 w-3" /> 基本契約書を先に作成
@@ -740,7 +740,7 @@ export function MaterialEntryPanel() {
               type="button"
               onClick={handoffToDocForm}
               disabled={saving}
-              className="inline-flex items-center gap-2 font-mono text-[11px] font-bold px-3 py-2 rounded-md border border-emerald-500 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 disabled:opacity-50"
+              className="inline-flex items-center gap-2 font-mono text-[11px] font-bold px-3 py-2 rounded-md border border-success bg-success/10 text-success hover:bg-success/20 disabled:opacity-50"
             >
               <FileOutput className="h-3.5 w-3.5" />
               {editingId ? "保存して文書フォームで条件を登録／修正" : "保存して文書フォームで条件を登録"}
@@ -749,28 +749,28 @@ export function MaterialEntryPanel() {
 
             {/* 編集: この素材の登録済み条件を read-only 表示(修正は文書フォーム/元文書で) */}
             {editingId && (
-              <div className="rounded-lg border border-violet-300 bg-violet-50/40 dark:bg-violet-950/20 p-3 space-y-2">
+              <div className="rounded-lg border border-info/40 bg-info/10/40 dark:bg-info/20/20 p-3 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] font-bold text-violet-600">この素材の登録済み条件（閲覧のみ）</span>
+                  <span className="text-[10px] font-bold text-info">この素材の登録済み条件（閲覧のみ）</span>
                   {existingLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
                 </div>
                 {!existingLoading && existingConds.length === 0 ? (
-                  <p className="font-mono text-[10px] text-muted-foreground">登録済みの金銭条件はありません。上のボタンから文書フォームで登録してください。</p>
+                  <p className="text-[10px] text-muted-foreground">登録済みの金銭条件はありません。上のボタンから文書フォームで登録してください。</p>
                 ) : (
                   <ul className="space-y-1">
                     {existingConds.map((cl: any) => (
-                      <li key={cl.id} className="rounded-sm border border-violet-200 bg-background/70 px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                      <li key={cl.id} className="rounded-sm border border-info/30 bg-background/70 px-2 py-1 text-[10px] text-muted-foreground">
                         <span className="font-bold text-foreground">{cl.subject || "（取引形態未設定）"}</span>
                         {cl.rate_pct != null ? ` / 料率${cl.rate_pct}%` : ""}
                         {cl.mg_amount != null && Number(cl.mg_amount) > 0 ? ` / MG ${cl.mg_amount}` : ""}
                         {cl.ag_amount != null && Number(cl.ag_amount) > 0 ? ` / AG ${cl.ag_amount}` : ""}
                         {cl.region_language_label ? ` / ${cl.region_language_label}` : ""}
-                        {cl.document_number ? <span className="text-sky-600"> · 参照文書: {cl.document_number}</span> : ""}
+                        {cl.document_number ? <span className="text-primary"> · 参照文書: {cl.document_number}</span> : ""}
                       </li>
                     ))}
                   </ul>
                 )}
-                <p className="font-mono text-[9px] text-muted-foreground/70 leading-snug">
+                <p className="text-[9px] text-muted-foreground/70 leading-snug">
                   条件値の修正は上のボタン（文書フォーム）または参照文書の再編集で行います。この画面からは条件を変更しません。
                 </p>
               </div>
@@ -780,8 +780,8 @@ export function MaterialEntryPanel() {
           {/* 既存の利用許諾条件(CL)をこの素材に紐づけ(link-conditions・維持)。値は書かず既存CLをリンク。 */}
           <div className="rounded-xl border border-border border-t-[3px] border-t-sky-500 bg-card p-5 space-y-3">
             <div>
-              <h4 className="font-mono text-[13px] font-bold text-sky-600">既存の利用許諾条件(CL)をこの素材に紐づけ</h4>
-              <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
+              <h4 className="text-[13px] font-bold text-primary">既存の利用許諾条件(CL)をこの素材に紐づけ</h4>
+              <p className="text-[9.5px] text-muted-foreground leading-snug mt-1">
                 既に文書配下にある条件明細（発注書の受託者帰属条件など）を、値コピーせずこの素材へ後付けリンクします（新規作成しない＝二重化なし）。
               </p>
             </div>
@@ -795,33 +795,33 @@ export function MaterialEntryPanel() {
             </Field>
             {pickedDoc && (
               <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
-                <FileText className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                <FileText className="h-3.5 w-3.5 text-primary shrink-0" />
                 <span className="font-bold">{pickedDoc.document_number}</span>
                 <span className="text-muted-foreground truncate">{pickedDoc.derived_title}</span>
                 <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPickedDoc(null)}>解除</button>
               </div>
             )}
             {pickedDoc && unlinkedLoading && (
-              <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground py-1">
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground py-1">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" /> この文書の未リンク利用許諾条件(CL)を確認中…
               </div>
             )}
             {pickedDoc && !unlinkedLoading && unlinkedCLs.length === 0 && (
-              <p className="font-mono text-[10px] text-muted-foreground py-1">この文書に素材未割当の利用許諾条件(CL)はありません。</p>
+              <p className="text-[10px] text-muted-foreground py-1">この文書に素材未割当の利用許諾条件(CL)はありません。</p>
             )}
             {pickedDoc && !unlinkedLoading && unlinkedCLs.length > 0 && (
-              <div className="rounded-md border border-amber-400 bg-amber-50/60 dark:bg-amber-950/20 px-2.5 py-2 space-y-2">
-                <p className="font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300">
+              <div className="rounded-md border border-warning/60 bg-warning/10/60 dark:bg-warning/20/20 px-2.5 py-2 space-y-2">
+                <p className="text-[10px] font-bold text-warning dark:text-warning">
                   この文書は素材未割当の利用許諾条件（CL）を {unlinkedCLs.length} 件持っています。
                 </p>
                 {!editingId && (
-                  <p className="font-mono text-[9.5px] text-rose-600 leading-snug">
+                  <p className="text-[9.5px] text-destructive leading-snug">
                     ※ リンクには保存済みの素材が必要です。先に「マテリアルを登録」で保存してから紐づけてください。
                   </p>
                 )}
                 <ul className="space-y-1">
                   {unlinkedCLs.map((cl) => (
-                    <li key={cl.id} className="flex items-center gap-2 rounded-sm border border-amber-200 bg-white/70 dark:bg-black/20 px-2 py-1">
+                    <li key={cl.id} className="flex items-center gap-2 rounded-sm border border-warning/40 bg-white/70 dark:bg-black/20 px-2 py-1">
                       <div className="min-w-0 flex-1 font-mono text-[10px]">
                         <span className="font-bold">CL #{cl.id}</span>
                         {cl.subject ? ` / ${cl.subject}` : ""}
@@ -833,7 +833,7 @@ export function MaterialEntryPanel() {
                         type="button"
                         disabled={!editingId}
                         onClick={() => linkExistingCL(cl)}
-                        className="inline-flex items-center gap-1 border border-amber-500 text-amber-700 dark:text-amber-300 rounded px-2 py-1 font-mono text-[10px] hover:bg-amber-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="inline-flex items-center gap-1 border border-warning text-warning dark:text-warning rounded px-2 py-1 font-mono text-[10px] hover:bg-warning/10 disabled:opacity-40 disabled:cursor-not-allowed"
                         title="この既存CLをこの素材にリンク(新規作成しない)"
                       >
                         <Link2 className="h-3 w-3" /> この素材に紐づける
