@@ -18,6 +18,7 @@ import { WorkGraphPanel } from "@/src/pages/master/WorkGraphPanel";
 import { RightsTreePanel } from "@/src/pages/master/RightsTreePanel";
 import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel";
 import { CompletenessPanel } from "@/src/components/dataquality/CompletenessPanel";
+import { WorkDetailProvider } from "./WorkDetailContext";
 
 export interface WorkDetailTabsProps {
   workId?: string | number;
@@ -56,6 +57,7 @@ export const WorkDetailTabs: React.FC<WorkDetailTabsProps> = ({ workId }) => {
   const hasWork = workId != null && workId !== "";
 
   return (
+    <WorkDetailProvider routeId={workId != null ? String(workId) : undefined}>
     <Tabs value={tab} onValueChange={(v) => setTab(v as TabKey)}>
       <TabsList className="flex-wrap">
         {TABS.map((t) => (
@@ -110,6 +112,7 @@ export const WorkDetailTabs: React.FC<WorkDetailTabsProps> = ({ workId }) => {
         )}
       </TabsContent>
     </Tabs>
+    </WorkDetailProvider>
   );
 };
 
