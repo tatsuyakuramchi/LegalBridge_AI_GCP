@@ -5595,6 +5595,101 @@ ${details}
         }
       }
 
+      // 3) addresses[] (1:N) — 全UIリニューアル A ステップ1: search-api の
+      //    replaceVendorAddresses と同仕様。配列が渡された場合のみ「全削除→入れ直し」。
+      //    primary が無ければ先頭を昇格。primary の住所を vendors.address にミラー。
+      if (Array.isArray(v.addresses) && vendorId) {
+        const addrs = v.addresses
+          .filter((a: any) => a && String(a.address || "").trim())
+          .map((a: any, idx: number) => ({
+            address_label: a.address_label || null,
+            postal_code: a.postal_code || null,
+            address: String(a.address).trim(),
+            is_primary: !!a.is_primary,
+            sort_order: Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : idx,
+          }));
+        if (addrs.length > 0 && !addrs.some((a: any) => a.is_primary)) addrs[0].is_primary = true;
+        await query("DELETE FROM vendor_addresses WHERE vendor_id = $1", [vendorId]);
+        for (const a of addrs) {
+          await query(
+            `INSERT INTO vendor_addresses
+              (vendor_id, address_label, postal_code, address, is_primary, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [vendorId, a.address_label, a.postal_code, a.address, a.is_primary, a.sort_order]
+          );
+        }
+        const primaryAddr = addrs.find((a: any) => a.is_primary) || addrs[0];
+        if (primaryAddr) {
+          await query("UPDATE vendors SET address = $1 WHERE id = $2", [primaryAddr.address, vendorId]);
+        }
+      }
+
+      // 4) bank_accounts[] (1:N) — search-api の replaceVendorBankAccounts と同仕様。
+      //    国内/海外いずれかの主要項目があれば保存。primary の口座を vendors の
+      //    レガシー単一列(bank_name/branch_name/account_type/account_number/account_holder_kana)へミラー。
+      if (Array.isArray(v.bank_accounts) && vendorId) {
+        const banks = v.bank_accounts
+          .filter((a: any) =>
+            a &&
+            [
+              a.bank_name, a.branch_name, a.account_number, a.account_holder_kana,
+              a.account_holder_name, a.iban, a.swift_bic,
+            ].some((x: any) => String(x || "").trim())
+          )
+          .map((a: any, idx: number) => ({
+            bank_label: a.bank_label || null,
+            bank_name: a.bank_name || null,
+            branch_name: a.branch_name || null,
+            account_type: a.account_type || null,
+            account_number: a.account_number || null,
+            account_holder_kana: a.account_holder_kana || null,
+            is_primary: !!a.is_primary,
+            sort_order: Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : idx,
+            account_scope: a.account_scope === "overseas" ? "overseas" : "domestic",
+            swift_bic: a.swift_bic || null,
+            iban: a.iban || null,
+            routing_number: a.routing_number || null,
+            account_holder_name: a.account_holder_name || null,
+            bank_country: a.bank_country || null,
+            bank_address: a.bank_address || null,
+            currency: a.currency || null,
+            intermediary_bank_swift: a.intermediary_bank_swift || null,
+            intermediary_bank_name: a.intermediary_bank_name || null,
+          }));
+        if (banks.length > 0 && !banks.some((a: any) => a.is_primary)) banks[0].is_primary = true;
+        await query("DELETE FROM vendor_bank_accounts WHERE vendor_id = $1", [vendorId]);
+        for (const a of banks) {
+          await query(
+            `INSERT INTO vendor_bank_accounts
+              (vendor_id, bank_label, bank_name, branch_name, account_type,
+               account_number, account_holder_kana, is_primary, sort_order,
+               account_scope, swift_bic, iban, routing_number, account_holder_name,
+               bank_country, bank_address, currency, intermediary_bank_swift, intermediary_bank_name)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                     $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+            [
+              vendorId, a.bank_label, a.bank_name, a.branch_name, a.account_type,
+              a.account_number, a.account_holder_kana, a.is_primary, a.sort_order,
+              a.account_scope, a.swift_bic, a.iban, a.routing_number, a.account_holder_name,
+              a.bank_country, a.bank_address, a.currency, a.intermediary_bank_swift, a.intermediary_bank_name,
+            ]
+          );
+        }
+        const primaryBank = banks.find((a: any) => a.is_primary) || banks[0];
+        if (primaryBank) {
+          await query(
+            `UPDATE vendors
+                SET bank_name = $1, branch_name = $2, account_type = $3,
+                    account_number = $4, account_holder_kana = $5
+              WHERE id = $6`,
+            [
+              primaryBank.bank_name, primaryBank.branch_name, primaryBank.account_type,
+              primaryBank.account_number, primaryBank.account_holder_kana, vendorId,
+            ]
+          );
+        }
+      }
+
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: String(error) });

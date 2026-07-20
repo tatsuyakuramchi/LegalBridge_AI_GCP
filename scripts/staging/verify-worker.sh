@@ -57,6 +57,32 @@ else
   fi
 fi
 
+echo "== ステップ1: 取引先 upsert(POST /api/master/vendors) 住所/口座 1:N パリティ =="
+# クローンDBに検証用 vendor(STG-VERIFY-VEN)を upsert。vendor_code UNIQUE の upsert なので
+#   再実行は冪等。primary 住所は vendors.address に、primary 口座は
+#   vendors.bank_name/account_number にミラーされる → GET /:code で永続化を確認。
+VCODE="STG-VERIFY-VEN"
+TADDR="東京都テスト区検証1-2-3"
+TBANK="テスト銀行"
+TACC="9999001"
+PAYLOAD=$(cat <<JSON
+{"vendor_code":"$VCODE","vendor_name":"検証用取引先(自動)","entity_type":"corporate",
+ "addresses":[{"address":"$TADDR","is_primary":true}],
+ "bank_accounts":[{"bank_name":"$TBANK","branch_name":"本店","account_type":"普通","account_number":"$TACC","account_holder_kana":"ケンショウ","is_primary":true}]}
+JSON
+)
+PC="$(curl -sS -m 25 -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" \
+  -H "x-user-email: staging-verify@dev.local" -d "$PAYLOAD" "$W/api/master/vendors" 2>/dev/null)"
+if [[ "$PC" == "200" || "$PC" == "201" ]]; then ok "取引先 upsert が $PC"; else ng "取引先 upsert が $PC (期待 200/201)"; fi
+
+VGET="$(curl -sS -m 25 -H 'x-user-email: staging-verify@dev.local' "$W/api/master/vendors/$VCODE" 2>/dev/null)"
+GADDR="$(jqget "$VGET" address)"
+GBANK="$(jqget "$VGET" bank_name)"
+GACC="$(jqget "$VGET" account_number)"
+[[ "$GADDR" == "$TADDR" ]] && ok "primary 住所が vendors.address に永続化" || ng "住所ミラー不一致 (got='$GADDR' 期待='$TADDR')"
+[[ "$GBANK" == "$TBANK" ]] && ok "primary 口座銀行名が vendors.bank_name に永続化" || ng "口座銀行ミラー不一致 (got='$GBANK')"
+[[ "$GACC" == "$TACC" ]] && ok "primary 口座番号が vendors.account_number に永続化" || ng "口座番号ミラー不一致 (got='$GACC')"
+
 echo ""
 echo "==== worker 結果: PASS=$pass FAIL=$fail ===="
 [[ $fail -eq 0 ]] && exit 0 || exit 1
