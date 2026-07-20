@@ -33,8 +33,8 @@ import { BillingTablePanel } from "./pages/master/BillingTablePanel" // 請求�
 import { BillingDashboardPanel } from "./pages/master/BillingDashboardPanel" // 請求・分配 横断ダッシュボード
 import { BillingPrintPage } from "./pages/master/BillingPrintPage" // 再許諾料 受領・分配 計算書(印刷/PDF)
 import { EntityMergePanel } from "./pages/master/EntityMergePanel" // ID統合(マージ)カート
-import { WorkGraphPanel } from "./pages/master/WorkGraphPanel" // 統合 Phase3c → /works/:id へ移設
 import { WorksListPanel } from "./pages/works/WorksListPanel" // 作品統合 増分④: 統一一覧
+import { WorksDetailPage } from "./pages/works/WorksDetailPage" // FRM-06/UIC-Skin: 作品詳細の共通シェル
 import { FinanceLayout } from "./pages/finance/FinanceLayout" // UIC-16(Phase E): Finance モジュール
 import { DataMaintenanceLayout } from "./pages/data-maintenance/DataMaintenanceLayout" // UIC-17(Phase E): Data Maintenance
 import { DeprecatedRedirect } from "./components/DeprecatedRedirect" // CLEAN-06: 廃止ルートの計測付きリダイレクト
@@ -135,9 +135,9 @@ export default function App() {
                   <Route path="drafts" element={<DraftsPanel />} />
                 </Route>
 
-                {/* 作品統合 増分④: 原作/自社作品 統一一覧 → 3カードエディタ(/works/:id) */}
+                {/* 作品統合 増分④: 原作/自社作品 統一一覧 → 新UIシェル付き3カードエディタ(/works/:id) */}
                 <Route path="works" element={<WorksListPanel />} />
-                <Route path="works/:id" element={<WorkGraphPanel />} />
+                <Route path="works/:id" element={<WorksDetailPage />} />
 
                 <Route path="templates" element={<TemplatesPage />} />
                 <Route path="templates/:id" element={<TemplateEditorPage />} />
