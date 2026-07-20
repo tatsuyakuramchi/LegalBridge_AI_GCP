@@ -282,7 +282,7 @@ export function LedgersPanel() {
     <div className="space-y-4">
       <LegacyWorksBanner what="原作" />
       {/* UIC-14: 移行照合専用 読み取り専用の明示。 */}
-      <div className="rounded-md border border-amber-300 bg-amber-50/60 px-3 py-2 text-[11px] font-mono text-amber-800">
+      <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] font-mono text-warning">
         この画面は<strong>移行照合専用（読み取り専用）</strong>です。原作・素材の作成／編集／削除は
         <strong>作品管理（/works）</strong>へ一本化しました。ここでは旧 ledgers の内容を参照・突合できます。
       </div>
@@ -322,7 +322,7 @@ export function LedgersPanel() {
       {filtered.length === 0 ? (
         <div className="p-16 text-center border border-dashed border-border rounded-md">
           <BookMarked className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
             原作マスターは空です。原作の登録は「作品管理」(/works) から行ってください。
           </p>
         </div>
@@ -346,7 +346,7 @@ export function LedgersPanel() {
                   {l.title}
                 </h3>
                 {l.title_kana && (
-                  <p className="text-[10px] font-mono text-muted-foreground/70">
+                  <p className="text-[10px] text-muted-foreground/70">
                     {l.title_kana}
                   </p>
                 )}
@@ -359,12 +359,12 @@ export function LedgersPanel() {
                     ))}
                   </div>
                 )}
-                <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                   <Layers className="h-3 w-3" />
                   <span>素材 {Array.isArray(l.materials) ? l.materials.length : 0} 件</span>
                 </div>
                 {l.creator_name && (
-                  <p className="text-[10px] font-mono text-muted-foreground truncate">
+                  <p className="text-[10px] text-muted-foreground truncate">
                     著: {l.creator_name}
                   </p>
                 )}
@@ -497,10 +497,10 @@ export function LedgersPanel() {
 
             {/* Phase 22.20: 個別利用許諾条件書フォームで自動引用されるデフォルト値 */}
             <div className="border-t border-border pt-3 space-y-2">
-              <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+              <Label className="text-xs font-bold uppercase tracking-[0.16em]">
                 個別利用許諾条件書フォーム自動引用 (任意)
               </Label>
-              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
                 ここで設定した値は、個別利用許諾条件書フォームで原作を選択した時に
                 <strong>素材権利者 / クレジット表記 / 原著作物 補記</strong>
                 の各フィールドに自動入力されます。空欄なら何もしません。
@@ -514,7 +514,7 @@ export function LedgersPanel() {
                       set({ default_rights_holder: e.target.value })
                     }
                   />
-                  <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                  <p className="text-[10px] text-muted-foreground mt-1">
                     各素材の rights_holder が空のときに fallback されます。
                     新規派生素材を追加するときの初期値にも使われます。
                   </p>
@@ -546,7 +546,7 @@ export function LedgersPanel() {
                       set({ default_approval_target: e.target.value })
                     }
                   />
-                  <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                  <p className="text-[10px] text-muted-foreground mt-1">
                     PDF Section 2「承認対象」欄に自動入力されます。
                   </p>
                 </Field>
@@ -558,7 +558,7 @@ export function LedgersPanel() {
                       set({ default_approval_timing: e.target.value })
                     }
                   />
-                  <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                  <p className="text-[10px] text-muted-foreground mt-1">
                     PDF Section 2「承認時期」欄に自動入力されます。
                   </p>
                 </Field>
@@ -569,7 +569,7 @@ export function LedgersPanel() {
             {!creating && data?.id && (
               <div className="border-t border-border pt-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                  <Label className="text-xs font-bold uppercase tracking-[0.16em]">
                     配下素材 ({Array.isArray(data.materials) ? data.materials.length : 0} 件)
                   </Label>
                   <Button
@@ -585,7 +585,7 @@ export function LedgersPanel() {
                     派生素材を追加
                   </Button>
                 </div>
-                <p className="text-[10px] font-mono text-muted-foreground">
+                <p className="text-[10px] text-muted-foreground">
                   原作本体 (-001) は自動作成済み・削除不可。派生作品 / キャラクター / 関連アセット
                   は枝番 (-002, -003 ...) を持つ別行として追加可能。
                 </p>
@@ -596,7 +596,7 @@ export function LedgersPanel() {
                       <React.Fragment key={m.id}>
                       {/* Category(2): ジャンル(カテゴリ)が変わったら見出しを挿入(軽量グルーピング)。 */}
                       {(i === 0 || data.materials[i - 1].category_genre !== m.category_genre) && (m.category_genre || m.material_type) && (
-                        <div className="pt-1 text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground/80">
+                        <div className="pt-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
                           {m.category_name || genreLabel(m.category_genre || m.material_type)}
                         </div>
                       )}
@@ -604,7 +604,7 @@ export function LedgersPanel() {
                         className={cn(
                           "rounded-sm border p-2 flex items-center gap-3",
                           m.is_default
-                            ? "border-emerald-300 bg-emerald-50/50"
+                            ? "border-success/40 bg-success/10"
                             : "border-border bg-card"
                         )}
                       >
@@ -615,13 +615,13 @@ export function LedgersPanel() {
                           {m.material_code}
                         </Badge>
                         {m.is_default && (
-                          <Star className="h-3 w-3 text-emerald-700 fill-emerald-600 flex-shrink-0" />
+                          <Star className="h-3 w-3 text-success fill-emerald-600 flex-shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-mono font-bold truncate">
                             {m.material_name}
                           </div>
-                          <div className="text-[11px] font-mono text-muted-foreground/70">
+                          <div className="text-[11px] text-muted-foreground/70">
                             {genreLabel(m.material_type)}
                             {(m.effective_rights_holder || m.rights_holder) && ` / ${m.effective_rights_holder || m.rights_holder}`}
                           </div>
@@ -644,8 +644,8 @@ export function LedgersPanel() {
                 )}
 
                 {addingMaterial && (
-                  <div className="rounded-sm border border-amber-200 bg-amber-50/30 p-3 space-y-2">
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-amber-700">
+                  <div className="rounded-sm border border-warning/40 bg-warning/10 p-3 space-y-2">
+                    <div className="text-[10px] uppercase tracking-wider text-warning">
                       新しい派生素材 (枝番自動)
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -772,7 +772,7 @@ function Field({
 }) {
   return (
     <div className={`space-y-1 ${className || ""}`}>
-      <Label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+      <Label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
         {label}
       </Label>
       {children}

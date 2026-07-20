@@ -62,8 +62,8 @@ const catLabel = (c: string) => CAT_LABEL[c] || c || "—"
 
 // 経理照合: 成就/未了(二値中心)。一部は未了寄りの中間色で示す。
 const FULFILL: Record<string, { label: string; cls: string }> = {
-  fulfilled: { label: "成就", cls: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" },
-  partially_fulfilled: { label: "一部", cls: "bg-amber-100 text-amber-800 hover:bg-amber-100" },
+  fulfilled: { label: "成就", cls: "bg-success/10 text-success hover:bg-success/10" },
+  partially_fulfilled: { label: "一部", cls: "bg-warning/10 text-warning hover:bg-warning/10" },
   open: { label: "未了", cls: "bg-slate-100 text-slate-600 hover:bg-slate-100" },
 }
 const fulfillOf = (s: any) => FULFILL[String(s || "open")] || FULFILL.open
@@ -292,7 +292,7 @@ export function ConditionsPanel() {
             クリア
           </Button>
         </div>
-        <label className="flex items-end gap-2 text-xs font-mono text-muted-foreground cursor-pointer pb-2">
+        <label className="flex items-end gap-2 text-xs text-muted-foreground cursor-pointer pb-2">
           <input type="checkbox" className="h-4 w-4" checked={filters.include_all} onChange={(e) => setF({ include_all: e.target.checked })} />
           古い版・重複も表示
         </label>
@@ -300,7 +300,7 @@ export function ConditionsPanel() {
 
       {/* ツールバー */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-[12px] font-mono text-muted-foreground">
+        <span className="text-[12px] text-muted-foreground">
           {loading ? "検索中…" : `${rows.length} 件${total && total > rows.length ? ` / 全 ${total} 件` : ""}`}
         </span>
         <span className="text-xs text-muted-foreground">行をクリックで紐付けを編集</span>
@@ -347,12 +347,12 @@ export function ConditionsPanel() {
         {error ? (
           <div className="p-8 text-center text-sm text-destructive">読み込みに失敗しました: {error}</div>
         ) : rows.length === 0 && !loading ? (
-          <div className="p-12 text-center text-[13px] font-mono text-muted-foreground">
+          <div className="p-12 text-center text-[13px] text-muted-foreground">
             該当する条件明細がありません
           </div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="bg-muted/40 text-[11px] font-mono font-bold text-muted-foreground">
+            <thead className="bg-muted/40 text-[11px] font-bold text-muted-foreground">
               <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left [&>th]:whitespace-nowrap">
                 <th className="w-8">
                   <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />
@@ -397,9 +397,9 @@ export function ConditionsPanel() {
                     <td className="whitespace-nowrap">{r.payment_date || "—"}</td>
                     <td className="whitespace-nowrap">{r.delivery_date || "—"}</td>
                     <td className="whitespace-nowrap">
-                      <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">{catLabel(r.contract_category)}</Badge>
+                      <Badge className="bg-info/10 text-info hover:bg-info/10">{catLabel(r.contract_category)}</Badge>
                       {dir === "out" ? (
-                        <Badge className="ml-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">アウト(受領)</Badge>
+                        <Badge className="ml-1 bg-success/10 text-success hover:bg-success/10">アウト(受領)</Badge>
                       ) : dir === "in" ? (
                         <Badge variant="outline" className="ml-1">イン(支払)</Badge>
                       ) : null}
@@ -421,7 +421,7 @@ export function ConditionsPanel() {
                     <td className="text-right whitespace-nowrap">{r.quantity ?? ""}</td>
                     <td className="text-right whitespace-nowrap">{yen(r.unit_price)}</td>
                     <td className="text-right whitespace-nowrap font-mono">{yen(r.amount_ex_tax)}</td>
-                    <td className="text-right whitespace-nowrap font-mono text-muted-foreground">
+                    <td className="text-right whitespace-nowrap text-muted-foreground">
                       {r.consumed_amount != null ? yen(r.consumed_amount) : "—"}
                     </td>
                     <td className="whitespace-nowrap">
@@ -589,10 +589,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function LinkPill({ tone, children }: { tone: "work" | "ip" | "master" | "ringi" | "status"; children: React.ReactNode }) {
   const tones: Record<string, string> = {
-    work: "bg-indigo-100 text-indigo-700",
-    ip: "bg-emerald-100 text-emerald-700",
-    master: "bg-amber-100 text-amber-700",
-    ringi: "bg-pink-100 text-pink-700",
+    work: "bg-primary/10 text-primary",
+    ip: "bg-success/10 text-success",
+    master: "bg-warning/10 text-warning",
+    ringi: "bg-destructive/10 text-destructive",
     status: "bg-teal-100 text-teal-700",
   }
   return (

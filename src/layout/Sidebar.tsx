@@ -104,13 +104,13 @@ export function Sidebar() {
       <div className="flex items-center gap-3 px-5 h-14 border-b border-border">
         <div className="relative flex h-8 w-8 items-center justify-center bg-foreground text-background rounded-sm">
           <Terminal className="h-4 w-4" />
-          <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-emerald-500 blink" />
+          <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 rounded-full bg-success blink" />
         </div>
         <div className="leading-tight">
-          <p className="text-[13px] font-mono font-bold uppercase tracking-[0.18em]">
+          <p className="text-[13px] font-bold uppercase tracking-[0.18em]">
             {isEva ? "NERV" : skin === "clean" ? "LegalBridge" : "Arcs"}
           </p>
-          <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
             {isEva ? "MAGI · SYSTEM" : skin === "clean" ? "AI Legal Ops" : "Legal · OS"}
           </p>
         </div>
@@ -120,7 +120,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 custom-scrollbar">
         {groups.map((group) => (
           <div key={group.label} className="space-y-1">
-            <p className="px-3 pb-0.5 text-[11px] font-mono font-bold tracking-[0.04em] text-muted-foreground/90">
+            <p className="px-3 pb-0.5 text-[11px] font-bold tracking-[0.04em] text-muted-foreground/90">
               {group.label}
             </p>
             <ul className="space-y-0.5">
@@ -151,7 +151,7 @@ export function Sidebar() {
                     </NavLink>
                     {/* 情報整理: 説明は現在地のみ表示(他はホバーの title で補助)。 */}
                     {isActive && item.description && (
-                      <p className="ml-[42px] mt-0.5 text-[11px] font-mono leading-snug text-muted-foreground">
+                      <p className="ml-[42px] mt-0.5 text-[11px] leading-snug text-muted-foreground">
                         {item.description}
                       </p>
                     )}
@@ -165,7 +165,7 @@ export function Sidebar() {
         {/* 統合 Phase 1: search-api 検索ポータルへの外部リンク */}
         {PORTAL_BASE && (
           <div className="space-y-1">
-            <p className="px-3 pb-0.5 text-[11px] font-mono font-bold tracking-[0.04em] text-muted-foreground/90">
+            <p className="px-3 pb-0.5 text-[11px] font-bold tracking-[0.04em] text-muted-foreground/90">
               検索ポータル
             </p>
             <ul className="space-y-0.5">
@@ -193,15 +193,15 @@ export function Sidebar() {
       <div className="border-t border-border p-3 space-y-1.5">
         <div className="flex items-center justify-between text-[11px] font-mono tracking-[0.04em]">
           <span className="text-muted-foreground">▍ Backlog</span>
-          <span className="text-emerald-600 font-bold">稼働中</span>
+          <span className="text-success font-bold">稼働中</span>
         </div>
         <div className="flex items-center justify-between text-[11px] font-mono tracking-[0.04em]">
           <span className="text-muted-foreground">▍ Drive</span>
-          <span className="text-emerald-600 font-bold">有効</span>
+          <span className="text-success font-bold">有効</span>
         </div>
         <div className="flex items-center justify-between text-[11px] font-mono tracking-[0.04em]">
           <span className="text-muted-foreground">▍ Identity</span>
-          <span className="text-amber-600 font-bold">同期中</span>
+          <span className="text-warning font-bold">同期中</span>
         </div>
       </div>
     </aside>
