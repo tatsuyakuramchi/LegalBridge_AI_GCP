@@ -1871,14 +1871,14 @@ export function DocumentEditorPage() {
               <div className="flex flex-wrap items-start gap-x-8 gap-y-2">
                 {/* ブロック1: Matter・依頼 */}
                 <div className="min-w-0">
-                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                     Matter・依頼
                   </p>
                   <div className="flex items-center gap-2 mt-1 min-w-0 text-[12px] font-mono">
                     {matterContext ? (
                       <>
-                        <FolderKanban className="h-3.5 w-3.5 shrink-0 text-sky-700" />
-                        <span className="font-bold text-sky-800 shrink-0">
+                        <FolderKanban className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="font-bold text-primary shrink-0">
                           {matterContext.matter_code || `#${matterContext.id}`}
                         </span>
                         {matterContext.title && (
@@ -1892,7 +1892,7 @@ export function DocumentEditorPage() {
                     )}
                   </div>
                   <p
-                    className="text-[11px] font-mono text-muted-foreground mt-0.5 truncate max-w-[40ch]"
+                    className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[40ch]"
                     title={issueSummary?.summary || undefined}
                   >
                     Request: {selectedIssue || "未選択"}
@@ -1902,7 +1902,7 @@ export function DocumentEditorPage() {
 
                 {/* ブロック2: 作成文書 */}
                 <div className="min-w-0">
-                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                     作成文書
                   </p>
                   <p className="text-[12px] font-mono font-bold mt-1 truncate max-w-[26ch]">
@@ -1928,7 +1928,7 @@ export function DocumentEditorPage() {
 
                 {/* ブロック3: 当事者・担当 */}
                 <div className="min-w-0">
-                  <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                     当事者・担当
                   </p>
                   <p className="text-[12px] font-mono mt-1 truncate max-w-[24ch]">
@@ -1946,7 +1946,7 @@ export function DocumentEditorPage() {
                   {matterContext && (
                     <button
                       type="button"
-                      className="inline-flex items-center gap-1 text-[12px] font-mono text-sky-700 hover:underline"
+                      className="inline-flex items-center gap-1 text-[12px] font-mono text-primary hover:underline"
                       onClick={() => navigate(`/matters/${matterContext.id}`)}
                       title="案件詳細へ戻る"
                     >
@@ -1985,7 +1985,7 @@ export function DocumentEditorPage() {
                       type="button"
                       onClick={handleRefreshIssues}
                       disabled={issuesRefreshing}
-                      className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-50"
+                      className="text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-50"
                       title="Backlog 課題リストを最新化"
                     >
                       {issuesRefreshing ? (
@@ -2286,7 +2286,7 @@ export function DocumentEditorPage() {
                   <FileText className="h-3.5 w-3.5" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                     Editor
                   </p>
                   <p className="text-sm font-mono font-bold truncate">
@@ -2316,10 +2316,10 @@ export function DocumentEditorPage() {
                     // 初回保存で採番済みの下書き。生成時にこの番号を流用する。
                     return (
                       <span
-                        className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-mono font-bold text-emerald-800"
+                        className="inline-flex items-center gap-1 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-[10px] font-mono font-bold text-success"
                         title={`採番済(下書き): ${draftNo} — 生成時にこの番号で確定します`}
                       >
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
                         採番済 · {draftNo}
                       </span>
                     );
@@ -2327,10 +2327,10 @@ export function DocumentEditorPage() {
                   if (docNum) {
                     return (
                       <span
-                        className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-mono font-bold text-emerald-800"
+                        className="inline-flex items-center gap-1 rounded-md border border-success/40 bg-success/10 px-2 py-1 text-[10px] font-mono font-bold text-success"
                         title={`採番済: ${docNum}`}
                       >
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
                         採番済 · {docNum}
                       </span>
                     );
@@ -2338,26 +2338,26 @@ export function DocumentEditorPage() {
                   if (reopenId) {
                     return (
                       <span
-                        className="inline-flex items-center gap-1 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-[10px] font-mono font-bold text-sky-800"
+                        className="inline-flex items-center gap-1 rounded-md border border-primary/40 bg-primary/10 px-2 py-1 text-[10px] font-mono font-bold text-primary"
                         title="既存文書の再編集 (生成時にリビジョン採番)"
                       >
-                        <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary" />
                         再編集 · Rev予定
                       </span>
                     );
                   }
                   return (
                     <span
-                      className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-mono font-bold text-amber-800"
+                      className="inline-flex items-center gap-1 rounded-md border border-warning/40 bg-warning/10 px-2 py-1 text-[10px] font-mono font-bold text-warning"
                       title="未採番 Draft — 「保存」ボタンまたは生成時に採番されます"
                     >
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
                       未採番 Draft
                     </span>
                   );
                 })()}
                 {lastAutoSave && (
-                  <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                     Saved {lastAutoSave}
                   </span>
                 )}
@@ -2418,7 +2418,7 @@ export function DocumentEditorPage() {
                       className="hidden xl:block w-44 shrink-0 sticky top-0 space-y-0.5"
                       aria-label="フォームセクション"
                     >
-                      <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-1.5">
+                      <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-1.5">
                         ▍ セクション
                       </p>
                       {sectionNav.map((s, i) => (
@@ -2435,12 +2435,12 @@ export function DocumentEditorPage() {
                         >
                           <span
                             className={`h-1.5 w-1.5 rounded-full shrink-0 ${
-                              s.missing > 0 ? "bg-amber-500" : "bg-emerald-500"
+                              s.missing > 0 ? "bg-warning" : "bg-success"
                             }`}
                           />
                           <span className="truncate flex-1">{s.title}</span>
                           {s.missing > 0 && (
-                            <span className="text-amber-700 font-bold shrink-0">
+                            <span className="text-warning font-bold shrink-0">
                               {s.missing}
                             </span>
                           )}
@@ -2470,7 +2470,7 @@ export function DocumentEditorPage() {
                         open
                         className="rounded-sm border border-border bg-muted/20"
                       >
-                        <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-2">
+                        <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-bold uppercase tracking-wider flex items-center gap-2">
                           <FileText className="h-3.5 w-3.5 shrink-0" />
                           Backlog 課題内容
                           <span className="text-muted-foreground font-normal normal-case truncate">
@@ -2509,18 +2509,18 @@ export function DocumentEditorPage() {
                         「再編集モードで開く」(リビジョン採番) を選べる。
                         formData は上書きされないため、現状を見失わない設計。 */}
                     {previousDocument && (
-                      <div className="rounded-sm border border-blue-200 bg-blue-50 px-3 py-2.5">
+                      <div className="rounded-sm border border-primary/40 bg-primary/10 px-3 py-2.5">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="text-[11px] font-mono text-blue-900 leading-relaxed">
+                          <div className="text-[11px] font-mono text-primary leading-relaxed">
                             <div className="font-bold mb-0.5">
                               📄 この課題には過去文書あり: {previousDocument.document_number}
                               {previousDocument.revision > 0 && (
-                                <span className="ml-1 text-blue-700/70">
+                                <span className="ml-1 text-primary">
                                   (Rev. {previousDocument.revision})
                                 </span>
                               )}
                             </div>
-                            <div className="text-blue-800/80">
+                            <div className="text-primary">
                               作成日:{" "}
                               {new Date(
                                 previousDocument.created_at
@@ -2538,7 +2538,7 @@ export function DocumentEditorPage() {
                           <button
                             type="button"
                             onClick={() => setPreviousDocument(null)}
-                            className="text-blue-600/40 hover:text-blue-900 text-[10px] flex-shrink-0"
+                            className="text-primary hover:text-primary text-[10px] flex-shrink-0"
                             title="バナーを閉じる"
                           >
                             ×
@@ -2550,7 +2550,7 @@ export function DocumentEditorPage() {
                               href={previousDocument.drive_link}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-[10px] font-mono uppercase tracking-wider text-blue-700 hover:text-blue-900 underline"
+                              className="text-[10px] uppercase tracking-wider text-primary hover:text-primary underline"
                             >
                               前回 PDF を確認
                             </a>
@@ -2559,7 +2559,7 @@ export function DocumentEditorPage() {
                             type="button"
                             disabled={loadingPrevious}
                             onClick={handleLoadPrevious}
-                            className="text-[10px] font-mono uppercase tracking-wider border border-blue-600/40 bg-white hover:bg-blue-100 text-blue-800 px-2 py-1 rounded-sm disabled:opacity-50"
+                            className="text-[10px] uppercase tracking-wider border border-primary bg-white hover:bg-primary/10 text-primary px-2 py-1 rounded-sm disabled:opacity-50"
                             title="前回 doc の内容をフォームに読み込み (新規番号で発行)"
                           >
                             前回内容を引き継ぐ (新規発行)
@@ -2568,7 +2568,7 @@ export function DocumentEditorPage() {
                             type="button"
                             disabled={loadingPrevious}
                             onClick={handleReopenPrevious}
-                            className="text-[10px] font-mono uppercase tracking-wider border border-amber-600/40 bg-white hover:bg-amber-100 text-amber-800 px-2 py-1 rounded-sm disabled:opacity-50"
+                            className="text-[10px] uppercase tracking-wider border border-warning bg-white hover:bg-warning/10 text-warning px-2 py-1 rounded-sm disabled:opacity-50"
                             title="前回 doc を再編集モードで開く (リビジョン採番される)"
                           >
                             再編集モードで開く (_001 採番)
@@ -2582,19 +2582,19 @@ export function DocumentEditorPage() {
                         ユーザーが [編集を開始] を押すまでフォームは pointer-events
                         無効化で読み取り専用になる。誤入力/直前データ混在を防ぐ。 */}
                     {isReadOnly && selectedIssue && (
-                      <div className="rounded-sm border border-amber-300 bg-amber-50 px-3 py-2.5 flex items-center justify-between gap-3">
-                        <div className="text-[11px] font-mono text-amber-900 leading-relaxed">
+                      <div className="rounded-sm border border-warning/40 bg-warning/10 px-3 py-2.5 flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-mono text-warning leading-relaxed">
                           <div className="font-bold mb-0.5">
                             🔒 閲覧モード - {selectedIssue}
                           </div>
-                          <div className="text-amber-800/80">
+                          <div className="text-warning">
                             読み取り専用です。編集するには右の「編集を開始」をクリックしてください。
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={() => toggleReadOnly(false)}
-                          className="flex-shrink-0 text-[10px] font-mono font-bold uppercase tracking-wider bg-foreground text-background hover:opacity-90 px-3 py-1.5 rounded-sm"
+                          className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wider bg-foreground text-background hover:opacity-90 px-3 py-1.5 rounded-sm"
                           title="フォームを編集可能にする (現在の内容を一時保存してから切り替え)"
                         >
                           ✎ 編集を開始
@@ -2602,10 +2602,10 @@ export function DocumentEditorPage() {
                       </div>
                     )}
                     {!isReadOnly && selectedIssue && (
-                      <div className="rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-1.5 flex items-center justify-between gap-3">
-                        <div className="text-[11px] font-mono text-emerald-900">
+                      <div className="rounded-sm border border-success/40 bg-success/10 px-3 py-1.5 flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-mono text-success">
                           <span className="font-bold">✎ 編集モード</span>
-                          <span className="ml-2 text-emerald-800/70">
+                          <span className="ml-2 text-success">
                             変更は draft として localStorage + DB
                             (モード切替時) に保存
                           </span>
@@ -2613,7 +2613,7 @@ export function DocumentEditorPage() {
                         <button
                           type="button"
                           onClick={() => toggleReadOnly(true)}
-                          className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider border border-emerald-700/40 bg-white hover:bg-emerald-100 text-emerald-800 px-2 py-1 rounded-sm"
+                          className="flex-shrink-0 text-[10px] uppercase tracking-wider border border-success bg-white hover:bg-success/10 text-success px-2 py-1 rounded-sm"
                           title="閲覧モードに戻す (現在の内容を DB に一時保存)"
                         >
                           🔒 閲覧モードに戻す
@@ -2691,22 +2691,22 @@ export function DocumentEditorPage() {
                 {/* 実状態: 必須項目の充足 / 最終保存 */}
                 <div className="flex items-center gap-4 min-w-0">
                   {!selectedTemplate ? (
-                    <span className="text-[11px] font-mono text-muted-foreground">
+                    <span className="text-[11px] text-muted-foreground">
                       テンプレート未選択
                     </span>
                   ) : missingRequiredCount > 0 ? (
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-amber-700">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-warning">
+                      <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
                       必須項目 {missingRequiredCount} 件未入力
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-emerald-700">
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-success">
                       <CheckCircle2 className="h-3.5 w-3.5" />
                       必須項目 入力済み
                     </span>
                   )}
                   {lastAutoSave && (
-                    <span className="text-[11px] font-mono text-muted-foreground">
+                    <span className="text-[11px] text-muted-foreground">
                       最終保存 {lastAutoSave}
                     </span>
                   )}
@@ -2717,7 +2717,7 @@ export function DocumentEditorPage() {
                   )}
                   {/* LB-F10 (§5.5.11): 外部連携の実疎通状態(●=接続 / ●=障害 / ●=不明) */}
                   {integrations && (
-                    <span className="flex items-center gap-2.5 text-[11px] font-mono text-muted-foreground">
+                    <span className="flex items-center gap-2.5 text-[11px] text-muted-foreground">
                       {(
                         [
                           ["Backlog", integrations.backlog],
@@ -2738,7 +2738,7 @@ export function DocumentEditorPage() {
                           <span
                             className={`h-1.5 w-1.5 rounded-full ${
                               ok === true
-                                ? "bg-emerald-500"
+                                ? "bg-success"
                                 : ok === false
                                   ? "bg-destructive"
                                   : "bg-muted-foreground/40"
@@ -2809,7 +2809,7 @@ export function DocumentEditorPage() {
                       <span>
                         個人情報取得同意書も作成
                         {consentInfo.pii_consent_obtained && (
-                          <span className="text-emerald-600 ml-1">(同意取得済)</span>
+                          <span className="text-success ml-1">(同意取得済)</span>
                         )}
                       </span>
                     </label>
@@ -2870,7 +2870,7 @@ export function DocumentEditorPage() {
 
               {/* その他の操作(例外・管理, LB-F05 §5.5.10)。通常の作成ボタンと視覚的に分離。 */}
               <details className="border-t border-dashed border-border/70 px-5 py-2">
-                <summary className="cursor-pointer select-none text-[11px] font-mono text-muted-foreground hover:text-foreground">
+                <summary className="cursor-pointer select-none text-[11px] text-muted-foreground hover:text-foreground">
                   その他の操作（例外・管理: PDFを作成せずDB登録 / 単独契約 / 明細のラインID読込 / フォーム全消去）
                 </summary>
                 <div className="flex flex-wrap items-center gap-2 py-2.5">
@@ -2955,15 +2955,15 @@ export function DocumentEditorPage() {
           {/* LB-F13 (§5.5.7): 案件サマリー。Matter・相手方・関連契約・関連文書・
               入力状況を常時参照でき、案件へ1クリックで戻れる。 */}
           {(matterContext || selectedTemplate) && (
-            <Card className={matterContext ? "border-sky-600/40" : undefined}>
+            <Card className={matterContext ? "border-primary" : undefined}>
               <CardContent className="px-4 py-3 space-y-2">
-                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                   ▍ 案件サマリー
                 </p>
                 <div className="space-y-1 text-[12px] font-mono">
                   {matterContext ? (
                     <>
-                      <p className="font-bold text-sky-800 flex items-center gap-1.5">
+                      <p className="font-bold text-primary flex items-center gap-1.5">
                         <FolderKanban className="h-3.5 w-3.5 shrink-0" />
                         {matterContext.matter_code || `#${matterContext.id}`}
                       </p>
@@ -3000,7 +3000,7 @@ export function DocumentEditorPage() {
                           href={previousDocument.drive_link}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-sky-700 hover:underline"
+                          className="text-primary hover:underline"
                         >
                           {previousDocument.document_number}
                         </a>
@@ -3015,11 +3015,11 @@ export function DocumentEditorPage() {
                     {!selectedTemplate ? (
                       <span className="text-muted-foreground">テンプレート未選択</span>
                     ) : missingRequiredCount > 0 ? (
-                      <span className="text-amber-700 font-bold">
+                      <span className="text-warning font-bold">
                         必須項目 {missingRequiredCount} 件未入力
                       </span>
                     ) : (
-                      <span className="text-emerald-700 font-bold">必須項目 入力済み</span>
+                      <span className="text-success font-bold">必須項目 入力済み</span>
                     )}
                   </p>
                 </div>
@@ -3039,7 +3039,7 @@ export function DocumentEditorPage() {
           )}
           <Card>
             <CardContent className="px-4 py-3 space-y-2">
-              <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
                 ▍ 参照
               </p>
               <Button
@@ -3065,24 +3065,24 @@ export function DocumentEditorPage() {
           {selectedIssue && caseHistory.length > 0 && (
             <Card>
               <CardContent className="px-4 py-3 space-y-2.5">
-                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground flex items-center gap-1.5">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground flex items-center gap-1.5">
                   <History className="h-3 w-3" /> 案件履歴
                 </p>
                 <div className="relative pl-4 border-l border-dashed border-border space-y-3">
                   {caseHistory.map((item, idx) => (
                     <div key={`${item.id}-${idx}`} className="relative">
                       <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-card border-2 border-foreground" />
-                      <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                      <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                         {new Date(item.date).toLocaleDateString("ja-JP")}
                       </p>
                       <p className="text-xs font-mono font-bold leading-tight">
                         {item.label}
                       </p>
-                      <p className="text-[10px] font-mono text-cyan-700 dark:text-cyan-300 truncate">
+                      <p className="text-[10px] font-mono text-info dark:text-info truncate">
                         {item.ref}
                       </p>
                       {item.amount && (
-                        <p className="text-[10px] font-mono font-bold text-emerald-600">
+                        <p className="text-[10px] font-mono font-bold text-success">
                           ¥{new Intl.NumberFormat("ja-JP").format(item.amount)}
                         </p>
                       )}
@@ -3123,7 +3123,7 @@ export function DocumentEditorPage() {
 
             {/* ── ラインIDで法務アセットを検索(全モード共通) ── */}
             <div className="space-y-2 pb-3 border-b border-border">
-              <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
                 ラインIDで検索
               </p>
               <div className="flex gap-2">
@@ -3157,13 +3157,13 @@ export function DocumentEditorPage() {
                           {lineIdHit.contract.document_number || "(番号なし)"} ·{" "}
                           {lineIdHit.contract.contract_title || "—"}
                         </p>
-                        <p className="text-[10px] font-mono text-muted-foreground truncate">
+                        <p className="text-[10px] text-muted-foreground truncate">
                           {lineIdHit.contract.vendor_name || "—"} · ラインID {lineIdHit.line_code} · 明細
                           {lineIdHit.count}行
                         </p>
                       </>
                     ) : (
-                      <p className="text-[11px] font-mono text-amber-600">
+                      <p className="text-[11px] font-mono text-warning">
                         capability #{lineIdHit.capId} は契約マスタに未登録（明細{lineIdHit.count}行）。法務アセットとして反映できません。
                       </p>
                     )}
@@ -3180,7 +3180,7 @@ export function DocumentEditorPage() {
             {/* ── royalty_statement: 個別利用許諾条件書 + ライセンスマスタを横断検索 ── */}
             {selectedTemplate === "royalty_statement" && !assetPickerCallback ? (
               <>
-                <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
                   個別利用許諾条件書（Archive）またはライセンス単独契約（Master）を選択すると、
                   当事者・原著作物・金銭条件が自動補完されます。
                 </p>
@@ -3308,7 +3308,7 @@ export function DocumentEditorPage() {
               !assetPickerCallback ? (
               /* ── inspection_certificate: 発注書 + 業務委託マスタを横断検索 ── */
               <>
-                <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
                   対象の発注書（Archive）または業務委託マスタ（Master）を選択すると、
                   受託者・契約番号・業務明細・振込先・取引先コードが自動補完されます。
                 </p>
@@ -3423,7 +3423,7 @@ export function DocumentEditorPage() {
                   onChange={(e) => setAssetSearch(e.target.value)}
                 />
                 <div className="border border-border rounded-md overflow-hidden">
-                  <div className="grid grid-cols-[120px_1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[11px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  <div className="grid grid-cols-[120px_1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[11px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
                     <span>Identity</span>
                     <span>Reference</span>
                     <span>Action</span>
@@ -3452,7 +3452,7 @@ export function DocumentEditorPage() {
                             <p className="text-xs font-mono leading-tight">
                               {asset.asset_name}
                             </p>
-                            <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
+                            <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground italic">
                               {asset.counterparty}
                             </p>
                           </div>
@@ -3487,7 +3487,7 @@ export function DocumentEditorPage() {
                         </div>
                       ))}
                     {assets.length === 0 && (
-                      <div className="p-12 text-center text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground italic">
+                      <div className="p-12 text-center text-xs uppercase tracking-[0.18em] text-muted-foreground italic">
                         Index retrieval failed or no assets
                       </div>
                     )}
@@ -3513,10 +3513,10 @@ export function DocumentEditorPage() {
             <SheetTitle>過去文書・下書きを番号で呼び出す</SheetTitle>
           </SheetHeader>
           <SheetBody>
-            <p className="text-[11px] font-mono text-muted-foreground mb-3 leading-relaxed">
+            <p className="text-[11px] text-muted-foreground mb-3 leading-relaxed">
               文書番号・タイトル・取引先名で検索できます。選ぶとフォームに読み込みます。
               <br />
-              <span className="text-amber-700">Draft</span> は作成途中の下書き（初回保存で採番済）、
+              <span className="text-warning">Draft</span> は作成途中の下書き（初回保存で採番済）、
               <span className="text-muted-foreground"> Archive</span> は確定済み文書です。
             </p>
             <DocumentNumberLookup
@@ -3540,15 +3540,15 @@ export function DocumentEditorPage() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header — 発行モードで文言を変える */}
-            <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-5 flex items-center gap-4">
-              <div className="h-12 w-12 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
+            <div className="bg-success/10 border-b border-success/40 px-6 py-5 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-success text-white flex items-center justify-center flex-shrink-0">
                 <PartyPopper className="h-6 w-6" />
               </div>
               <div>
-                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald-700">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-success">
                   {completionResult.mode === "dbOnly" ? "DB Registered" : "Generation Complete"}
                 </div>
-                <div className="text-base font-bold text-emerald-900 mt-0.5">
+                <div className="text-base font-bold text-success mt-0.5">
                   {completionResult.mode === "dbOnly" ? "DBに登録しました" : "文書を作成しました"}
                 </div>
               </div>
@@ -3559,7 +3559,7 @@ export function DocumentEditorPage() {
               {/* 案件(Matter) — 紐付けがあれば表示 */}
               {completionResult.matterCode && (
                 <div className="space-y-1">
-                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                     案件 (Matter)
                   </div>
                   <div className="text-sm font-mono font-bold">
@@ -3569,7 +3569,7 @@ export function DocumentEditorPage() {
                 </div>
               )}
               <div className="space-y-1">
-                <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                   テンプレ
                 </div>
                 <div className="text-sm font-mono">
@@ -3581,7 +3581,7 @@ export function DocumentEditorPage() {
               </div>
               {completionResult.documentNumber && (
                 <div className="space-y-1">
-                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                     文書番号
                   </div>
                   <div className="text-sm font-mono font-bold">
@@ -3592,7 +3592,7 @@ export function DocumentEditorPage() {
               {/* Drive/登録ファイル リンク or PDF未作成の案内 */}
               {completionResult.driveLink ? (
                 <div className="space-y-1">
-                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                     {completionResult.mode === "dbOnly" && completionResult.fileLink
                       ? "登録ファイル"
                       : "Drive リンク (PDF)"}
@@ -3601,15 +3601,15 @@ export function DocumentEditorPage() {
                     href={completionResult.driveLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs font-mono text-blue-700 hover:text-blue-900 underline break-all flex items-center gap-1"
+                    className="text-xs font-mono text-primary hover:text-primary underline break-all flex items-center gap-1"
                   >
                     <ExternalLink className="h-3 w-3 flex-shrink-0" />
                     {completionResult.driveLink}
                   </a>
                 </div>
               ) : completionResult.mode === "dbOnly" ? (
-                <div className="rounded-sm border border-amber-200 bg-amber-50 px-3 py-2">
-                  <p className="text-[11px] font-mono text-amber-800">
+                <div className="rounded-sm border border-warning/40 bg-warning/10 px-3 py-2">
+                  <p className="text-[11px] font-mono text-warning">
                     PDF 未作成 — 文書は DB 登録のみ。「PDF未作成」キューから同じ番号のまま後日発行できます。
                   </p>
                 </div>
@@ -3617,19 +3617,19 @@ export function DocumentEditorPage() {
               {/* Phase 22.21.104: 検収書 / 利用許諾料計算書のみ Excel リンク表示 */}
               {completionResult.excelLink && (
                 <div className="space-y-1">
-                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-emerald-700">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-success">
                     会計用 Excel (自動生成)
                   </div>
                   <a
                     href={completionResult.excelLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs font-mono text-emerald-700 hover:text-emerald-900 underline break-all flex items-center gap-1"
+                    className="text-xs font-mono text-success hover:text-success underline break-all flex items-center gap-1"
                   >
                     <ExternalLink className="h-3 w-3 flex-shrink-0" />
                     {completionResult.excelLink}
                   </a>
-                  <p className="text-[10px] font-mono text-muted-foreground">
+                  <p className="text-[10px] text-muted-foreground">
                     会計チームの支払処理フォーマット (件名/支払日/明細5行/源泉徴収/振込額) で出力
                   </p>
                 </div>
