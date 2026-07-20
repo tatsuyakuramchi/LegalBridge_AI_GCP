@@ -83,6 +83,51 @@ GACC="$(jqget "$VGET" account_number)"
 [[ "$GBANK" == "$TBANK" ]] && ok "primary 口座銀行名が vendors.bank_name に永続化" || ng "口座銀行ミラー不一致 (got='$GBANK')"
 [[ "$GACC" == "$TACC" ]] && ok "primary 口座番号が vendors.account_number に永続化" || ng "口座番号ミラー不一致 (got='$GACC')"
 
+gen() { # $1=METHOD $2=path $3=body(任意) : HTTP コードのみ
+  if [[ -n "${3:-}" ]]; then
+    curl -sS -m 25 -o /dev/null -w "%{http_code}" -X "$1" -H "Content-Type: application/json" \
+      -H "x-user-email: staging-verify@dev.local" -d "$3" "$W$2" 2>/dev/null
+  else
+    curl -sS -m 25 -o /dev/null -w "%{http_code}" -X "$1" \
+      -H "x-user-email: staging-verify@dev.local" "$W$2" 2>/dev/null
+  fi
+}
+
+echo "== ステップ1: 条件明細リンク更新(PUT /api/conditions/:id/links) =="
+c="$(gen PUT '/api/conditions/abc/links' '{"work_id":null}')"
+[[ "$c" == "400" ]] && ok "不正 id は 400" || ng "不正 id が $c (期待 400)"
+# 存在しない数値 id + 妥当 payload → 0 行 UPDATE で {ok:true}(列/SQL 検証・データ非変更)
+c="$(gen PUT '/api/conditions/999999999/links' '{"work_id":null,"status_flags":{}}')"
+[[ "$c" == "200" ]] && ok "存在しない id は 200・無変更(列/SQL 健全)" || ng "存在しない id が $c (期待 200)"
+
+echo "== ステップ1: 作品別名 write(POST /api/works/:id/aliases, DELETE /api/work-aliases/:id) =="
+c="$(gen POST '/api/works/1/aliases' '{}')"
+[[ "$c" == "400" ]] && ok "alias_title 欠落は 400" || ng "alias_title 欠落が $c (期待 400)"
+c="$(gen DELETE '/api/work-aliases/abc')"
+[[ "$c" == "400" ]] && ok "不正 delete id は 400" || ng "不正 delete id が $c (期待 400)"
+# 実 work_id が取れる場合のみ INSERT→DELETE の round-trip(FK 検証・非破壊)。
+if [[ -n "${STAGING_API_URL:-}" ]]; then
+  AURL="${STAGING_API_URL%/}"
+  WID="$(curl -sS -m 25 -H 'x-staging-role: admin' "$AURL/api/v3/works/search?limit=1" 2>/dev/null \
+        | grep -oE "\"id\"[[:space:]]*:[[:space:]]*[0-9]+" | head -1 | grep -oE "[0-9]+")"
+  if [[ -n "$WID" ]]; then
+    RESP="$(curl -sS -m 25 -X POST -H 'Content-Type: application/json' -H 'x-user-email: staging-verify@dev.local' \
+            -d '{"alias_title":"STG-VERIFY-ALIAS"}' "$W/api/works/$WID/aliases" 2>/dev/null)"
+    AID="$(echo "$RESP" | grep -oE "\"id\"[[:space:]]*:[[:space:]]*[0-9]+" | head -1 | grep -oE "[0-9]+")"
+    if [[ -n "$AID" ]]; then
+      ok "alias INSERT 成功(work=$WID alias_id=$AID)"
+      dc="$(gen DELETE "/api/work-aliases/$AID")"
+      [[ "$dc" == "200" ]] && ok "alias DELETE 成功(round-trip 復元)" || ng "alias DELETE が $dc (期待 200・要手動削除 id=$AID)"
+    else
+      ng "alias INSERT 応答が想定外 (body=$(echo "$RESP" | head -c160))"
+    fi
+  else
+    echo "  INFO: work_id を取得できず(search-api works 応答次第)。alias round-trip はスキップ。"
+  fi
+else
+  echo "  INFO: STAGING_API_URL 未設定。alias INSERT/DELETE round-trip はスキップ(400 検証のみ)。"
+fi
+
 echo ""
 echo "==== worker 結果: PASS=$pass FAIL=$fail ===="
 [[ $fail -eq 0 ]] && exit 0 || exit 1

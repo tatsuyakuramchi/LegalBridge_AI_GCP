@@ -6096,6 +6096,117 @@ ${details}
     }
   );
 
+  // 全UIリニューアル A(ステップ1): 条件明細リンク更新 + 作品別名 write を worker へ移設。
+  //   search-api の updateConditionLinks / addWorkAlias / deleteWorkAlias と同仕様。
+  //   認可: requirePortalSecret(admin-ui BFF 経由)。admin-ui は apiRoutingRules の flip で
+  //   本ルート(worker)へ切替える。閲覧 GET(/api/works/:id/aliases)は search-api(read)に残す。
+  const LINE_ITEM_STATUS_KEYS = ["po_signed", "inspection_issued", "payment_exported"];
+  app.put(
+    "/api/conditions/:id/links",
+    requirePortalSecret,
+    express.json(),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) {
+          return res.status(400).json({ ok: false, error: "invalid id" });
+        }
+        const b = req.body || {};
+        const toIdOrNull = (v: any) => (v == null || v === "" ? null : Number(v));
+        const source_ip_id = toIdOrNull(b.source_ip_id);
+        const work_id = toIdOrNull(b.work_id);
+        const master_contract_id = toIdOrNull(b.master_contract_id);
+        const ringi_id = toIdOrNull(b.ringi_id);
+        // status_flags: 定義済みキーの true のみ残して JSON 化(search-api 同等)。
+        let flagsJson: string | null = null;
+        if (b.status_flags && typeof b.status_flags === "object") {
+          const clean: Record<string, boolean> = {};
+          for (const k of LINE_ITEM_STATUS_KEYS) {
+            if (b.status_flags[k] === true) clean[k] = true;
+          }
+          flagsJson = JSON.stringify(clean);
+        }
+        // flow_direction: undefined=据え置き / ''=クリア / in|out=設定。out=受領。
+        let dir: string | null | undefined =
+          b.flow_direction === undefined ? undefined : (b.flow_direction || "");
+        let inbound = typeof b.is_inbound === "boolean" ? b.is_inbound : null;
+        const dirProvided = dir !== undefined;
+        if (dirProvided) {
+          dir = dir === "in" || dir === "out" ? dir : null;
+          inbound = dir === "out";
+        }
+        // 旧台帳(legacy_role='cli'): work_id→source_work_id / direction 同期。
+        await query(
+          `UPDATE condition_lines
+              SET source_work_id = $2,
+                  status_flags = COALESCE($3::jsonb, status_flags),
+                  is_inbound = COALESCE($4::boolean, is_inbound),
+                  direction = CASE WHEN $5::boolean
+                                   THEN (CASE WHEN $6::varchar = 'out' THEN 'receivable'
+                                              WHEN $6::varchar = 'in'  THEN 'payable'
+                                              ELSE direction END)
+                                   ELSE direction END,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND legacy_role = 'cli'`,
+          [id, work_id ?? null, flagsJson, inbound, dirProvided, dirProvided ? dir : null]
+        );
+        // 新台帳(source_line_item_id 経由)にも即時反映。未適用環境(42P01/42703)は非致命。
+        try {
+          await query(
+            `UPDATE condition_lines
+                SET source_ip_id = $2, work_id = $3, master_contract_id = $4, ringi_id = $5,
+                    status_flags = COALESCE($6::jsonb, status_flags),
+                    is_inbound = COALESCE($7::boolean, is_inbound),
+                    flow_direction = CASE WHEN $8::boolean THEN $9::varchar ELSE flow_direction END,
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE source_line_item_id = $1`,
+            [id, source_ip_id ?? null, work_id ?? null, master_contract_id ?? null,
+             ringi_id ?? null, flagsJson, inbound, dirProvided, dirProvided ? dir : null]
+          );
+        } catch (err: any) {
+          if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+        }
+        res.json({ ok: true });
+      } catch (error: any) {
+        console.error("PUT /api/conditions/:id/links failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  app.post("/api/works/:id/aliases", requirePortalSecret, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const b = req.body || {};
+      if (!Number.isFinite(id) || !b.alias_title) {
+        return res.status(400).json({ ok: false, error: "id and alias_title required" });
+      }
+      const ins = await query(
+        `INSERT INTO work_title_aliases (work_id, alias_title, party_vendor_id, context)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [id, String(b.alias_title), b.party_vendor_id ?? null, b.context ?? null]
+      );
+      res.json({ ok: true, id: Number(ins.rows[0].id) });
+    } catch (error: any) {
+      console.error("POST /api/works/:id/aliases failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  app.delete("/api/work-aliases/:id", requirePortalSecret, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      await query(`DELETE FROM work_title_aliases WHERE id = $1`, [id]);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("DELETE /api/work-aliases/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   app.post("/api/master/staff", express.json(), async (req, res) => {
     // Phase 22.21.120: 編集時は body.id を尊重して UPDATE。新規時は slack_user_id
     //   での upsert。slack_user_id が空のまま新規登録すると UNIQUE/NOT NULL で
