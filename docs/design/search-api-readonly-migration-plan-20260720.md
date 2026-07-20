@@ -4,6 +4,19 @@
 - 対象: 全UIリニューアル指示 §4.2 / §13 / §14（search-api を検索・閲覧専用へ）
 - 前提の重要事実: **`services/api` は SSR 検索ポータルと admin-ui のバックエンド（`/api/v3/*` ほか）を兼ねた 4936 行のモノリス**。単純なルート削除は admin-ui/本番ポータルを壊すため不可（§20）。
 
+## 0. 進捗サマリ（2026-07-20 現在・PR #424/#425 マージ済）
+
+- ✅ **§12 機密フィルタ**: viewer に vendor 口座/反社/与信を返さない（JSON 一覧/詳細・CSV エクスポート・SSR vendor 詳細・統合検索 vendors 射影）。admin は全開示。
+- ✅ **master 書込みの worker 移設 + flip**: staff role / vendors(住所口座 1:N) / conditions-links / aliases。staging で API13/13・worker13/13 PASS。本番反映済。
+- ✅ **SSR ポータル read-only 化 + write ルート撤去**: staff role/vendors/conditions-links/aliases の write ルートを search-api から物理撤去、SSR 編集 UI を admin-ui へ導線化。
+- ✅ **統合検索 namespace**: `/api/search/{works,vendors,contracts,conditions}`（core 4）。works は kind='own' 限定撤去で統合。
+- ✅ **§14 dead code**: 無認証 shadowed SELECT* 重複ルート3件を撤去。
+- ⏳ **残（別対応・非自明）**:
+  1. **CSV 一括取込の撤去**: `POST /api/master/vendors/import-csv` と SSR `/imports/vendor` は現存。**admin-ui はこれを撤去せず search-api の `/imports/vendor` へ委譲している**（`VendorsPanel.tsx`）ため、単純撤去すると vendor CSV 取込が壊れる。→ **先に admin-ui/Data Maintenance へ CSV 取込 UI を新設する機能移設が必要**（read-only 化の厳密完了はここが最後）。
+  2. **統合検索の補助 API**: `/api/search/{unified,facets,suggestions,data-quality}` は未実装。
+  3. **v3 write**: admin-ui が現役依存（WorkGraphPanel/BillingTablePanel）＋設計上 Search が作品モデル所有のため据え置き。
+  4. **本番稼働リビジョンの確定**: 二重デプロイの可能性あり。デプロイは release/* 経由でなく main → 本番サービス直接のため、release ブランチ差分では判定不可。稼働イメージタグで確認する。
+
 ## 1. write ルート呼出元照合（admin-ui `src/` 参照数）
 
 | ルート | admin-ui 参照 | 分類 | 方針 |

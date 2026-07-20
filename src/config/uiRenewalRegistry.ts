@@ -203,10 +203,15 @@ export const UI_RENEWAL_SURFACES: UiRenewalSurface[] = [
     route: "search-api SSR",
     name: "検索ポータル",
     pattern: "readonly-portal",
-    status: "planned",
+    status: "partial",
     fieldReview: "reviewed",
     targetComponents: ["SearchToolbar", "DataTableShell", "FieldPolicyProjection"],
-    notes: "書込み・CSV取込・強制削除を撤去し、権限別read-onlyへ",
+    notes:
+      "PR #424/#425 で実装: §12 機密フィルタ(viewer に口座/反社/与信を返さない・JSON/CSV/SSR)、" +
+      "master 書込み(staff role/vendors/conditions-links/aliases)を worker へ移設、" +
+      "SSR 編集 UI を read-only 化し write ルートを撤去、統合検索 /api/search/{works,vendors,contracts,conditions}。" +
+      "残: CSV 一括取込の撤去(現状 admin-ui は search-api /imports/vendor へ委譲のため要 admin-ui 側新設)、" +
+      "統合検索の補助 API(unified/facets/suggestions/data-quality)。",
   },
   {
     id: "DLG-all",
