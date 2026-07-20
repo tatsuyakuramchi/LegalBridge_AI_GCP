@@ -508,9 +508,9 @@ export function ContractsPanel() {
       {/* UIC-15(設計 v1.4 Phase E): 契約台帳を /contracts へ移設。MasterLayout の chrome を
           離れるため標準ページヘッダを付与する。 */}
       <header className="border-b border-border pb-5">
-        <p className="retro-tag mb-1.5">CTR · INDEX</p>
-        <h2 className="text-2xl font-mono font-bold tracking-tight">契約台帳</h2>
-        <p className="text-xs font-mono text-muted-foreground mt-1.5">
+        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">契約台帳</p>
+        <h2 className="text-2xl font-semibold tracking-tight">契約台帳</h2>
+        <p className="text-xs text-muted-foreground mt-1.5">
           締結済み(紙・既存)契約の登録は文書フォームの「DB登録のみ」、新規発行は「Finalize &amp; Sync」で。
         </p>
       </header>
@@ -562,11 +562,11 @@ export function ContractsPanel() {
                       title="契約状態をテーブル上で変更"
                       className={`h-5 rounded-full border bg-card px-1.5 text-[10px] font-mono font-bold disabled:opacity-50 ${
                         c.contract_status === "executed"
-                          ? "border-emerald-300 text-emerald-700"
+                          ? "border-success/40 text-success"
                           : c.contract_status === "terminated"
-                            ? "border-red-300 text-red-700"
+                            ? "border-destructive/40 text-destructive"
                             : c.contract_status === "awaiting_signature"
-                              ? "border-amber-300 text-amber-700"
+                              ? "border-warning/40 text-warning"
                               : "border-border text-muted-foreground"
                       }`}
                     >
@@ -620,7 +620,7 @@ export function ContractsPanel() {
                   <div className="mt-1 flex items-center gap-1.5">
                     <span
                       className={`h-1.5 w-1.5 rounded-full ${
-                        c.auto_renewal ? "bg-emerald-500" : "bg-muted-foreground/40"
+                        c.auto_renewal ? "bg-success" : "bg-muted-foreground/40"
                       }`}
                     />
                     <span className="text-muted-foreground">
@@ -737,7 +737,7 @@ export function ContractsPanel() {
                   <option value="license_condition">個別契約 (旧: 個別ライセンス)</option>
                 )}
               </NativeSelect>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                 <strong>基本契約</strong>: 親(top-level)。発注書の参照元。<br />
                 <strong>個別契約</strong>: 基本契約の子。利用許諾計算書/検収書 発行可能。<br />
                 <strong>単独契約</strong>: 親無し。個別契約と同じく計算/発行可能。
@@ -755,7 +755,7 @@ export function ContractsPanel() {
                 <option value="publication">出版関連</option>
                 <option value="nda">NDA・機密保持</option>
               </NativeSelect>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                 <strong>複合</strong>: 制作対価(業務明細)と利用許諾料(金銭条件)を
                 1 本で扱う場合に選択。両方のエディタが表示されます。
               </p>
@@ -793,7 +793,7 @@ export function ContractsPanel() {
                   )
                 })}
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                 基本契約は <strong>業務委託＋利用許諾</strong> のように複数スコープを
                 併せ持てます。出版はカテゴリで「出版関連」を選ぶとテンプレートが
                 切り替わります(スコープは利用許諾)。
@@ -810,7 +810,7 @@ export function ContractsPanel() {
                 <option value="in">当社が払う（支払・仕入・ライセンスイン）</option>
                 <option value="out">当社が受け取る（請求・販売・ライセンスアウト）</option>
               </NativeSelect>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                 方向:{" "}
                 {data?.flow_direction === "in"
                   ? "IN（当社が支払う側）"
@@ -832,7 +832,7 @@ export function ContractsPanel() {
                 <option value="shared">共有</option>
               </NativeSelect>
               {data?.deliverable_ownership === "counterparty" && (
-                <p className="text-[10px] font-mono text-amber-700 mt-1 leading-relaxed">
+                <p className="text-[10px] text-warning mt-1 leading-relaxed">
                   成果物が相手方帰属です。制作対価に加えて<strong>利用許諾料</strong>が
                   発生する場合は、カテゴリを「複合」にして金銭条件にも登録してください。
                 </p>
@@ -892,9 +892,9 @@ export function ContractsPanel() {
                     業務委託   基本 → SVC / 個別・単独 → OUT
                     出版       基本 → PUB / 個別・単独 → PUB
                   形式は ARC-<TYPE>-<YEAR>-<NNNN> (発注書/検収書と同じ採番系統)。 */}
-              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                 {data?.regenerate_document_number ? (
-                  <span className="text-amber-700 font-bold">
+                  <span className="text-warning font-bold">
                     🔄 保存すると新規発番されます (現在の番号は破棄)
                     <br />
                     予測 prefix: {previewDocPrefix(data?.contract_category, data?.record_type, data?.ledger_code)}
@@ -922,7 +922,7 @@ export function ContractsPanel() {
                 }
                 onChange={(next) => set({ ringi_numbers: next })}
               />
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 Phase 22.21.118: 任意項目です。稟議マスタに登録済みの番号
                 (R-NNNNN / B-NNNNN / 5 桁数字) を選択すると、保存時に N:N で
                 紐付き、ダッシュボード等で「この稟議に紐づく契約」として
@@ -954,7 +954,7 @@ export function ContractsPanel() {
                   </option>
                 ))}
               </NativeSelect>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+              <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">
                 <strong>作成中</strong>: 編集中 / <strong>締結待ち</strong>: 相手方サイン待ち /
                 <strong>締結中</strong>: 両者署名済み / <strong>満了</strong>: expiration_date 経過
                 (cron で自動遷移) / <strong>解約済</strong>: 早期解約
@@ -975,19 +975,19 @@ export function ContractsPanel() {
                   className={cn(
                     "text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm",
                     data?.is_active !== false
-                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      ? "bg-success/15 text-success border border-success/40"
                       : "bg-muted text-muted-foreground border border-input"
                   )}
                 >
                   {data?.is_active !== false ? "● 有効" : "○ 無効"}
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground">
                   {data?.is_active !== false
                     ? "自動補完候補に含む"
                     : "自動補完で無視"}
                 </span>
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 発注書 / 個別利用許諾条件書 / 個別出版条件書を作成するとき、
                 取引先 × 区分 (業務委託 / ライセンス / 出版) の組み合わせから
                 自動で基本契約を引いてくる。無効にすると候補に出てこない。
@@ -1028,13 +1028,13 @@ export function ContractsPanel() {
                   className={cn(
                     "text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm",
                     toBool(data?.auto_renewal)
-                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      ? "bg-success/15 text-success border border-success/40"
                       : "bg-muted text-muted-foreground border border-input"
                   )}
                 >
                   {toBool(data?.auto_renewal) ? "● あり" : "○ なし"}
                 </span>
-                <span className="text-[10px] font-mono text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground">
                   {toBool(data?.auto_renewal)
                     ? "満期で自動延長"
                     : "満期で終了"}
@@ -1058,7 +1058,7 @@ export function ContractsPanel() {
                 }
                 disabled={!toBool(data?.auto_renewal)}
               />
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 満期の何カ月前までに通告が必要か (自動更新あり時のみ)
               </p>
             </Field>
@@ -1076,7 +1076,7 @@ export function ContractsPanel() {
                 onChange={(e) => set({ alert_lead_months: e.target.value })}
                 disabled={!toBool(data?.auto_renewal)}
               />
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 通告期限の何カ月前にアラートを出すか
               </p>
             </Field>
@@ -1090,7 +1090,7 @@ export function ContractsPanel() {
                 label="▍ 個別利用許諾条件 (金銭条件)"
                 className="col-span-2 md:col-span-3"
               >
-                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed border-l-2 border-success pl-2">
                   <strong>個別利用許諾条件書と同じ内容</strong>を直接入力できます。
                   単独契約 / 個別契約に登録した条件は、後で「利用許諾計算書」を
                   作成するときに自動補完されます (別途 ILT 文書を発行する必要なし)。
@@ -1120,7 +1120,7 @@ export function ContractsPanel() {
                 label="▍ 業務明細 (検収書 自動補完用)"
                 className="col-span-2 md:col-span-3"
               >
-                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed border-l-2 border-success pl-2">
                   <strong>発注書の業務明細と同じ内容</strong>を直接入力できます。
                   単独契約 / 個別契約に登録した業務明細は、後で「検収書」を
                   作成するときに自動補完されます (毎回 PO を起票しなくても
@@ -1146,7 +1146,7 @@ export function ContractsPanel() {
                 label="▍ 経費（交通費等・税込み / 検収書 自動補完用）"
                 className="col-span-2 md:col-span-3"
               >
-                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed border-l-2 border-success pl-2">
                   領収書額面（税込み）をそのまま入力します。ここで登録した経費は
                   検収書フォームの「ステップ2-b 経費精算」で親契約から自動補完されます。
                 </p>
@@ -1168,7 +1168,7 @@ export function ContractsPanel() {
                 label="▍ その他手数料（税抜 / 検収書 自動補完用）"
                 className="col-span-2 md:col-span-3"
               >
-                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                <p className="text-[10px] text-muted-foreground mb-2 leading-relaxed border-l-2 border-success pl-2">
                   コーディネート費・振込手数料 等（税抜）。経費（税込・別精算）とは区別します。
                   検収書フォームの「ステップ2-c その他手数料」で親契約から自動補完されます。
                 </p>
@@ -1199,7 +1199,7 @@ export function ContractsPanel() {
                 rows={2}
                 className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
               />
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 <code>#channel-name</code> または Slack の channel ID
                 (C で始まる). 改行・カンマで複数指定。空欄なら env デフォルトを使用。
               </p>
@@ -1219,7 +1219,7 @@ export function ContractsPanel() {
                 rows={2}
                 className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
               />
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 Slack の生メンション形式 <code>&lt;@U…&gt;</code> /{" "}
                 <code>&lt;!subteam^S…&gt;</code> / <code>&lt;!channel&gt;</code> 等。
                 改行・カンマ区切りで複数。空欄ならメンションなし。
@@ -1248,9 +1248,9 @@ export function ContractsPanel() {
                   </option>
                 ))}
               </NativeSelect>
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1">
                 {data?.ledger_code ? (
-                  <span className="text-emerald-700 font-bold">
+                  <span className="text-success font-bold">
                     📚 原作 {data.ledger_code} に紐付け → 発番形式:
                     LIC-{data.ledger_code}-ILT-NNNN (原作通算)
                   </span>
@@ -1313,7 +1313,7 @@ export function ContractsPanel() {
             <DialogTitle>文書フォームで登録 — テンプレートを選択</DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-4 max-h-[70vh] overflow-y-auto">
-            <p className="text-[11px] font-mono text-muted-foreground leading-relaxed border-l-2 border-emerald-500 pl-2">
+            <p className="text-[11px] text-muted-foreground leading-relaxed border-l-2 border-success pl-2">
               通常の文書作成フォームが開きます。入力後、
               <strong>締結済み（紙・既存）契約の登録は「DB登録のみ」</strong>、
               <strong>新規に文書を発行する場合は「Finalize &amp; Sync」</strong>
@@ -1322,10 +1322,10 @@ export function ContractsPanel() {
             </p>
             {DOC_FORM_TEMPLATE_GROUPS.map((g) => (
               <div key={g.group} className="space-y-1.5">
-                <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground">
                   ▍ {g.group}
                 </p>
-                <p className="text-[10px] font-mono text-muted-foreground">{g.note}</p>
+                <p className="text-[10px] text-muted-foreground">{g.note}</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                   {g.keys.map(({ key, fallbackLabel }) => (
                     <button
@@ -1342,7 +1342,7 @@ export function ContractsPanel() {
                         <span className="block font-bold truncate">
                           {templateMetadata?.[key]?.label || fallbackLabel}
                         </span>
-                        <span className="block text-[10px] font-mono text-muted-foreground">
+                        <span className="block text-[10px] text-muted-foreground">
                           {key}
                         </span>
                       </span>
@@ -1367,7 +1367,7 @@ export function ContractsPanel() {
             <DialogTitle>クラウドサインで送信</DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-3">
-            <div className="text-xs font-mono text-muted-foreground leading-relaxed">
+            <div className="text-xs text-muted-foreground leading-relaxed">
               契約:{" "}
               <span className="font-bold text-foreground">
                 {csTarget?.contract_title || csTarget?.document_number || "—"}
@@ -1398,7 +1398,7 @@ export function ContractsPanel() {
                 {csRouteLoading && <span className="ml-2 text-muted-foreground">ルート取得中…</span>}
               </Label>
               {csInternal.length === 0 ? (
-                <p className="text-[11px] font-mono text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   社内署名者なし（起票者の部署ルート未設定 or 無し）。下で追加できます。
                 </p>
               ) : (
@@ -1503,7 +1503,7 @@ export function ContractsPanel() {
                 <option value="draft">CloudSign で署名欄/印影を配置してから送信（下書き作成）</option>
               </NativeSelect>
             </div>
-            <p className="text-[11px] font-mono text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、<b>全署名者（社内含む）のメールが許可宛先に入っている必要</b>があります（社内テスト用）。「下書き作成」を選ぶと CloudSign の編集画面が開きます。
             </p>
           </DialogBody>
@@ -1575,13 +1575,13 @@ function VendorPicker({
         <div
           className={cn(
             "flex-1 min-w-0 px-2.5 py-1.5 rounded-sm border",
-            "border-emerald-300 bg-emerald-50/50"
+            "border-success/40 bg-success/10"
           )}
         >
           <div className="text-xs font-mono font-bold truncate">
             {selected.vendor_name || "(無名)"}
           </div>
-          <div className="text-[10px] font-mono text-muted-foreground">
+          <div className="text-[10px] text-muted-foreground">
             {selected.vendor_code}
             {selected.entity_type ? ` · ${selected.entity_type}` : ""}
           </div>
@@ -1672,7 +1672,7 @@ function VendorPicker({
           </button>
         )}
       </div>
-      <div className="text-[10px] font-mono text-muted-foreground px-1 flex items-center justify-between">
+      <div className="text-[10px] text-muted-foreground px-1 flex items-center justify-between">
         <span>
           {filtered.length} / 全 {vendors.length} 件
           {filtered.length > visible.length && ` (上位 ${visible.length} 件表示)`}
@@ -1692,14 +1692,14 @@ function VendorPicker({
               setForceOpen(false)
             }}
             className={cn(
-              "w-full text-left px-2.5 py-1.5 hover:bg-emerald-50/60 transition-colors",
-              String(v.id) === String(value) && "bg-emerald-50"
+              "w-full text-left px-2.5 py-1.5 hover:bg-success/10 transition-colors",
+              String(v.id) === String(value) && "bg-success/10"
             )}
           >
             <div className="text-xs font-mono font-bold truncate">
               {v.vendor_name || "(無名)"}
             </div>
-            <div className="text-[11px] font-mono text-muted-foreground truncate">
+            <div className="text-[11px] text-muted-foreground truncate">
               {v.vendor_code}
               {v.entity_type ? ` · ${v.entity_type}` : ""}
               {v.aliases ? ` · 別名: ${v.aliases}` : ""}
@@ -1707,7 +1707,7 @@ function VendorPicker({
           </button>
         ))}
         {filtered.length === 0 && (
-          <div className="p-3 text-center text-[10px] font-mono text-muted-foreground">
+          <div className="p-3 text-center text-[10px] text-muted-foreground">
             該当する取引先が見つかりません
           </div>
         )}
@@ -1805,13 +1805,13 @@ function FinancialConditionsEditor({
   return (
     <div className="space-y-3">
       {!isIndividualLike && value.length > 0 && (
-        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+        <div className="text-[10px] text-warning border border-warning/40 bg-warning/10 rounded-sm px-2 py-1">
           ⚠ 「基本契約」では金銭条件は通常使われません。単独契約 / 個別契約への
           切替を検討してください。
         </div>
       )}
       {value.length === 0 && (
-        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+        <div className="text-[10px] text-muted-foreground border border-dashed border-border rounded-sm p-3">
           金銭条件が未設定です。「条件を追加」で必要な数だけ登録できます。
           単独契約/個別契約で入力しておくと、利用許諾計算書 を作成するときに
           自動補完されます。
@@ -2090,14 +2090,14 @@ function FinancialConditionsEditor({
                           )
                         }
                       />
-                      <p className="text-[11px] font-mono text-muted-foreground">
+                      <p className="text-[11px] text-muted-foreground">
                         {c.guarantee_type === "AG"
                           ? "前払い済み額。各計算で消化していく"
                           : "ロイヤリティ < MG なら MG を採用 (毎期 floor)"}
                       </p>
                     </>
                   ) : (
-                    <p className="text-[11px] font-mono text-muted-foreground">
+                    <p className="text-[11px] text-muted-foreground">
                       保証なし
                     </p>
                   )}
@@ -2137,7 +2137,7 @@ function FinancialConditionsEditor({
           <Plus />
           条件を追加 (条件 {nextNo})
         </Button>
-        <p className="text-[10px] font-mono text-muted-foreground">
+        <p className="text-[10px] text-muted-foreground">
           単独契約/個別契約で入力した条件は、利用許諾計算書 フォームで
           contract_capability から自動補完されます。
         </p>
@@ -2235,13 +2235,13 @@ function LineItemsEditor({
   return (
     <div className="space-y-3">
       {!isIndividualLike && value.length > 0 && (
-        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+        <div className="text-[10px] text-warning border border-warning/40 bg-warning/10 rounded-sm px-2 py-1">
           ⚠ 「基本契約」では業務明細は通常使われません。単独契約 / 個別契約への
           切替を検討してください。
         </div>
       )}
       {value.length === 0 && (
-        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+        <div className="text-[10px] text-muted-foreground border border-dashed border-border rounded-sm p-3">
           業務明細が未設定です。「明細を追加」で 1 件以上登録できます。
           単独契約 / 個別契約で入力しておくと、検収書フォームから
           一括 auto-fill されます。
@@ -2366,7 +2366,7 @@ function LineItemsEditor({
           {/* SUBSCRIPTION 用 (折り畳み) */}
           {c.calc_method === "SUBSCRIPTION" && (
             <details className="border-t border-input pt-2 mt-1">
-              <summary className="text-[10px] font-mono uppercase tracking-wider cursor-pointer text-muted-foreground hover:text-foreground">
+              <summary className="text-[10px] uppercase tracking-wider cursor-pointer text-muted-foreground hover:text-foreground">
                 ▶ SUBSCRIPTION 詳細 (周期 / 締日 / 期間)
               </summary>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mt-2">
@@ -2481,13 +2481,13 @@ function ExpensesEditor({
   return (
     <div className="space-y-3">
       {!isIndividualLike && value.length > 0 && (
-        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+        <div className="text-[10px] text-warning border border-warning/40 bg-warning/10 rounded-sm px-2 py-1">
           ⚠ 「基本契約」では経費は通常使われません。単独契約 / 個別契約への
           切替を検討してください。
         </div>
       )}
       {value.length === 0 && (
-        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+        <div className="text-[10px] text-muted-foreground border border-dashed border-border rounded-sm p-3">
           経費が未設定です。「経費を追加」で 1 件以上登録できます (税込み額)。
           単独契約 / 個別契約で入力しておくと、検収書フォームの
           「ステップ2-b 経費精算」で自動補完されます。
@@ -2565,7 +2565,7 @@ function ExpensesEditor({
           経費を追加
         </Button>
         {value.length > 0 && (
-          <span className="text-[10px] font-mono text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             経費合計 (税込): ¥ {total.toLocaleString("ja-JP")}
           </span>
         )}
@@ -2613,13 +2613,13 @@ function OtherFeesEditor({
   return (
     <div className="space-y-3">
       {!isIndividualLike && value.length > 0 && (
-        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+        <div className="text-[10px] text-warning border border-warning/40 bg-warning/10 rounded-sm px-2 py-1">
           ⚠ 「基本契約」ではその他手数料は通常使われません。単独契約 / 個別契約への
           切替を検討してください。
         </div>
       )}
       {value.length === 0 && (
-        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+        <div className="text-[10px] text-muted-foreground border border-dashed border-border rounded-sm p-3">
           その他手数料が未設定です。「手数料を追加」で 1 件以上登録できます (税抜)。
           単独契約 / 個別契約で入力しておくと、検収書フォームの
           「ステップ2-c その他手数料」で自動補完されます。
@@ -2679,7 +2679,7 @@ function OtherFeesEditor({
           手数料を追加
         </Button>
         {value.length > 0 && (
-          <span className="text-[10px] font-mono text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             手数料 小計 (税抜): ¥ {total.toLocaleString("ja-JP")}
           </span>
         )}
@@ -2771,8 +2771,8 @@ function ArchiveSyncSection({
   }
 
   return (
-    <div className="space-y-2 rounded-sm border border-dashed border-amber-300 bg-amber-50/40 p-3">
-      <div className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+    <div className="space-y-2 rounded-sm border border-dashed border-warning/40 bg-warning/10 p-3">
+      <div className="text-[10px] text-muted-foreground leading-relaxed">
         過去のアーカイブが旧番号のまま残っている場合、ここで現在の番号を入力すると
         マスター番号 <code className="bg-muted px-1">{target || "(未設定)"}</code> にリネームします。
         documents テーブルと external_assets テーブルが直接更新されます。
