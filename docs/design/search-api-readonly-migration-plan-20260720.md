@@ -55,6 +55,19 @@ staging worker(`legalbridge-document-worker-staging`, LB_PORTAL_SECRET 未設定
 - 反映条件: **admin-ui(BFF ホスト)の再ビルド・再デプロイ**で flip が有効化(本番は本ブランチ merge 後)。
 - 据え置き: `sublicense/*`(admin-ui 参照0・SSR専用)、`v3/*`(作品モデル特殊)は search-api 維持。
 
+## 3.6 ステップ5-a: 統合検索 namespace /api/search/*（staging 検証済み）
+DB migration 非使用の**コードレベル projection**で新設(worker の migrate ジョブは
+prod DB 固定のため staging 検証中は migration を追加しない安全設計):
+- `GET /api/search/works`: 統合作品検索(own/licensed_in/external・kind 横断)。
+  workModel の `worksSearchHandler` を `/api/v3/works/search` と共用(DRY)。
+- `GET /api/search/vendors`: §12 安全射影。role に関わらず常に機密(口座/反社/与信)除外。
+- `apiRoutingRules`: `/api/search/` を READ_PATHS_ON_GET へ(search-api 専用 read)。
+- staging verify.sh: works=200/kind、vendors=viewer/admin 両方で機密なし → 全 PASS。
+
+未実施: `/api/search/{contracts,conditions,unified}` の追加、admin-ui/SSR からの本
+namespace 消費(現状は基盤のみ・未消費)。search_*_projection の DB VIEW 化は本番反映
+時(migration 追加が prod に安全に流せるタイミング)に検討。
+
 ## 4. 未実施（理由・影響・次作業）
 - **ステップ2(search-api から write 撤去)**: ステップ1 の flip が本番 admin-ui に反映され、
   正常動作を **prod soak** で確認した後に、search-api 側の当該 write ルート
