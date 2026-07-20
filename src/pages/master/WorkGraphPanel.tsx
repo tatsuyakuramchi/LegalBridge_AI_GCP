@@ -18,7 +18,9 @@ import { Globe } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
-import { EntityCombobox } from "@/src/components/form"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { EntityCombobox, AppFormField, CompactFormGrid } from "@/src/components/form"
 import { useDocumentSession } from "@/src/context/AppDataContext"
 import { conditionClient } from "@/src/lib/api/conditionClient"
 import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
@@ -1227,48 +1229,67 @@ export function WorkGraphPanel({ embedded = false }: { embedded?: boolean } = {}
               </div>
               {editing ? (
                 /* 増分⑤: 基本情報インライン編集 */
-                <div className="space-y-1.5">
-                  <div className="text-[11px] font-mono font-bold">{work.work_code}</div>
-                  <input
-                    value={form.title}
-                    onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                    placeholder="タイトル *"
-                    className={inputCls}
-                  />
-                  <input
-                    value={form.title_kana}
-                    onChange={(e) => setForm((f) => ({ ...f, title_kana: e.target.value }))}
-                    placeholder="タイトル(カナ)"
-                    className={inputCls}
-                  />
-                  <div className="flex items-center gap-1.5">
-                    <select
-                      value={form.work_type}
-                      onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value }))}
-                      className="flex-1 text-[11px] font-mono border-b border-input bg-transparent py-1"
-                    >
-                      <option value="">種別 —</option>
-                      {WORK_TYPES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={form.status}
-                      onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                      className="flex-1 text-[11px] font-mono border-b border-input bg-transparent py-1"
-                    >
-                      <option value="">状態 —</option>
-                      {WORK_STATUS.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
+                <div className="space-y-2.5">
+                  {/* 8タブ移行 Phase 3: ①概要の基本情報を共通 AppFormField/NativeSelect へ。
+                      保存(saveEdit)の PUT ペイロードは一切変えない(§20)。 */}
+                  <div className="text-[11px] font-mono font-bold text-muted-foreground">
+                    {work.work_code}
                   </div>
-                  <input
-                    value={form.division}
-                    onChange={(e) => setForm((f) => ({ ...f, division: e.target.value }))}
-                    placeholder="区分(, 区切り) 例: BDG, PUB"
-                    className={inputCls}
-                  />
+                  <AppFormField label="タイトル" htmlFor="wg-title" required>
+                    <Input
+                      id="wg-title"
+                      value={form.title}
+                      onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                      placeholder="作品タイトル"
+                    />
+                  </AppFormField>
+                  <AppFormField label="タイトル(カナ)" htmlFor="wg-kana">
+                    <Input
+                      id="wg-kana"
+                      value={form.title_kana}
+                      onChange={(e) => setForm((f) => ({ ...f, title_kana: e.target.value }))}
+                      placeholder="タイトル(カナ)"
+                    />
+                  </AppFormField>
+                  <CompactFormGrid columns={2}>
+                    <AppFormField label="種別" htmlFor="wg-type" code="work_type">
+                      <NativeSelect
+                        id="wg-type"
+                        value={form.work_type}
+                        onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value }))}
+                      >
+                        <option value="">—</option>
+                        {WORK_TYPES.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </NativeSelect>
+                    </AppFormField>
+                    <AppFormField label="状態" htmlFor="wg-status" code="status">
+                      <NativeSelect
+                        id="wg-status"
+                        value={form.status}
+                        onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                      >
+                        <option value="">—</option>
+                        {WORK_STATUS.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </NativeSelect>
+                    </AppFormField>
+                  </CompactFormGrid>
+                  <AppFormField
+                    label="区分"
+                    htmlFor="wg-division"
+                    code="division"
+                    description="カンマ区切り（例: BDG, PUB）"
+                  >
+                    <Input
+                      id="wg-division"
+                      value={form.division}
+                      onChange={(e) => setForm((f) => ({ ...f, division: e.target.value }))}
+                      placeholder="BDG, PUB"
+                    />
+                  </AppFormField>
                   {/* UIC-13(段階A): 系譜・派生設定(旧 WorkModelPanel から移植)。
                       派生元を指定すると翻訳版・改題版などのチェーンになる。 */}
                   <div className="pt-1 space-y-1.5 border-t border-dashed border-border">
@@ -1289,13 +1310,15 @@ export function WorkGraphPanel({ embedded = false }: { embedded?: boolean } = {}
                       ))}
                     </select>
                   </div>
-                  <textarea
-                    value={form.remarks}
-                    onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
-                    placeholder="備考"
-                    rows={2}
-                    className="w-full text-[11px] font-mono border border-input rounded bg-transparent px-2 py-1 focus:outline-none focus:border-foreground"
-                  />
+                  <AppFormField label="備考" htmlFor="wg-remarks" code="remarks">
+                    <Textarea
+                      id="wg-remarks"
+                      value={form.remarks}
+                      onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
+                      placeholder="備考"
+                      rows={2}
+                    />
+                  </AppFormField>
                   {saveErr && <p role="alert" className="text-[10px] font-mono text-destructive">{saveErr}</p>}
                   <div className="flex items-center justify-end gap-1.5 pt-0.5">
                     <button
