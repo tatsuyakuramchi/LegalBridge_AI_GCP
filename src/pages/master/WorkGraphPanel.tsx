@@ -1290,25 +1290,46 @@ export function WorkGraphPanel({ embedded = false }: { embedded?: boolean } = {}
                       placeholder="BDG, PUB"
                     />
                   </AppFormField>
-                  {/* UIC-13(段階A): 系譜・派生設定(旧 WorkModelPanel から移植)。
-                      派生元を指定すると翻訳版・改題版などのチェーンになる。 */}
-                  <div className="pt-1 space-y-1.5 border-t border-dashed border-border">
-                    <div className="text-[9.5px] uppercase tracking-wider text-muted-foreground">系譜・派生</div>
-                    <WorkPicker
-                      items={parentCandidates}
-                      value={form.parent_work_id || undefined}
-                      onSelect={(w) => setForm((f) => ({ ...f, parent_work_id: w ? String(w.id) : "" }))}
-                      placeholder="派生元(親作品/原作)を検索 — 無ければ原版"
-                    />
-                    <select
-                      value={form.derivation_type}
-                      onChange={(e) => setForm((f) => ({ ...f, derivation_type: e.target.value }))}
-                      className="w-full text-[11px] font-mono border-b border-input bg-transparent py-1"
+                  {/* UIC-13(段階A): 系譜・派生設定。8タブ移行 Phase 4: 共通 primitive へ(in place)。
+                      派生元を指定すると翻訳版・改題版などのチェーンになる。保存(saveEdit)は不変(§20)。
+                      ※物理的な②作品系譜タブへの移設は WorkGraphPanel の state 持ち上げ(container/
+                        section 分割)が前提のため別途。work_relations 複数関係の正本化は別PR。 */}
+                  <div className="pt-2 space-y-2.5 border-t border-dashed border-border">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">系譜・派生</div>
+                    <AppFormField
+                      label="派生元(親作品/原作)"
+                      htmlFor="wg-parent"
+                      code="parent_work_id"
+                      description="指定すると翻訳版・改題版などのチェーンになる（無ければ原版）"
                     >
-                      {DERIV_CHOICES.map(([v, l]) => (
-                        <option key={v} value={v}>{l === "(なし・原版)" ? "派生種別 — (なし・原版)" : l}</option>
-                      ))}
-                    </select>
+                      <EntityCombobox
+                        items={parentCandidates.map((w) => ({
+                          id: w.id,
+                          code: w.code,
+                          label: w.title,
+                          sub: w.sub,
+                          raw: w,
+                        }))}
+                        value={form.parent_work_id || null}
+                        onSelect={(opt) =>
+                          setForm((f) => ({ ...f, parent_work_id: opt ? String(opt.id) : "" }))
+                        }
+                        placeholder="派生元を検索 — 無ければ原版"
+                      />
+                    </AppFormField>
+                    <AppFormField label="派生種別" htmlFor="wg-deriv" code="derivation_type">
+                      <NativeSelect
+                        id="wg-deriv"
+                        value={form.derivation_type}
+                        onChange={(e) => setForm((f) => ({ ...f, derivation_type: e.target.value }))}
+                      >
+                        {DERIV_CHOICES.map(([v, l]) => (
+                          <option key={v} value={v}>
+                            {l}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </AppFormField>
                   </div>
                   <AppFormField label="備考" htmlFor="wg-remarks" code="remarks">
                     <Textarea
