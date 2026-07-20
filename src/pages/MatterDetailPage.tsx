@@ -95,7 +95,7 @@ function SectionHead({ icon: Icon, label, count, right }: { icon: any; label: st
   return (
     <div className="flex items-center gap-2 mb-2.5">
       <Icon className="h-[18px] w-[18px] text-muted-foreground" />
-      <span className="text-[13.5px] font-mono font-bold">{label}</span>
+      <span className="text-[13.5px] font-semibold">{label}</span>
       {count != null && <span className="text-[12px] text-muted-foreground">({count})</span>}
       {right && <div className="ml-auto">{right}</div>}
     </div>
@@ -107,8 +107,8 @@ function Metric({ label, value, sub, subClass }: { label: string; value: React.R
   return (
     <Card>
       <CardContent className="px-3 py-2.5">
-        <p className="text-[11px] font-mono text-muted-foreground">{label}</p>
-        <p className="text-lg font-mono font-bold leading-tight">
+        <p className="text-[11px] text-muted-foreground">{label}</p>
+        <p className="text-lg font-bold leading-tight">
           {value}
           {sub && <span className={`ml-1.5 text-[10px] font-normal ${subClass || "text-muted-foreground"}`}>{sub}</span>}
         </p>
@@ -662,19 +662,19 @@ export function MatterDetailPage() {
       ev.push({
         ts: s.sent_at,
         icon: Mail,
-        cls: s.status === "sent" ? "text-sky-600" : "text-red-600",
+        cls: s.status === "sent" ? "text-primary" : "text-destructive",
         text: `${docById[Number(s.document_id)]?.document_number || `文書#${s.document_id}`} を${s.channel === "email" ? "メール" : s.channel}送信`,
         sub: [s.recipient, s.subject].filter(Boolean).join(" · ") || undefined,
       })
     for (const d of data.documents || [])
       if (d.created_at)
-        ev.push({ ts: d.created_at, icon: FilePlus, cls: "text-emerald-600", text: `${d.document_number || `#${d.id}`} を作成` })
+        ev.push({ ts: d.created_at, icon: FilePlus, cls: "text-success", text: `${d.document_number || `#${d.id}`} を作成` })
     for (const i of data.issues || [])
       if (i.created_at)
         ev.push({
           ts: i.created_at,
           icon: i.relation === "duplicate" ? GitMerge : Layers,
-          cls: i.relation === "duplicate" ? "text-red-600" : "text-muted-foreground",
+          cls: i.relation === "duplicate" ? "text-destructive" : "text-muted-foreground",
           text: `${i.backlog_issue_key} を束ね（${RELATION_LABEL[i.relation] || i.relation}）`,
           sub: i.note || undefined,
         })
@@ -723,7 +723,7 @@ export function MatterDetailPage() {
             <div className="min-w-0 flex-1">
               <span className="font-mono text-[11px] text-muted-foreground">{m.matter_code || `#${m.id}`}</span>
               <div className="flex items-center gap-2 mt-0.5">
-                <h2 className="text-lg font-mono font-bold leading-snug truncate">{m.title}</h2>
+                <h2 className="text-lg font-semibold leading-snug truncate">{m.title}</h2>
                 <button
                   className="text-muted-foreground hover:text-foreground shrink-0"
                   onClick={() => setEditOpen((v) => !v)}
@@ -736,7 +736,7 @@ export function MatterDetailPage() {
                 <span>相手方: {m.counterparty || "—"}</span>
                 {primaryKey && (
                   <button
-                    className="font-mono text-sky-700 hover:underline"
+                    className="font-mono text-primary hover:underline"
                     onClick={() => navigate(`/issues/${encodeURIComponent(primaryKey)}`)}
                   >
                     {primaryKey}（代表）
@@ -749,14 +749,14 @@ export function MatterDetailPage() {
                     href={m.drive_folder_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-sky-700 hover:underline inline-flex items-center gap-1"
+                    className="text-primary hover:underline inline-flex items-center gap-1"
                     title="Drive の案件フォルダを開く"
                   >
                     <ExternalLink className="h-3 w-3" /> Driveフォルダ
                   </a>
                 ) : (
                   <button
-                    className="text-sky-700 hover:underline disabled:opacity-50"
+                    className="text-primary hover:underline disabled:opacity-50"
                     disabled={creatingFolder}
                     onClick={createDriveFolder}
                     title="Drive に案件フォルダ(YYYY/MTR-…_相手方_案件名 + 標準サブフォルダ)を作成して紐づけます"
@@ -950,14 +950,14 @@ export function MatterDetailPage() {
           {/* サマリー行: 工程 / 次アクション / 担当 / 期限 */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
             <div>
-              <p className="text-[11px] font-mono text-muted-foreground">現在工程</p>
-              <p className="text-[13px] font-mono font-bold flex items-center gap-1.5 mt-0.5">
+              <p className="text-[11px] text-muted-foreground">現在工程</p>
+              <p className="text-[13px] font-semibold flex items-center gap-1.5 mt-0.5">
                 <Flag className="h-3.5 w-3.5 text-muted-foreground" />
                 {stageLabel(m.lifecycle_stage)}
               </p>
             </div>
             <div className="md:col-span-2 min-w-0">
-              <p className="text-[11px] font-mono text-muted-foreground">次に行う操作</p>
+              <p className="text-[11px] text-muted-foreground">次に行う操作</p>
               {primaryTask ? (
                 <p className="text-[13px] font-bold truncate mt-0.5" title={primaryTask.title}>
                   {primaryTask.title}
@@ -971,15 +971,15 @@ export function MatterDetailPage() {
               )}
             </div>
             <div>
-              <p className="text-[11px] font-mono text-muted-foreground">担当</p>
-              <p className="text-[12px] font-mono mt-0.5 truncate">
+              <p className="text-[11px] text-muted-foreground">担当</p>
+              <p className="text-[12px] mt-0.5 truncate">
                 {primaryTask?.assignee_name || m.owner_name || "—"}
               </p>
             </div>
             <div>
-              <p className="text-[11px] font-mono text-muted-foreground">期限</p>
+              <p className="text-[11px] text-muted-foreground">期限</p>
               <p
-                className={`text-[12px] font-mono mt-0.5 tabular-nums ${
+                className={`text-[12px] mt-0.5 tabular-nums ${
                   isPastDue(primaryTask?.due_at || m.target_due_date)
                     ? "text-destructive font-bold"
                     : ""
@@ -1046,7 +1046,7 @@ export function MatterDetailPage() {
                   className="h-8 text-[12px]"
                 />
               </div>
-              <label className="flex items-center gap-1.5 text-[11px] font-mono pb-2 cursor-pointer">
+              <label className="flex items-center gap-1.5 text-[11px] pb-2 cursor-pointer">
                 <input
                   type="checkbox"
                   className="h-3.5 w-3.5 accent-foreground"
@@ -1068,12 +1068,12 @@ export function MatterDetailPage() {
                 <div
                   key={t.id}
                   className={`flex items-center gap-2 text-[12px] px-2.5 py-1.5 rounded-sm border ${
-                    t.is_primary ? "border-amber-500/60 bg-amber-500/10" : "border-border/60"
+                    t.is_primary ? "border-warning/60 bg-warning/10" : "border-border/60"
                   }`}
                 >
                   <button
                     onClick={() => updateTask(t.id, { status: "done" }, "タスクを完了しました")}
-                    className="text-muted-foreground hover:text-emerald-600 shrink-0"
+                    className="text-muted-foreground hover:text-success shrink-0"
                     title="完了にする"
                   >
                     <Circle className="h-3.5 w-3.5" />
@@ -1087,7 +1087,7 @@ export function MatterDetailPage() {
                       )
                     }
                     className={`shrink-0 ${
-                      t.is_primary ? "text-amber-500" : "text-muted-foreground hover:text-amber-500"
+                      t.is_primary ? "text-warning" : "text-muted-foreground hover:text-warning"
                     }`}
                     title={t.is_primary ? "次アクション指定を解除" : "次アクションに設定"}
                   >
@@ -1102,11 +1102,11 @@ export function MatterDetailPage() {
                     </span>
                   )}
                   {t.assignee_name && (
-                    <span className="text-[11px] font-mono text-muted-foreground shrink-0">{t.assignee_name}</span>
+                    <span className="text-[11px] text-muted-foreground shrink-0">{t.assignee_name}</span>
                   )}
                   {t.due_at && (
                     <span
-                      className={`text-[11px] font-mono tabular-nums shrink-0 ${
+                      className={`text-[11px] tabular-nums shrink-0 ${
                         isPastDue(t.due_at) ? "text-destructive font-bold" : "text-muted-foreground"
                       }`}
                     >
@@ -1129,7 +1129,7 @@ export function MatterDetailPage() {
           {doneTasks.length > 0 && (
             <div>
               <button
-                className="text-[11px] font-mono text-muted-foreground hover:text-foreground flex items-center gap-1"
+                className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1"
                 onClick={() => setShowDoneTasks((v) => !v)}
               >
                 {showDoneTasks ? <ChevronDown className="h-3 w-3" /> : <ChevronRightIcon className="h-3 w-3" />}
@@ -1141,14 +1141,14 @@ export function MatterDetailPage() {
                     <div key={t.id} className="flex items-center gap-2 text-[12px] px-2.5 py-1 rounded-sm border border-border/40 text-muted-foreground">
                       <button
                         onClick={() => updateTask(t.id, { status: "open" }, "タスクを未完了に戻しました")}
-                        className="text-emerald-600 shrink-0"
+                        className="text-success shrink-0"
                         title="未完了に戻す"
                       >
                         <CheckCircle2 className="h-3.5 w-3.5" />
                       </button>
                       <span className="flex-1 min-w-0 truncate line-through">{t.title}</span>
                       {t.completed_at && (
-                        <span className="text-[11px] font-mono tabular-nums shrink-0">{fmtDate(t.completed_at)}</span>
+                        <span className="text-[11px] tabular-nums shrink-0">{fmtDate(t.completed_at)}</span>
                       )}
                       <button
                         onClick={() => deleteTask(t.id)}
@@ -1172,13 +1172,13 @@ export function MatterDetailPage() {
           label="課題"
           value={data.issues.length}
           sub={dupCount ? `重複${dupCount}` : undefined}
-          subClass="text-red-600"
+          subClass="text-destructive"
         />
         <Metric
           label="文書"
           value={data.documents.length}
           sub={unsentCount ? `未送信${unsentCount}` : undefined}
-          subClass="text-amber-600"
+          subClass="text-warning"
         />
         <Metric
           label="条件明細"
@@ -1200,9 +1200,9 @@ export function MatterDetailPage() {
               key={key}
               type="button"
               onClick={() => setTab(key)}
-              className={`shrink-0 -mb-px border-b-2 px-3.5 py-2 font-mono text-[12.5px] font-bold transition-colors ${
+              className={`shrink-0 -mb-px border-b-2 px-3.5 py-2 text-[12.5px] font-semibold transition-colors ${
                 tab === key
-                  ? "border-foreground text-foreground"
+                  ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -1254,7 +1254,7 @@ export function MatterDetailPage() {
                         <Badge variant={RELATION_VARIANT[iss.relation] || "secondary"} className="text-[10px]">
                           {RELATION_LABEL[iss.relation] || iss.relation}
                         </Badge>
-                        <button className="font-mono text-sky-700 hover:underline" onClick={() => navigate(`/issues/${encodeURIComponent(iss.backlog_issue_key)}`)}>
+                        <button className="font-mono text-primary hover:underline" onClick={() => navigate(`/issues/${encodeURIComponent(iss.backlog_issue_key)}`)}>
                           {iss.backlog_issue_key}
                         </button>
                         <span className="text-muted-foreground truncate flex-1">{iss.summary_snapshot || bl?.summary || ""}</span>
@@ -1265,7 +1265,7 @@ export function MatterDetailPage() {
                       </div>
                       {isOpen && body && (
                         <div className="border-t border-border/50 bg-muted/30 px-3 py-2">
-                          <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
+                          <p className="text-[11px] leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
                             {body}
                           </p>
                         </div>
@@ -1342,7 +1342,7 @@ export function MatterDetailPage() {
                         <div className="ml-auto flex items-center gap-2 shrink-0">
                           {d.document_number && (
                             <button
-                              className="inline-flex items-center gap-1 text-[11px] text-sky-700 hover:underline"
+                              className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
                               onClick={() => setChooserDoc(d)}
                               title="取引先へ送信（メール / クラウドサイン。送信履歴に自動記録）"
                             >
@@ -1350,12 +1350,12 @@ export function MatterDetailPage() {
                             </button>
                           )}
                           {d.drive_link && (
-                            <a href={d.drive_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-sky-700 hover:underline">
+                            <a href={d.drive_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
                               <ExternalLink className="h-3 w-3" /> Drive
                             </a>
                           )}
                           {d.issue_key && (
-                            <button className="text-[11px] text-sky-700 hover:underline" onClick={() => navigate(`/issues/${encodeURIComponent(d.issue_key)}`)}>
+                            <button className="text-[11px] text-primary hover:underline" onClick={() => navigate(`/issues/${encodeURIComponent(d.issue_key)}`)}>
                               編集
                             </button>
                           )}
@@ -1414,7 +1414,7 @@ export function MatterDetailPage() {
                   </p>
                   <div className="flex items-center gap-2">
                     {driveFolderUrl && (
-                      <a href={driveFolderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-sky-700 hover:underline">
+                      <a href={driveFolderUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
                         <ExternalLink className="h-3 w-3" /> フォルダを開く
                       </a>
                     )}
@@ -1479,7 +1479,7 @@ export function MatterDetailPage() {
                 count={condSummary.total}
                 right={
                   condSummary.total > 0 ? (
-                    <button className="text-[11px] text-sky-700 hover:underline" onClick={() => setShowLines((v) => !v)}>
+                    <button className="text-[11px] text-primary hover:underline" onClick={() => setShowLines((v) => !v)}>
                       {showLines ? "サマリーに戻す" : "明細を表示"}
                     </button>
                   ) : undefined
@@ -1508,7 +1508,7 @@ export function MatterDetailPage() {
                 <div className="space-y-1">
                   {data.conditions.map((cl: any) => (
                     <div key={cl.id} className="flex items-center gap-2 text-[12px] border-b border-border/40 py-1.5">
-                      <button className="font-mono text-sky-700 hover:underline" onClick={() => cl.line_code && navigate(`/condition-lines/${encodeURIComponent(cl.line_code)}`)}>
+                      <button className="font-mono text-primary hover:underline" onClick={() => cl.line_code && navigate(`/condition-lines/${encodeURIComponent(cl.line_code)}`)}>
                         {cl.line_code || `#${cl.id}`}
                       </button>
                       <Badge variant="outline" className="text-[10px]">{cl.direction === "receivable" ? "受取" : "支払"}</Badge>
