@@ -18,6 +18,7 @@ import { Globe } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
+import { EntityCombobox } from "@/src/components/form"
 import { useDocumentSession } from "@/src/context/AppDataContext"
 import { conditionClient } from "@/src/lib/api/conditionClient"
 import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
@@ -178,20 +179,16 @@ function EdgeRow({
         </div>
       ) : (
         <div className="space-y-1">
-          {/* 増分⑦: 受取エッジを受取先(取引先)へ参照リンク */}
-          <select
-            value={e.counterparty_vendor_id ?? ""}
-            onChange={(ev) => onLink(e.id, { counterparty_vendor_id: ev.target.value ? Number(ev.target.value) : null })}
-            className="w-full text-[10px] font-mono border-b border-input bg-transparent py-0.5"
-            title="この受取を受取先(取引先)に紐付け"
-          >
-            <option value="">— 受取先に紐付け —</option>
-            {vendors.map((vd) => (
-              <option key={vd.id} value={vd.id}>
-                {vd.vendor_code || "—"} {vd.vendor_name}
-              </option>
-            ))}
-          </select>
+          {/* 増分⑦: 受取エッジを受取先(取引先)へ参照リンク。
+              8タブ移行 Phase 1: 生 select → 共通 EntityCombobox(entity="vendor")。 */}
+          <EntityCombobox
+            entity="vendor"
+            value={e.counterparty_vendor_id != null ? String(e.counterparty_vendor_id) : null}
+            onSelect={(opt) =>
+              onLink(e.id, { counterparty_vendor_id: opt ? Number(opt.id) : null })
+            }
+            placeholder="受取先(取引先)に紐付け"
+          />
           <select
             value={e.product_id ?? ""}
             onChange={(ev) => onLink(e.id, { product_id: ev.target.value ? Number(ev.target.value) : null })}
