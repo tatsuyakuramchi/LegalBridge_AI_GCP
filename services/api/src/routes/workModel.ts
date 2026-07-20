@@ -317,10 +317,13 @@ export function registerWorkModelRoutes(
       const type = String(req.query.type ?? "").trim();
       const status = String(req.query.status ?? "").trim();
       const division = String(req.query.division ?? "").trim();
+      // 設計 §13: 作品検索は kind='own' 限定を廃止し統合 works 全体を対象とする。
+      //   後方互換: ?kind=own|licensed_in|external で絞り込み可能(未指定=統合)。
+      const kind = String(req.query.kind ?? "").trim();
       const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
       const offset = Math.max(Number(req.query.offset) || 0, 0);
 
-      const where: string[] = ["COALESCE(w.kind, 'own') = 'own'"];
+      const where: string[] = ["TRUE"];
       const params: any[] = [];
       if (q) {
         params.push(`%${q}%`);
@@ -333,6 +336,7 @@ export function registerWorkModelRoutes(
       if (type) { params.push(type); where.push(`w.work_type = $${params.length}`); }
       if (status) { params.push(status); where.push(`w.status = $${params.length}`); }
       if (division) { params.push(division); where.push(`$${params.length} = ANY(w.division)`); }
+      if (kind) { params.push(kind); where.push(`COALESCE(w.kind, 'own') = $${params.length}`); }
       const whereSql = where.join(" AND ");
 
       const cnt = await query(
@@ -361,6 +365,7 @@ export function registerWorkModelRoutes(
       const rows = await query(
         `SELECT w.id, w.work_code, w.title, w.title_kana, w.alternative_titles,
                 w.division, w.work_type, w.status, w.is_original, w.is_active,
+                COALESCE(w.kind, 'own') AS kind,
                 (SELECT COUNT(*) FROM products p WHERE p.work_id = w.id)        AS product_count,
                 (SELECT COUNT(*) FROM work_materials wm WHERE wm.work_id = w.id) AS material_count
            FROM works w
