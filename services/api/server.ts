@@ -3230,36 +3230,11 @@ async function startServer() {
     }
   });
 
-  app.get("/api/master/vendors", async (_req, res) => {
-    try {
-      const result = await query("SELECT * FROM vendors ORDER BY id ASC");
-      res.json(result.rows);
-    } catch (error) {
-      res.status(500).json({ error: String(error) });
-    }
-  });
-
-  app.get("/api/master/vendors/:code", async (req, res) => {
-    try {
-      const { code } = req.params;
-      const result = await query("SELECT * FROM vendors WHERE vendor_code = $1", [code]);
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: "Vendor not found" });
-      }
-      res.json(result.rows[0]);
-    } catch (error) {
-      res.status(500).json({ error: String(error) });
-    }
-  });
-
-  app.get("/api/master/staff", async (_req, res) => {
-    try {
-      const result = await query("SELECT * FROM staff ORDER BY id ASC");
-      res.json(result.rows);
-    } catch (error) {
-      res.status(500).json({ error: String(error) });
-    }
-  });
+  // 全UIリニューアル A(§14 dead code 撤去): ここにあった認証なし SELECT* の
+  //   GET /api/master/vendors, /api/master/vendors/:code, /api/master/staff は
+  //   いずれも先行登録の primary(requireIapUser + listVendors/getVendor/staff query,
+  //   §12 redact 済み)に shadowed され到達不能な死ルートだった。機密列を無認証で
+  //   返す潜在リスクでもあったため物理削除。閲覧は primary(上部)/worker が担う。
 
   app.get("/api/master/contracts", async (_req, res) => {
     try {
