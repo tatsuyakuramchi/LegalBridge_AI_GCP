@@ -93,6 +93,8 @@ export const WRITE_PATHS_ON_GET: RegExp[] = [
 //   - /api/contracts/search  : 親契約 picker (registerContractsV2)
 //   - /api/contracts/:id      : 契約詳細 (registerContractsV2)
 export const READ_PATHS_ON_GET: RegExp[] = [
+  // 設計 §5/§13: 統合検索 namespace は search-api 専用 read。worker にミラー無し。
+  /^\/api\/search\//,
   /^\/api\/contracts\/search(?:\?|$)/,
   /^\/api\/contracts\/\d+(?:\/|\?|$)/,
   // 統合 P3-2: 条件明細横断検索は search-api 専用 read。
@@ -114,26 +116,26 @@ export const READ_PATHS_ON_GET: RegExp[] = [
 // POST/PUT/PATCH でも READ(search-api)へ振るルート(D1: Search がマスター書込を所有)。
 export const READ_PATHS_ON_POST: RegExp[] = [
   /^\/api\/contract-check(?:\/|$)/,
-  // Phase 25.1: 取引先 upsert は search-api の正規実装 (住所/口座 1:N +
-  //   数値正規化 + トランザクション) を本体とする。admin-ui の保存 (POST
-  //   /api/master/vendors の完全一致のみ) を search-api へ振り、worker の簡易
-  //   二重実装は使わない。サブパス (/:code 詳細 GET, /import-csv,
-  //   /upload-change-request の multipart) は対象外なので末尾を厳密に判定。
-  /^\/api\/master\/vendors(?:\?|$)/,
-  // 統合 Phase 3: スタッフ役割変更 (PATCH /api/master/staff/:email/role) は
-  //   search-api の正規実装(staff.app_role 更新 + 監査ログ)を本体とする。
-  //   既定で PATCH は worker へ振られるため、ここで READ(search-api)へ明示する。
-  //   portal_secret 経由で requireAppRole を無条件通過する。
-  /^\/api\/master\/staff\/[^/]+\/role(?:\?|$)/,
-  // 統合 P3-2: 条件明細の紐付け更新 (PUT /api/conditions/:id/links) は
-  //   search-api の正規実装。既定で PUT は worker へ振られるため明示。
-  /^\/api\/conditions\/\d+\/links(?:\?|$)/,
-  // 統合 P3-3: 請求権受領(sublicense)の書込(deals/reports/receipts/import)も
-  //   全て search-api 正規実装へ。
+  // 全UIリニューアル A(ステップ1): 取引先 upsert (POST /api/master/vendors 完全一致)
+  //   は worker へ移設済み(search-api 読取専用化)。worker が住所/口座 1:N + 数値正規化
+  //   + contacts[] を含む同仕様を提供し、staging で永続化パリティを検証済み
+  //   (verify-worker.sh: 住所/口座 primary ミラー確認)。既定で POST は worker(write)へ
+  //   振られるため search-api への明示 pin を撤去。サブパス(/import-csv 等)は元々 worker。
+  //   search-api 側の当該ルートは soak 後に撤去(ステップ2)。
+  // 全UIリニューアル A(ステップ1): スタッフ役割変更 (PATCH
+  //   /api/master/staff/:email/role) は worker へ移設済み(search-api 読取専用化)。
+  //   worker が同仕様(app_role 更新 + staff_role_change 監査ログ)を提供し、staging
+  //   で検証済み。既定で PATCH は worker(write)へ振られるため、ここでの search-api
+  //   への明示 pin を撤去した。search-api 側の当該ルートは soak 後に撤去(ステップ2)。
+  // 全UIリニューアル A(ステップ1): 条件明細リンク更新 (PUT /api/conditions/:id/links)
+  //   と作品別名 write (POST /api/works/:id/aliases, DELETE /api/work-aliases/:id) は
+  //   worker へ移設済み(staging 検証: 列/SQL 健全 + alias INSERT→DELETE round-trip)。
+  //   既定で PUT/POST/DELETE は worker(write)へ振られるため search-api pin を撤去。
+  //   閲覧 GET(/api/works/:id/aliases)は READ_PATHS_ON_GET により search-api(read)維持。
+  //   search-api 側の当該 write ルートは soak 後に撤去(ステップ2)。
+  // 統合 P3-3: 請求権受領(sublicense)の書込(deals/reports/receipts/import)は
+  //   SSR ポータル専用(admin-ui 参照 0)。search-api に据え置き(別途評価)。
   /^\/api\/sublicense(?:\/|\?|$)/,
-  // 統合 P3-4: 作品別名(タイトル名寄せ)の追加/削除は search-api 正規実装へ。
-  /^\/api\/works\/\d+\/aliases(?:\?|$)/,
-  /^\/api\/work-aliases\/\d+(?:\?|$)/,
   // 統合 P3-5: 作品モデル(v3)の write(POST/PUT/import)は search-api 正規実装へ。
   /^\/api\/v3\//,
 ];

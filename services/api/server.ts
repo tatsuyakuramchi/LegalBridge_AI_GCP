@@ -1387,6 +1387,33 @@ async function startServer() {
     }
   );
 
+  // 設計 §5/§13/§12: 統合検索 namespace の取引先 projection。
+  //   検索/発見用途のため機密(口座/反社/与信)を role に関わらず常に除外する
+  //   「安全な射影」= redactVendors(rows, "viewer")。機密の閲覧は admin 限定の
+  //   master 詳細画面(/master/vendors, minRole:admin)経由のみ。
+  app.get(
+    "/api/search/vendors",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const q = String(req.query.q || "").trim();
+        const limit = Number(req.query.limit) || undefined;
+        const offset = Number(req.query.offset) || undefined;
+        const result = await listVendors({ q, limit, offset });
+        res.json({
+          ok: true,
+          total: result.total,
+          rows: redactVendors(result.rows, "viewer"),
+        });
+      } catch (error: any) {
+        console.error("GET /api/search/vendors failed:", error);
+        res
+          .status(500)
+          .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
   // GET /api/master/vendors/template.csv - sample CSV download (no auth)
   // Keep this before /api/master/vendors/:code; otherwise "template.csv" is treated as a code.
   app.get("/api/master/vendors/template.csv", (_req, res) => {
@@ -3203,36 +3230,11 @@ async function startServer() {
     }
   });
 
-  app.get("/api/master/vendors", async (_req, res) => {
-    try {
-      const result = await query("SELECT * FROM vendors ORDER BY id ASC");
-      res.json(result.rows);
-    } catch (error) {
-      res.status(500).json({ error: String(error) });
-    }
-  });
-
-  app.get("/api/master/vendors/:code", async (req, res) => {
-    try {
-      const { code } = req.params;
-      const result = await query("SELECT * FROM vendors WHERE vendor_code = $1", [code]);
-      if (result.rows.length === 0) {
-        return res.status(404).json({ error: "Vendor not found" });
-      }
-      res.json(result.rows[0]);
-    } catch (error) {
-      res.status(500).json({ error: String(error) });
-    }
-  });
-
-  app.get("/api/master/staff", async (_req, res) => {
-    try {
-      const result = await query("SELECT * FROM staff ORDER BY id ASC");
-      res.json(result.rows);
-    } catch (error) {
-      res.status(500).json({ error: String(error) });
-    }
-  });
+  // 全UIリニューアル A(§14 dead code 撤去): ここにあった認証なし SELECT* の
+  //   GET /api/master/vendors, /api/master/vendors/:code, /api/master/staff は
+  //   いずれも先行登録の primary(requireIapUser + listVendors/getVendor/staff query,
+  //   §12 redact 済み)に shadowed され到達不能な死ルートだった。機密列を無認証で
+  //   返す潜在リスクでもあったため物理削除。閲覧は primary(上部)/worker が担う。
 
   app.get("/api/master/contracts", async (_req, res) => {
     try {

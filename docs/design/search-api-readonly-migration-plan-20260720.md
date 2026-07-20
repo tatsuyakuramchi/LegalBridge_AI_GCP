@@ -30,6 +30,48 @@
 
 ## 3. 本セッションで実施済み（安全・検証済み）
 - **§13 作品検索の統合化**: `GET /api/v3/works/search` の `kind='own'` 限定を撤去（`?kind=` 後方互換・`kind` 列追加）。SSR 作品ポータル・admin-ui 作品検索が統合 works を横断。api tsc=0。
+- **§12 機密フィルタ（JSON/CSV 経路・vendor）**: `GET /api/master/vendors`(一覧/詳細) と CSV エクスポートで viewer に口座/反社/与信(rating)を返さない。`redactVendor`/`redactVendors`/`VENDOR_SENSITIVE_FIELDS` を追加し `resolveAppRole` で role 判定。admin(portal_secret) は全開示のため admin-ui 編集は不変。staging で viewer/admin を検証（`x-staging-role`）。
+- **staging 検証環境**: 本番クローン DB(`legalbridge-db-staging`) + `STAGING_DEV_AUTH=1`(IAP 二重防御) の `legalbridge-search-api-staging` を用意。`scripts/staging/verify.sh` で role 別に curl 検証。
+
+### 重要な構造的発見（§3 SSR read-only の実体）
+- **SSR ポータルに HTML の `<form method=post>` 書込みフォームは存在しない**（全 views で `<form>` は検索用 `method="get"` の1件のみ）。マスタの登録/編集/削除は全て **ブラウザ JS の `fetch()` → JSON write API** 経由。
+- その JSON write API は既に `requireAppRole({allowedRoles:["admin"]})` で保護済み（**viewer は 403**）。
+- 従って §3「SSR 書込みフォーム撤去」は HTML フォーム観点では**既に達成**。残るのは「viewer に編集アフォーダンス（保存/削除ボタン等）を描画しない」UX 整理のみで、これは API 層 403＋§12 read フィルタでバックストップ済み。
+- `verify.sh` の SSR チェックは当初 `type=submit`（GET 検索ボタン）を誤検知していたため、`<form method=post>` のみを検出するよう精緻化した。
+
+## 3.5 ステップ1 完了: master 書込みの worker 移設（staging 検証済み）
+admin-ui が参照する master 書込みを worker へ移設し、`apiRoutingRules` を flip 済み。
+staging worker(`legalbridge-document-worker-staging`, LB_PORTAL_SECRET 未設定で curl 検証)
+＋ `scripts/staging/verify-worker.sh` で各ルートを実機検証(全 PASS)。
+
+| ルート | worker 実装 | staging 検証 | flip |
+|---|---|---|---|
+| `PATCH /api/master/staff/:email/role` | 追加(app_role 更新+監査ログ) | 400/404/無変更200 | 済 |
+| `POST /api/master/vendors` | 既存に住所/口座 1:N 追加(search-api パリティ) | upsert200+primary ミラー永続化 | 済 |
+| `PUT /api/conditions/:id/links` | 追加(旧+新台帳二重UPDATE) | 不正400/存在せず200無変更 | 済 |
+| `POST /api/works/:id/aliases` ・ `DELETE /api/work-aliases/:id` | 追加 | 欠落400/INSERT→DELETE round-trip | 済 |
+
+- 認可: 全て `requirePortalSecret`(admin-ui BFF 経由の証明)。GET(閲覧)は search-api(read)維持。
+- 反映条件: **admin-ui(BFF ホスト)の再ビルド・再デプロイ**で flip が有効化(本番は本ブランチ merge 後)。
+- 据え置き: `sublicense/*`(admin-ui 参照0・SSR専用)、`v3/*`(作品モデル特殊)は search-api 維持。
+
+## 3.6 ステップ5-a: 統合検索 namespace /api/search/*（staging 検証済み）
+DB migration 非使用の**コードレベル projection**で新設(worker の migrate ジョブは
+prod DB 固定のため staging 検証中は migration を追加しない安全設計):
+- `GET /api/search/works`: 統合作品検索(own/licensed_in/external・kind 横断)。
+  workModel の `worksSearchHandler` を `/api/v3/works/search` と共用(DRY)。
+- `GET /api/search/vendors`: §12 安全射影。role に関わらず常に機密(口座/反社/与信)除外。
+- `apiRoutingRules`: `/api/search/` を READ_PATHS_ON_GET へ(search-api 専用 read)。
+- staging verify.sh: works=200/kind、vendors=viewer/admin 両方で機密なし → 全 PASS。
+
+未実施: `/api/search/{contracts,conditions,unified}` の追加、admin-ui/SSR からの本
+namespace 消費(現状は基盤のみ・未消費)。search_*_projection の DB VIEW 化は本番反映
+時(migration 追加が prod に安全に流せるタイミング)に検討。
 
 ## 4. 未実施（理由・影響・次作業）
-- 1〜6 は上記の移行順序が必要。**ルート単純削除は admin-ui(取引先/担当者/条件/別名の編集)を破壊**するため、worker 移設＋切替ソーク＋SSR 実機確認を伴う段階作業として別 PR で行う。実機 SSR / E2E 環境が前提。
+- **ステップ2(search-api から write 撤去)**: ステップ1 の flip が本番 admin-ui に反映され、
+  正常動作を **prod soak** で確認した後に、search-api 側の当該 write ルート
+  (staff role / vendors / conditions links / aliases)を撤去する。soak 前の撤去は
+  ロールバック余地を失うため不可。
+- **sublicense/v3 の write**: SSR 専用/作品モデル特殊。read-only 化の要否を別途評価。
+- 残りの 5〜6(統合検索/Projection・§12 Projection 経路)は実機検証を伴う段階作業として別途。

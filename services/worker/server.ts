@@ -5595,6 +5595,101 @@ ${details}
         }
       }
 
+      // 3) addresses[] (1:N) — 全UIリニューアル A ステップ1: search-api の
+      //    replaceVendorAddresses と同仕様。配列が渡された場合のみ「全削除→入れ直し」。
+      //    primary が無ければ先頭を昇格。primary の住所を vendors.address にミラー。
+      if (Array.isArray(v.addresses) && vendorId) {
+        const addrs = v.addresses
+          .filter((a: any) => a && String(a.address || "").trim())
+          .map((a: any, idx: number) => ({
+            address_label: a.address_label || null,
+            postal_code: a.postal_code || null,
+            address: String(a.address).trim(),
+            is_primary: !!a.is_primary,
+            sort_order: Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : idx,
+          }));
+        if (addrs.length > 0 && !addrs.some((a: any) => a.is_primary)) addrs[0].is_primary = true;
+        await query("DELETE FROM vendor_addresses WHERE vendor_id = $1", [vendorId]);
+        for (const a of addrs) {
+          await query(
+            `INSERT INTO vendor_addresses
+              (vendor_id, address_label, postal_code, address, is_primary, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [vendorId, a.address_label, a.postal_code, a.address, a.is_primary, a.sort_order]
+          );
+        }
+        const primaryAddr = addrs.find((a: any) => a.is_primary) || addrs[0];
+        if (primaryAddr) {
+          await query("UPDATE vendors SET address = $1 WHERE id = $2", [primaryAddr.address, vendorId]);
+        }
+      }
+
+      // 4) bank_accounts[] (1:N) — search-api の replaceVendorBankAccounts と同仕様。
+      //    国内/海外いずれかの主要項目があれば保存。primary の口座を vendors の
+      //    レガシー単一列(bank_name/branch_name/account_type/account_number/account_holder_kana)へミラー。
+      if (Array.isArray(v.bank_accounts) && vendorId) {
+        const banks = v.bank_accounts
+          .filter((a: any) =>
+            a &&
+            [
+              a.bank_name, a.branch_name, a.account_number, a.account_holder_kana,
+              a.account_holder_name, a.iban, a.swift_bic,
+            ].some((x: any) => String(x || "").trim())
+          )
+          .map((a: any, idx: number) => ({
+            bank_label: a.bank_label || null,
+            bank_name: a.bank_name || null,
+            branch_name: a.branch_name || null,
+            account_type: a.account_type || null,
+            account_number: a.account_number || null,
+            account_holder_kana: a.account_holder_kana || null,
+            is_primary: !!a.is_primary,
+            sort_order: Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : idx,
+            account_scope: a.account_scope === "overseas" ? "overseas" : "domestic",
+            swift_bic: a.swift_bic || null,
+            iban: a.iban || null,
+            routing_number: a.routing_number || null,
+            account_holder_name: a.account_holder_name || null,
+            bank_country: a.bank_country || null,
+            bank_address: a.bank_address || null,
+            currency: a.currency || null,
+            intermediary_bank_swift: a.intermediary_bank_swift || null,
+            intermediary_bank_name: a.intermediary_bank_name || null,
+          }));
+        if (banks.length > 0 && !banks.some((a: any) => a.is_primary)) banks[0].is_primary = true;
+        await query("DELETE FROM vendor_bank_accounts WHERE vendor_id = $1", [vendorId]);
+        for (const a of banks) {
+          await query(
+            `INSERT INTO vendor_bank_accounts
+              (vendor_id, bank_label, bank_name, branch_name, account_type,
+               account_number, account_holder_kana, is_primary, sort_order,
+               account_scope, swift_bic, iban, routing_number, account_holder_name,
+               bank_country, bank_address, currency, intermediary_bank_swift, intermediary_bank_name)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                     $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+            [
+              vendorId, a.bank_label, a.bank_name, a.branch_name, a.account_type,
+              a.account_number, a.account_holder_kana, a.is_primary, a.sort_order,
+              a.account_scope, a.swift_bic, a.iban, a.routing_number, a.account_holder_name,
+              a.bank_country, a.bank_address, a.currency, a.intermediary_bank_swift, a.intermediary_bank_name,
+            ]
+          );
+        }
+        const primaryBank = banks.find((a: any) => a.is_primary) || banks[0];
+        if (primaryBank) {
+          await query(
+            `UPDATE vendors
+                SET bank_name = $1, branch_name = $2, account_type = $3,
+                    account_number = $4, account_holder_kana = $5
+              WHERE id = $6`,
+            [
+              primaryBank.bank_name, primaryBank.branch_name, primaryBank.account_type,
+              primaryBank.account_number, primaryBank.account_holder_kana, vendorId,
+            ]
+          );
+        }
+      }
+
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: String(error) });
@@ -5944,6 +6039,173 @@ ${details}
       }
     }
   );
+
+  // 全UIリニューアル A(ステップ1): スタッフ役割変更を worker へ移設。
+  //   search-api の PATCH /api/master/staff/:email/role と同仕様(app_role 更新 +
+  //   監査ログ)。admin-ui は apiRoutingRules の flip で本ルート(worker)へ切替える。
+  //   認可: requirePortalSecret(admin-ui BFF 経由の証明)。actor は IAP 由来の
+  //   x-user-email / x-lb-user-email ヘッダ(無ければ '?')。
+  app.patch(
+    "/api/master/staff/:email/role",
+    requirePortalSecret,
+    express.json({ limit: "10kb" }),
+    async (req, res) => {
+      try {
+        const targetEmail = String(req.params.email || "").trim().toLowerCase();
+        const newRole = String(req.body?.app_role || "").trim().toLowerCase();
+        if (!targetEmail) {
+          return res.status(400).json({ ok: false, error: "email is required" });
+        }
+        if (!["admin", "viewer"].includes(newRole)) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "app_role must be 'admin' or 'viewer'" });
+        }
+        const result = await query(
+          `UPDATE staff
+              SET app_role = $1
+            WHERE LOWER(email) = $2
+            RETURNING id, email, staff_name, app_role`,
+          [newRole, targetEmail]
+        );
+        if (result.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ ok: false, error: `staff not found: ${targetEmail}` });
+        }
+        const actor =
+          (req.headers["x-user-email"] as string) ||
+          (req.headers["x-lb-user-email"] as string) ||
+          "?";
+        console.log(
+          JSON.stringify({
+            evt: "staff_role_change",
+            actor,
+            target_email: targetEmail,
+            new_role: newRole,
+            ts: new Date().toISOString(),
+          })
+        );
+        res.json({ ok: true, staff: result.rows[0] });
+      } catch (error: any) {
+        console.error("PATCH /api/master/staff/:email/role failed:", error);
+        res
+          .status(500)
+          .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // 全UIリニューアル A(ステップ1): 条件明細リンク更新 + 作品別名 write を worker へ移設。
+  //   search-api の updateConditionLinks / addWorkAlias / deleteWorkAlias と同仕様。
+  //   認可: requirePortalSecret(admin-ui BFF 経由)。admin-ui は apiRoutingRules の flip で
+  //   本ルート(worker)へ切替える。閲覧 GET(/api/works/:id/aliases)は search-api(read)に残す。
+  const LINE_ITEM_STATUS_KEYS = ["po_signed", "inspection_issued", "payment_exported"];
+  app.put(
+    "/api/conditions/:id/links",
+    requirePortalSecret,
+    express.json(),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) {
+          return res.status(400).json({ ok: false, error: "invalid id" });
+        }
+        const b = req.body || {};
+        const toIdOrNull = (v: any) => (v == null || v === "" ? null : Number(v));
+        const source_ip_id = toIdOrNull(b.source_ip_id);
+        const work_id = toIdOrNull(b.work_id);
+        const master_contract_id = toIdOrNull(b.master_contract_id);
+        const ringi_id = toIdOrNull(b.ringi_id);
+        // status_flags: 定義済みキーの true のみ残して JSON 化(search-api 同等)。
+        let flagsJson: string | null = null;
+        if (b.status_flags && typeof b.status_flags === "object") {
+          const clean: Record<string, boolean> = {};
+          for (const k of LINE_ITEM_STATUS_KEYS) {
+            if (b.status_flags[k] === true) clean[k] = true;
+          }
+          flagsJson = JSON.stringify(clean);
+        }
+        // flow_direction: undefined=据え置き / ''=クリア / in|out=設定。out=受領。
+        let dir: string | null | undefined =
+          b.flow_direction === undefined ? undefined : (b.flow_direction || "");
+        let inbound = typeof b.is_inbound === "boolean" ? b.is_inbound : null;
+        const dirProvided = dir !== undefined;
+        if (dirProvided) {
+          dir = dir === "in" || dir === "out" ? dir : null;
+          inbound = dir === "out";
+        }
+        // 旧台帳(legacy_role='cli'): work_id→source_work_id / direction 同期。
+        await query(
+          `UPDATE condition_lines
+              SET source_work_id = $2,
+                  status_flags = COALESCE($3::jsonb, status_flags),
+                  is_inbound = COALESCE($4::boolean, is_inbound),
+                  direction = CASE WHEN $5::boolean
+                                   THEN (CASE WHEN $6::varchar = 'out' THEN 'receivable'
+                                              WHEN $6::varchar = 'in'  THEN 'payable'
+                                              ELSE direction END)
+                                   ELSE direction END,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE id = $1 AND legacy_role = 'cli'`,
+          [id, work_id ?? null, flagsJson, inbound, dirProvided, dirProvided ? dir : null]
+        );
+        // 新台帳(source_line_item_id 経由)にも即時反映。未適用環境(42P01/42703)は非致命。
+        try {
+          await query(
+            `UPDATE condition_lines
+                SET source_ip_id = $2, work_id = $3, master_contract_id = $4, ringi_id = $5,
+                    status_flags = COALESCE($6::jsonb, status_flags),
+                    is_inbound = COALESCE($7::boolean, is_inbound),
+                    flow_direction = CASE WHEN $8::boolean THEN $9::varchar ELSE flow_direction END,
+                    updated_at = CURRENT_TIMESTAMP
+              WHERE source_line_item_id = $1`,
+            [id, source_ip_id ?? null, work_id ?? null, master_contract_id ?? null,
+             ringi_id ?? null, flagsJson, inbound, dirProvided, dirProvided ? dir : null]
+          );
+        } catch (err: any) {
+          if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+        }
+        res.json({ ok: true });
+      } catch (error: any) {
+        console.error("PUT /api/conditions/:id/links failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  app.post("/api/works/:id/aliases", requirePortalSecret, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const b = req.body || {};
+      if (!Number.isFinite(id) || !b.alias_title) {
+        return res.status(400).json({ ok: false, error: "id and alias_title required" });
+      }
+      const ins = await query(
+        `INSERT INTO work_title_aliases (work_id, alias_title, party_vendor_id, context)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [id, String(b.alias_title), b.party_vendor_id ?? null, b.context ?? null]
+      );
+      res.json({ ok: true, id: Number(ins.rows[0].id) });
+    } catch (error: any) {
+      console.error("POST /api/works/:id/aliases failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  app.delete("/api/work-aliases/:id", requirePortalSecret, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      await query(`DELETE FROM work_title_aliases WHERE id = $1`, [id]);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("DELETE /api/work-aliases/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
 
   app.post("/api/master/staff", express.json(), async (req, res) => {
     // Phase 22.21.120: 編集時は body.id を尊重して UPDATE。新規時は slack_user_id

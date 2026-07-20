@@ -311,7 +311,10 @@ export function registerWorkModelRoutes(
   //   任意フィルタ type/status/division、ページング(limit/offset)、総件数付き。
   //   専用画面(ポータル /search/work ・ admin-ui 作品検索)の共通データ源。
   //   ※ /:id より前に登録しないと "search" が :id にキャプチャされる。
-  app.get("/api/v3/works/search", ...requireRead, async (req, res) => {
+  // 設計 §5/§13: 統合作品検索ハンドラ。/api/v3/works/search と新設の
+  //   /api/search/works の双方に同一実装を登録(コードレベル projection・DRY)。
+  //   works に機密列は無いため projection = 統合検索そのもの。
+  const worksSearchHandler = async (req: any, res: any) => {
     try {
       const q = String(req.query.q ?? "").trim();
       const type = String(req.query.type ?? "").trim();
@@ -376,7 +379,10 @@ export function registerWorkModelRoutes(
       );
       res.json({ ok: true, total, limit, offset, rows: rows.rows });
     } catch (e) { fail(res, e); }
-  });
+  };
+  app.get("/api/v3/works/search", ...requireRead, worksSearchHandler);
+  // §5/§13: 統合検索 namespace。/api/search/works は上と同一(統合 works・kind 横断)。
+  app.get("/api/search/works", ...requireRead, worksSearchHandler);
 
   app.get("/api/v3/works/:id", ...requireRead, async (req, res) => {
     try {
