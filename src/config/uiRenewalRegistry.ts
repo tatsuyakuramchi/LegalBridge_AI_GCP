@@ -103,9 +103,14 @@ export const UI_RENEWAL_SURFACES: UiRenewalSurface[] = [
     route: "/works/:id",
     name: "作品詳細・権利フロー",
     pattern: "detail",
-    status: "in_progress",
-    fieldReview: "reviewed",
-    targetComponents: ["AppFormShell", "FormHeader", "RelatedDataPanel", "CompletenessPanel"],
+    status: "partial",
+    fieldReview: "pending",
+    targetComponents: ["AppFormShell", "WorkDetailTabs", "WorkDetailContext", "EntityCombobox", "CompletenessPanel"],
+    notes:
+      "8タブ移行(UIC-09)完了: 旧 WorkGraphPanel(3カード1866行)を WorkDetailContext(state基盤)＋" +
+      "タブ別 section(①概要/②系譜/③マテリアル/④権利根源/⑤契約条件/⑥製品/⑦文書/⑧監査)へ分解・物理配置し旧パネルは撤去。" +
+      "API 呼び方・保存ペイロードは不変(§20)。視覚検証はレビュアー側。残: LineEditor/DataTableShell の本格採用、" +
+      "work_relations 複数関係の正本化(別PR・バックエンド)。",
   },
   {
     id: "CTR-home",
