@@ -20,13 +20,13 @@ type MergeKind = "work" | "source_ip" | "matter" | "issue" | "vendor" | "staff" 
 
 // このカートで統合できる実体(EntitySearch で検索できるもの)。
 const MERGE_KINDS: Array<{ key: MergeKind; label: string; accent: string }> = [
-  { key: "source_ip", label: "原作", accent: "border-t-sky-500 text-sky-600" },
-  { key: "work", label: "作品", accent: "border-t-emerald-500 text-emerald-600" },
-  { key: "matter", label: "案件", accent: "border-t-violet-500 text-violet-600" },
-  { key: "vendor", label: "取引先", accent: "border-t-rose-500 text-rose-600" },
+  { key: "source_ip", label: "原作", accent: "border-t-sky-500 text-primary" },
+  { key: "work", label: "作品", accent: "border-t-emerald-500 text-success" },
+  { key: "matter", label: "案件", accent: "border-t-violet-500 text-info" },
+  { key: "vendor", label: "取引先", accent: "border-t-rose-500 text-destructive" },
   { key: "staff", label: "担当者", accent: "border-t-teal-500 text-teal-600" },
-  { key: "work_material", label: "素材", accent: "border-t-cyan-500 text-cyan-600" },
-  { key: "issue", label: "依頼", accent: "border-t-amber-500 text-amber-600" },
+  { key: "work_material", label: "素材", accent: "border-t-cyan-500 text-info" },
+  { key: "issue", label: "依頼", accent: "border-t-amber-500 text-warning" },
 ]
 
 // issue はローカル本体を持たず、参照(backlog_issue_key/issue_key)を付け替えるのみ。
@@ -180,8 +180,8 @@ export function EntityMergePanel() {
     <div className="max-w-3xl space-y-6">
       <div>
         <p className="retro-tag mb-1.5">MST · ID MERGE</p>
-        <h3 className="text-lg font-mono font-bold">ID統合（マージ）カート</h3>
-        <p className="text-xs font-mono text-muted-foreground mt-1">
+        <h3 className="text-lg font-semibold">ID統合（マージ）カート</h3>
+        <p className="text-xs text-muted-foreground mt-1">
           重複登録した実体をカートに集め、👑 で残す方を選んで統合します。関連する外部キー（文書番号・条件明細など）を付け替えてから統合元を削除するので、孤立しません。
         </p>
       </div>
@@ -204,12 +204,12 @@ export function EntityMergePanel() {
 
       {/* 追加(統一検索) */}
       <div className="rounded-xl border border-border border-t-[3px] border-t-sky-500 bg-card p-4 space-y-2">
-        <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-sky-600">
+        <div className="flex items-center gap-2 font-mono text-[11px] font-bold text-primary">
           <Search className="h-3.5 w-3.5" /> {ENTITY_LABEL[kind as EntityKind]}を検索してカートに追加
         </div>
         <EntitySearchSelect entity={kind as EntityKind} onSelect={add} placeholder={`${ENTITY_LABEL[kind as EntityKind]}を検索（名称 / コード）`} />
         {isKeyBased(kind) && (
-          <p className="font-mono text-[9.5px] text-muted-foreground leading-snug">
+          <p className="text-[9.5px] text-muted-foreground leading-snug">
             依頼はDB参照（backlog_issue_key / issue_key）を統合先へ付け替えます。Backlog課題自体の子課題化・削除は右下の「統合カート」で行ってください。
           </p>
         )}
@@ -218,19 +218,19 @@ export function EntityMergePanel() {
       {/* カート */}
       <div className="rounded-xl border border-border bg-card p-4 space-y-3">
         <div className="flex items-center gap-2">
-          <ShoppingCart className="h-4 w-4 text-indigo-600" />
+          <ShoppingCart className="h-4 w-4 text-primary" />
           <span className="font-mono text-[12px] font-bold">カート</span>
-          <span className="font-mono text-[10px] text-muted-foreground">{items.length} 件</span>
+          <span className="text-[10px] text-muted-foreground">{items.length} 件</span>
           <div className="flex-1" />
           {items.length > 0 && (
-            <button type="button" onClick={clear} className="font-mono text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-1">
+            <button type="button" onClick={clear} className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-1">
               <Trash2 className="h-3 w-3" /> 空にする
             </button>
           )}
         </div>
 
         {items.length === 0 ? (
-          <div className="text-center font-mono text-[11px] text-muted-foreground border border-dashed border-border rounded-lg py-6">
+          <div className="text-center text-[11px] text-muted-foreground border border-dashed border-border rounded-lg py-6">
             上の検索から統合したい{ENTITY_LABEL[kind as EntityKind]}を2件以上追加してください。
           </div>
         ) : (
@@ -238,19 +238,19 @@ export function EntityMergePanel() {
             {items.map((it) => {
               const isSurv = it.id === survivorId
               return (
-                <div key={it.id} className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 ${isSurv ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/30" : "border-border"}`}>
+                <div key={it.id} className={`flex items-start gap-2 rounded-lg border px-2.5 py-1.5 ${isSurv ? "border-warning bg-warning/10 dark:bg-warning" : "border-border"}`}>
                   <label className="flex items-center gap-1 pt-0.5 cursor-pointer shrink-0" title="この{ENTITY_LABEL[kind]}を残す(統合先)">
                     <input type="radio" name="merge-survivor" className="accent-amber-600" checked={isSurv} onChange={() => { setSurvivorId(it.id); setPreview(null) }} />
-                    <Crown className={`h-3.5 w-3.5 ${isSurv ? "text-amber-600" : "text-muted-foreground/40"}`} />
+                    <Crown className={`h-3.5 w-3.5 ${isSurv ? "text-warning" : "text-muted-foreground/40"}`} />
                   </label>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono text-[11px] font-bold">{it.label}</span>
-                      {it.sub && <span className="font-mono text-[9px] text-muted-foreground">{it.sub}</span>}
+                      {it.sub && <span className="text-[9px] text-muted-foreground">{it.sub}</span>}
                       {isSurv ? (
-                        <span className="font-mono text-[9px] text-amber-700 font-bold">残す(統合先)</span>
+                        <span className="font-mono text-[9px] text-warning font-bold">残す(統合先)</span>
                       ) : (
-                        <span className="font-mono text-[9px] text-muted-foreground">{isKeyBased(kind) ? "参照を付替え" : "統合されて削除"}</span>
+                        <span className="text-[9px] text-muted-foreground">{isKeyBased(kind) ? "参照を付替え" : "統合されて削除"}</span>
                       )}
                     </div>
                   </div>
@@ -264,7 +264,7 @@ export function EntityMergePanel() {
         )}
 
         {items.length === 1 && (
-          <p className="font-mono text-[10px] text-amber-700">統合にはもう1件以上必要です。</p>
+          <p className="font-mono text-[10px] text-warning">統合にはもう1件以上必要です。</p>
         )}
       </div>
 
@@ -272,22 +272,22 @@ export function EntityMergePanel() {
       {canMerge && (
         <div className="rounded-xl border border-border border-t-[3px] border-t-amber-500 bg-card p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="font-mono text-[12px] font-bold text-amber-600">影響プレビュー（付け替える外部キー）</span>
+            <span className="font-mono text-[12px] font-bold text-warning">影響プレビュー（付け替える外部キー）</span>
             <Button variant="outline" size="sm" onClick={runPreview} disabled={loading} className="font-mono text-[11px]">
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />} 影響を確認
             </Button>
           </div>
           {preview == null ? (
-            <p className="font-mono text-[10px] text-muted-foreground">「影響を確認」で、統合時に付け替えるテーブル・列・件数を表示します。</p>
+            <p className="text-[10px] text-muted-foreground">「影響を確認」で、統合時に付け替えるテーブル・列・件数を表示します。</p>
           ) : grandTotal === 0 ? (
-            <p className="font-mono text-[11px] text-emerald-700">付け替える外部キーはありません（統合元は参照されていません）。安全に統合できます。</p>
+            <p className="font-mono text-[11px] text-success">付け替える外部キーはありません（統合元は参照されていません）。安全に統合できます。</p>
           ) : (
             <div className="space-y-3">
               {preview.map((p) => (
                 <div key={p.loser.id} className="border border-border rounded-lg overflow-hidden">
                   <div className="bg-muted/40 px-2.5 py-1.5 font-mono text-[10.5px] font-bold">
                     {p.loser.label} <span className="text-muted-foreground">→ {survivor?.label}</span>
-                    <span className="ml-2 text-amber-700">付替え {p.total} 件</span>
+                    <span className="ml-2 text-warning">付替え {p.total} 件</span>
                   </div>
                   <table className="w-full font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
                     <thead><tr className="text-muted-foreground"><th className="text-left px-2.5 py-1">テーブル</th><th className="text-left px-2.5 py-1">列</th><th className="text-right px-2.5 py-1">件数</th></tr></thead>
@@ -296,7 +296,7 @@ export function EntityMergePanel() {
                         <tr><td colSpan={3} className="px-2.5 py-1.5 text-muted-foreground">参照なし</td></tr>
                       ) : p.refs.map((r, i) => (
                         <tr key={i} className="border-t border-border">
-                          <td className="px-2.5 py-1 text-sky-700">{r.table}</td>
+                          <td className="px-2.5 py-1 text-primary">{r.table}</td>
                           <td className="px-2.5 py-1">{r.column}</td>
                           <td className="px-2.5 py-1 text-right">{r.count}</td>
                         </tr>
@@ -312,8 +312,8 @@ export function EntityMergePanel() {
 
       {/* 実行 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="font-mono text-[10px] text-muted-foreground flex items-center gap-1.5">
-          <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+        <p className="text-[10px] text-muted-foreground flex items-center gap-1.5">
+          <AlertTriangle className="h-3.5 w-3.5 text-warning" />
           統合は不可逆です。先に「影響を確認」で内容を確かめてください。
         </p>
         <Button size="sm" className="font-mono text-[11px] gap-1.5" disabled={!canMerge || merging} onClick={doMerge}>
@@ -325,7 +325,7 @@ export function EntityMergePanel() {
       {/* 監査ログ(統合履歴) + 取消し */}
       {history.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-4 space-y-2">
-          <div className="font-mono text-[12px] font-bold text-muted-foreground">統合履歴（監査ログ）</div>
+          <div className="text-[12px] font-bold text-muted-foreground">統合履歴（監査ログ）</div>
           <div className="overflow-x-auto border border-border rounded-lg">
             <table className="w-full font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
               <thead><tr className="bg-muted/40 text-muted-foreground">
@@ -345,7 +345,7 @@ export function EntityMergePanel() {
                         {h.undone_at ? (
                           <span className="text-muted-foreground">取消済</span>
                         ) : (
-                          <button type="button" onClick={() => undo(h.id)} className="border border-rose-500 text-rose-600 rounded px-1.5 py-0.5 hover:bg-rose-500/10">取消し</button>
+                          <button type="button" onClick={() => undo(h.id)} className="border border-destructive text-destructive rounded px-1.5 py-0.5 hover:bg-destructive">取消し</button>
                         )}
                       </td>
                     </tr>
@@ -354,7 +354,7 @@ export function EntityMergePanel() {
               </tbody>
             </table>
           </div>
-          <p className="font-mono text-[9px] text-muted-foreground">取消しは best-effort（記録した参照を戻し、削除した本体を復元）。ledger 付替えや id 列の無い表は戻せない場合があります。</p>
+          <p className="text-[9px] text-muted-foreground">取消しは best-effort（記録した参照を戻し、削除した本体を復元）。ledger 付替えや id 列の無い表は戻せない場合があります。</p>
         </div>
       )}
     </div>

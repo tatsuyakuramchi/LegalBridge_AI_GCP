@@ -119,7 +119,7 @@ export function ReceivableMapPanel() {
     <div className="space-y-4">
       {/* ピッカー */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-xs font-mono font-bold uppercase tracking-[0.12em] text-muted-foreground">作品:</span>
+        <span className="text-xs font-bold uppercase tracking-[0.12em] text-muted-foreground">作品:</span>
         <div className="min-w-[260px]">
           <NativeSelect value={workId} onChange={(e) => selectWork(e.target.value)}>
             <option value="">— 作品を選択 —</option>
@@ -154,7 +154,7 @@ export function ReceivableMapPanel() {
                     }}
                   >
                     {workLabel(r)}
-                    <span className="ml-1.5 text-[10px] font-bold text-violet-600">
+                    <span className="ml-1.5 text-[10px] font-bold text-info">
                       {VIA[r.matched_via] || r.matched_via}
                       {r.matched_via !== "title" && r.matched_text ? ": " + r.matched_text : ""}
                     </span>
@@ -171,7 +171,7 @@ export function ReceivableMapPanel() {
 
       {/* マップ */}
       {!workId ? (
-        <div className="p-12 text-center text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground border border-dashed border-border rounded-lg">
+        <div className="p-12 text-center text-xs uppercase tracking-[0.16em] text-muted-foreground border border-dashed border-border rounded-lg">
           作品を選択してください。
         </div>
       ) : loading ? (
@@ -195,7 +195,7 @@ export function ReceivableMapPanel() {
               <React.Fragment key={n.work?.id ?? i}>
                 <Tier n={n} isSel={isSel} />
                 {i < chain.length - 1 && (
-                  <div className="flex flex-col items-center text-violet-500 py-1.5">
+                  <div className="flex flex-col items-center text-info py-1.5">
                     <ChevronDown className="h-5 w-5" />
                     <span className="text-[10.5px] text-muted-foreground font-bold">
                       派生: {DERIV[chain[i + 1].derivation_type] || chain[i + 1].derivation_type || "派生"}
@@ -213,7 +213,7 @@ export function ReceivableMapPanel() {
               {data!.children.map((c: Row) => (
                 <button
                   key={c.id}
-                  className="inline-block mr-1.5 my-0.5 text-xs font-bold text-violet-600 bg-violet-50 rounded-xl px-2.5 py-0.5 hover:bg-violet-100"
+                  className="inline-block mr-1.5 my-0.5 text-xs font-bold text-info bg-info/10 rounded-xl px-2.5 py-0.5 hover:bg-info/10"
                   onClick={() => selectWork(String(c.id))}
                 >
                   {workLabel(c)}
@@ -224,7 +224,7 @@ export function ReceivableMapPanel() {
           )}
 
           {anyRateUnknown && (
-            <div className="mt-3 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl px-3 py-2 text-xs">
+            <div className="mt-3 bg-warning/10 border border-warning/40 text-warning rounded-xl px-3 py-2 text-xs">
               一部の上流で分配料率が未設定です。利用許諾/出版条件の金銭条件に料率を入れると分配額が自動算定されます。
             </div>
           )}
@@ -253,11 +253,11 @@ function Tier({ n, isSel }: { n: Row; isSel: boolean }) {
   const deriv = n.derivation_type ? DERIV[n.derivation_type] || n.derivation_type : w.is_original ? "原版" : null
   const retained = (n.cascade_base || n.received || 0) - (n.distributed || 0)
   return (
-    <div className={`rounded-2xl px-3.5 py-3 bg-card/60 border ${isSel ? "border-violet-500 ring-2 ring-violet-500/20" : "border-border"}`}>
+    <div className={`rounded-2xl px-3.5 py-3 bg-card/60 border ${isSel ? "border-info ring-2 ring-violet-500/20" : "border-border"}`}>
       <div className="flex items-center gap-2 mb-2.5 flex-wrap">
         <span className="font-bold text-sm">{workLabel(w)}</span>
         {deriv && <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{deriv}</Badge>}
-        {isSel && <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">選択中</Badge>}
+        {isSel && <Badge className="bg-info/10 text-info hover:bg-info/10">選択中</Badge>}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_44px_1fr_44px_1fr] gap-3 items-stretch">
@@ -305,9 +305,9 @@ function NodeUp({ u }: { u: Row }) {
       </div>
       <div className="text-[11.5px] mt-0.5">
         {u.rate_pct == null ? (
-          <span className="text-amber-700 bg-amber-50 rounded-lg px-1.5 font-bold">料率未設定</span>
+          <span className="text-warning bg-warning/10 rounded-lg px-1.5 font-bold">料率未設定</span>
         ) : (
-          <span className="text-amber-700 bg-amber-50 rounded-lg px-1.5 font-bold">
+          <span className="text-warning bg-warning/10 rounded-lg px-1.5 font-bold">
             料率 {u.rate_pct}%{u.rate_basis ? <span className="text-muted-foreground font-normal"> ({u.rate_basis})</span> : null}
           </span>
         )}
@@ -324,7 +324,7 @@ function NodeDown({ r }: { r: Row }) {
     <div className="bg-card border border-border rounded-2xl p-3.5 border-l-4 border-l-emerald-400 shadow-sm">
       <div className="font-bold text-sm flex items-center gap-1.5 flex-wrap">
         {r.sublicensee_name || "(相手方未設定)"}
-        <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">{KIND[r.receivable_kind] || r.receivable_kind}</Badge>
+        <Badge className="bg-info/10 text-info hover:bg-info/10">{KIND[r.receivable_kind] || r.receivable_kind}</Badge>
       </div>
       {r.source_contract_number && <div className="text-[11.5px] text-muted-foreground mt-0.5">{r.source_contract_number}</div>}
       <div className="font-bold mt-2 text-[15px] tabular-nums">受領 {r.currency} {yen(r.received)}</div>
@@ -342,7 +342,7 @@ function BigRow({ k, v }: { k: string; v: string }) {
 }
 function Arrow({ label }: { label: string }) {
   return (
-    <div className="hidden lg:flex flex-col items-center justify-center text-violet-500">
+    <div className="hidden lg:flex flex-col items-center justify-center text-info">
       <ArrowRight className="h-6 w-6" />
       <span className="text-[10px] text-muted-foreground mt-1">{label}</span>
     </div>
@@ -419,7 +419,7 @@ function AliasPanel({
         rows.map((a) => (
           <div key={a.id} className="flex items-center gap-2 py-1.5 border-b border-border text-xs flex-wrap">
             <b>{a.alias_title}</b>
-            {a.party_name && <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">{a.party_name}</Badge>}
+            {a.party_name && <Badge className="bg-info/10 text-info hover:bg-info/10">{a.party_name}</Badge>}
             {a.context && <span className="text-muted-foreground text-[11px]">{a.context}</span>}
             <span className="flex-1" />
             <button className="text-pink-600 font-bold" onClick={() => del(a.id)}>

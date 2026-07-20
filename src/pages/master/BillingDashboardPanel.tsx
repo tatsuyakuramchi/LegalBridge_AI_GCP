@@ -50,25 +50,25 @@ export function BillingDashboardPanel() {
     <div className="space-y-5">
       <div>
         <p className="retro-tag mb-1.5">MST · BILLING DASH</p>
-        <h3 className="text-lg font-mono font-bold tracking-tight">請求・分配 横断ダッシュボード</h3>
-        <p className="text-xs font-mono text-muted-foreground mt-1 leading-snug">
+        <h3 className="text-lg font-semibold tracking-tight">請求・分配 横断ダッシュボード</h3>
+        <p className="text-xs text-muted-foreground mt-1 leading-snug">
           全作品の再許諾受領と分配を俯瞰します。編集は「請求・分配」（作品別）で。行クリックで該当作品へ。
         </p>
       </div>
 
       {/* サマリ */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="rounded-md border border-sky-200 bg-sky-50/50 dark:bg-sky-950/20 px-3 py-2">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700 flex items-center gap-1"><ArrowDownToLine className="h-3 w-3" /> 受領再許諾料 合計</div>
-          <div className="text-lg font-mono font-bold text-sky-800">{yen(totalRecvRoyalty)}</div>
+        <div className="rounded-md border border-primary/40 bg-primary/10 dark:bg-primary px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary flex items-center gap-1"><ArrowDownToLine className="h-3 w-3" /> 受領再許諾料 合計</div>
+          <div className="text-lg font-semibold text-primary">{yen(totalRecvRoyalty)}</div>
         </div>
-        <div className="rounded-md border border-emerald-200 bg-emerald-50/50 dark:bg-emerald-950/20 px-3 py-2">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700">実受領額 合計</div>
-          <div className="text-lg font-mono font-bold text-emerald-800">{yen(totalReceived)}</div>
+        <div className="rounded-md border border-success/40 bg-success/10 dark:bg-success px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-success">実受領額 合計</div>
+          <div className="text-lg font-semibold text-success">{yen(totalReceived)}</div>
         </div>
-        <div className="rounded-md border border-rose-200 bg-rose-50/50 dark:bg-rose-950/20 px-3 py-2">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-rose-700 flex items-center gap-1"><ArrowUpFromLine className="h-3 w-3" /> ライセンサー分配 合計</div>
-          <div className="text-lg font-mono font-bold text-rose-800">{yen(totalDist)}</div>
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 dark:bg-destructive px-3 py-2">
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-destructive flex items-center gap-1"><ArrowUpFromLine className="h-3 w-3" /> ライセンサー分配 合計</div>
+          <div className="text-lg font-semibold text-destructive">{yen(totalDist)}</div>
         </div>
       </div>
 
@@ -95,10 +95,10 @@ export function BillingDashboardPanel() {
               <th className="text-left font-bold py-1.5 px-2">作品</th>
               <th className="text-left font-bold py-1.5 px-2">再許諾先</th>
               <th className="text-right font-bold py-1.5 px-2">報告売上/数量</th>
-              <th className="text-right font-bold py-1.5 px-2 text-sky-700">受領再許諾料</th>
+              <th className="text-right font-bold py-1.5 px-2 text-primary">受領再許諾料</th>
               <th className="text-right font-bold py-1.5 px-2">実受領</th>
               <th className="text-left font-bold py-1.5 px-2">ライセンサー</th>
-              <th className="text-right font-bold py-1.5 px-2 text-rose-700">分配(支払)</th>
+              <th className="text-right font-bold py-1.5 px-2 text-destructive">分配(支払)</th>
               <th className="text-center font-bold py-1.5 px-2">台帳</th>
             </tr>
           </thead>
@@ -113,17 +113,17 @@ export function BillingDashboardPanel() {
                 <td className="py-1 px-2 max-w-[180px] truncate">{x.work_code ? `[${x.work_code}] ` : ""}{x.work_title || `#${x.work_id}`}</td>
                 <td className="py-1 px-2 max-w-[140px] truncate">{x.counterparty_name || "—"}{x.region_language_label ? ` / ${x.region_language_label}` : ""}</td>
                 <td className="text-right py-1 px-2">{x.reported_sales != null ? yen(x.reported_sales, x.currency) : (x.reported_quantity != null ? `${x.reported_quantity} 個` : "—")}</td>
-                <td className="text-right py-1 px-2 font-bold text-sky-700">{yen(x.computed_royalty_ex_tax, x.currency)}</td>
+                <td className="text-right py-1 px-2 font-bold text-primary">{yen(x.computed_royalty_ex_tax, x.currency)}</td>
                 <td className="text-right py-1 px-2">{yen(x.received_amount, x.currency)}</td>
                 <td className="py-1 px-2 max-w-[120px] truncate">
                   {x.parent_license_condition_id == null
-                    ? <span className="inline-flex items-center gap-1 text-amber-600"><AlertTriangle className="h-3 w-3" />未リンク</span>
+                    ? <span className="inline-flex items-center gap-1 text-warning"><AlertTriangle className="h-3 w-3" />未リンク</span>
                     : <>{x.licensor_name || "—"}{x.parent_rate_pct != null ? ` ${x.parent_rate_pct}%` : ""}</>}
                 </td>
-                <td className="text-right py-1 px-2 font-bold text-rose-700">{yen(x.computed_distribution_ex_tax, x.currency)}</td>
+                <td className="text-right py-1 px-2 font-bold text-destructive">{yen(x.computed_distribution_ex_tax, x.currency)}</td>
                 <td className="text-center py-1 px-2">
-                  <span className={cn("inline-block px-1 rounded-sm text-[9px]", x.payment_id ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground")}>入{x.payment_id ? "✓" : "—"}</span>{" "}
-                  <span className={cn("inline-block px-1 rounded-sm text-[9px]", x.distribution_payment_id ? "bg-rose-100 text-rose-700" : "bg-muted text-muted-foreground")}>出{x.distribution_payment_id ? "✓" : "—"}</span>
+                  <span className={cn("inline-block px-1 rounded-sm text-[9px]", x.payment_id ? "bg-success/10 text-success" : "bg-muted text-muted-foreground")}>入{x.payment_id ? "✓" : "—"}</span>{" "}
+                  <span className={cn("inline-block px-1 rounded-sm text-[9px]", x.distribution_payment_id ? "bg-destructive/10 text-destructive" : "bg-muted text-muted-foreground")}>出{x.distribution_payment_id ? "✓" : "—"}</span>
                 </td>
               </tr>
             ))}
@@ -131,7 +131,7 @@ export function BillingDashboardPanel() {
         </table>
       </div>
       {rows.length >= 1000 && (
-        <p className="font-mono text-[10px] text-amber-600">※ 表示は最大1000件です。期間や検索で絞り込んでください。</p>
+        <p className="font-mono text-[10px] text-warning">※ 表示は最大1000件です。期間や検索で絞り込んでください。</p>
       )}
     </div>
   )
