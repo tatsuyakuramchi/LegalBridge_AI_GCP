@@ -77,7 +77,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
    *   limit        : デフォルト 50, 最大 200
    *   include_inactive=1 を付けると is_active=FALSE も返す
    */
-  app.get("/api/contracts/search", deps.requirePortalSecret, async (req, res) => {
+  // 設計 §5/§13: 統合検索 namespace /api/search/contracts にも同一実装を登録(DRY)。
+  //   admin-ui 内部専用のため requirePortalSecret を維持。
+  const contractsSearchHandler = async (req: any, res: any) => {
     try {
       const q = String(req.query.q || "").trim();
       const recordTypesRaw = String(req.query.record_types || "").trim();
@@ -300,7 +302,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       console.error("/api/contracts/search failed:", e);
       res.status(500).json({ error: String(e?.message || e) });
     }
-  });
+  };
+  app.get("/api/contracts/search", deps.requirePortalSecret, contractsSearchHandler);
+  app.get("/api/search/contracts", deps.requirePortalSecret, contractsSearchHandler);
 
   /**
    * 詳細取得。子テーブル全部 + vendor + 検収集計を返す。

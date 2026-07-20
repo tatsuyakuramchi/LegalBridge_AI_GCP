@@ -62,6 +62,32 @@ SVA="$(get '/api/search/vendors?limit=5' admin)"
 [[ "$(code '/api/search/vendors?limit=1' viewer)" == "200" ]] && ok "/api/search/vendors -> 200" || ng "/api/search/vendors が 200 でない"
 if echo "$SVV" | grep -qiE 'account_number|antisocial_check_result'; then ng "/api/search/vendors(viewer)に口座/反社が漏出"; else ok "/api/search/vendors(viewer)に口座/反社なし"; fi
 if echo "$SVA" | grep -qiE 'account_number|antisocial_check_result'; then ng "/api/search/vendors(admin)にも口座/反社が漏出(射影は常に安全のはず)"; else ok "/api/search/vendors(admin)にも口座/反社なし(構造安全)"; fi
+# conditions: admin/FIN のみ(admin→200 / viewer→403)。listConditions は vendor_name のみで機密なし。
+[[ "$(code '/api/search/conditions?limit=1' admin)" == "200" ]] && ok "/api/search/conditions(admin) -> 200" || ng "/api/search/conditions(admin)が 200 でない"
+[[ "$(code '/api/search/conditions?limit=1' viewer)" == "403" ]] && ok "/api/search/conditions(viewer) -> 403(admin/FIN 限定)" || ng "/api/search/conditions(viewer)が 403 でない"
+# contracts: admin-ui 内部(requirePortalSecret)。staging は secret 未設定で素通り→200。route 登録の確認(404 でない)。
+cc="$(code '/api/search/contracts?limit=1' admin)"; [[ "$cc" != "404" ]] && ok "/api/search/contracts 登録あり(-> $cc, 404 でない)" || ng "/api/search/contracts が 404(未登録)"
+
+echo "== ステップ2: search-api から write ルート撤去(worker 移設済) =="
+mcode() { # $1=METHOD $2=path $3=role : HTTP コードのみ
+  curl -sS -m 25 -o /dev/null -w "%{http_code}" -X "$1" -H "Content-Type: application/json" \
+    -H "x-staging-role: ${3:-admin}" -d '{}' "$API$2" 2>/dev/null
+}
+# 撤去した write ルートは 404(未登録)になること。
+for spec in \
+  "PATCH /api/master/staff/x%40y.com/role" \
+  "POST /api/master/vendors" \
+  "PUT /api/conditions/1/links" \
+  "POST /api/works/1/aliases" \
+  "DELETE /api/work-aliases/1"; do
+  m="${spec%% *}"; p="${spec#* }"
+  c="$(mcode "$m" "$p" admin)"
+  [[ "$c" == "404" ]] && ok "撤去確認: $m $p -> 404" || ng "$m $p が $c (撤去後は 404 期待)"
+done
+# 閲覧 read は維持されていること。
+[[ "$(code '/api/master/staff' admin)" == "200" ]] && ok "read 維持: GET /api/master/staff -> 200" || ng "GET /api/master/staff が 200 でない"
+[[ "$(code '/api/master/vendors?limit=1' admin)" == "200" ]] && ok "read 維持: GET /api/master/vendors -> 200" || ng "GET /api/master/vendors が 200 でない"
+[[ "$(code '/api/works/1/aliases' admin)" != "404" ]] && ok "read 維持: GET /api/works/:id/aliases 登録あり" || ng "GET /api/works/:id/aliases が 404"
 
 echo ""
 echo "==== 結果: PASS=$pass FAIL=$fail ===="

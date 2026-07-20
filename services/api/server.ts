@@ -277,7 +277,6 @@ import {
 import {
   listVendors,
   getVendor,
-  upsertVendor,
   parseVendorCsv,
   importVendorRows,
   getVendorSampleCsv,
@@ -300,8 +299,6 @@ import {
   getWorkLineage,
   listMappableWorks,
   listWorkAliases,
-  addWorkAlias,
-  deleteWorkAlias,
   resolveWorksByTitle,
 } from "./src/services/receivableMapService.ts";
 import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
@@ -325,7 +322,6 @@ import {
 } from "./src/services/paymentExportService.ts";
 import {
   listConditions,
-  updateConditionLinks,
   autoLinkConditions,
   autoStatusConditions,
   listRingiOptions,
@@ -1170,61 +1166,9 @@ async function startServer() {
     }
   );
 
-  // Phase 22.21.36: app_role 切替エンドポイント (admin 限定)
-  //   PATCH /api/master/staff/:email/role
-  //   body: { app_role: "admin" | "viewer" }
-  app.patch(
-    "/api/master/staff/:email/role",
-    requireIapUser({ renderErrorPage }),
-    requireAppRole({
-      resourceLabel: "admin:staff-role",
-      allowedRoles: ["admin"],
-      renderErrorPage,
-    }),
-    express.json({ limit: "10kb" }),
-    async (req, res) => {
-      try {
-        const targetEmail = String(req.params.email || "").trim().toLowerCase();
-        const newRole = String(req.body?.app_role || "").trim().toLowerCase();
-        if (!targetEmail) {
-          return res.status(400).json({ ok: false, error: "email is required" });
-        }
-        if (!["admin", "viewer"].includes(newRole)) {
-          return res
-            .status(400)
-            .json({ ok: false, error: "app_role must be 'admin' or 'viewer'" });
-        }
-        const result = await query(
-          `UPDATE staff
-              SET app_role = $1
-            WHERE LOWER(email) = $2
-            RETURNING id, email, staff_name, app_role`,
-          [newRole, targetEmail]
-        );
-        if (result.rows.length === 0) {
-          return res
-            .status(404)
-            .json({ ok: false, error: `staff not found: ${targetEmail}` });
-        }
-        const actor = ((req as any).user?.email || "?").toString();
-        console.log(
-          JSON.stringify({
-            evt: "staff_role_change",
-            actor,
-            target_email: targetEmail,
-            new_role: newRole,
-            ts: new Date().toISOString(),
-          })
-        );
-        res.json({ ok: true, staff: result.rows[0] });
-      } catch (error: any) {
-        console.error("PATCH /api/master/staff/:email/role failed:", error);
-        res
-          .status(500)
-          .json({ ok: false, error: String(error?.message || error) });
-      }
-    }
-  );
+  // 全UIリニューアル A(ステップ2+3): スタッフ役割変更(PATCH /api/master/staff/:email/role)は
+  //   worker へ移設済み(ステップ1・本番反映済)。SSR ポータルの役割変更 UI も閲覧専用化した
+  //   ため、search-api の当該 write ルートを物理撤去。GET /api/master/staff(閲覧)は維持。
 
   // -------------------------------------------------------------------
   // /imports/vendor — 取引先マスター CSV 取り込み (Phase 22.21.35)
@@ -1483,39 +1427,10 @@ async function startServer() {
   );
 
   // POST /api/master/vendors — upsert (書き込み: 役割チェック土台あり)
-  app.post(
-    "/api/master/vendors",
-    requireIapUser({ renderErrorPage }),
-    requireAppRole({
-      resourceLabel: "master:vendors:write",
-      allowedRoles: ["admin"],
-      renderErrorPage,
-    }),
-    express.json({ limit: "1mb" }),
-    async (req, res) => {
-      try {
-        const payload = req.body || {};
-        const saved = await upsertVendor(payload, { checkCorpDup: true });
-        res.json({ ok: true, vendor: saved });
-      } catch (error: any) {
-        // B系: 法人番号重複は 409 + 既存情報を返す(UI が既存採用/統合へ誘導)。
-        if (error?.code === "VENDOR_CORP_DUP") {
-          return res.status(409).json({
-            ok: false,
-            matched: true,
-            existing: error.existing,
-            error: String(error?.message || error),
-          });
-        }
-        console.error("POST /api/master/vendors failed:", error);
-        const msg = String(error?.message || error);
-        // バリデーションエラーは 400 で返す
-        const status = /必須|invalid|required/i.test(msg) ? 400 : 500;
-        res.status(status).json({ ok: false, error: msg });
-      }
-    }
-  );
-
+  // 全UIリニューアル A(ステップ2+3): 取引先 upsert(POST /api/master/vendors)は worker へ
+  //   移設済み(ステップ1・本番反映済)。SSR ポータルの取引先エディタ(新規/編集)も admin-ui へ
+  //   集約(閲覧専用化)したため、search-api の当該 write ルートを物理撤去。
+  //   閲覧 GET /api/master/vendors と CSV 一括取込(下記 import-csv)は維持。
 
   // POST /api/master/vendors/import-csv — 一括取込
   app.post(
@@ -3808,7 +3723,9 @@ async function startServer() {
 
   // GET /api/conditions/search — 条件明細の検索 (支払日/納期/種類/取引先/担当/キーワード)
   //   admin または FIN 部署のみ(VIEW 側の閲覧専用ビューと整合)。
-  app.get("/api/conditions/search", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), async (req, res) => {
+  //   設計 §5/§13: 統合検索 namespace /api/search/conditions にも同一実装を登録(DRY)。
+  //   listConditions は vendor_name/code のみ返し機密(口座/反社/与信)を含まない。
+  const conditionsSearchHandler = async (req: any, res: any) => {
     try {
       const q = req.query as Record<string, string>;
       const result = await listConditions({
@@ -3826,45 +3743,16 @@ async function startServer() {
       });
       res.json({ ok: true, ...result });
     } catch (error: any) {
-      console.error("/api/conditions/search failed:", error);
+      console.error("conditions search failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
-  });
+  };
+  app.get("/api/conditions/search", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), conditionsSearchHandler);
+  app.get("/api/search/conditions", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), conditionsSearchHandler);
 
-  // PUT /api/conditions/:id/links — 明細行の 原作/作品/マスター契約 紐付けを更新
-  //   書き込みは admin 専用(FIN viewer の閲覧専用ビューからは編集不可)。
-  app.put(
-    "/api/conditions/:id/links",
-    requireIapUser({ renderErrorPage }),
-    attachAppRole(),
-    requireScreen({ key: "conditions", renderErrorPage }),
-    express.json(),
-    async (req, res) => {
-      try {
-        const id = Number(req.params.id);
-        if (!Number.isFinite(id)) {
-          return res.status(400).json({ ok: false, error: "invalid id" });
-        }
-        const b = req.body || {};
-        const toIdOrNull = (v: any) =>
-          v == null || v === "" ? null : Number(v);
-        await updateConditionLinks(id, {
-          source_ip_id: toIdOrNull(b.source_ip_id),
-          work_id: toIdOrNull(b.work_id),
-          master_contract_id: toIdOrNull(b.master_contract_id),
-          ringi_id: toIdOrNull(b.ringi_id),
-          status_flags:
-            b.status_flags && typeof b.status_flags === "object" ? b.status_flags : null,
-          is_inbound: typeof b.is_inbound === "boolean" ? b.is_inbound : null,
-          flow_direction: b.flow_direction === undefined ? undefined : (b.flow_direction || ""),
-        });
-        res.json({ ok: true });
-      } catch (error: any) {
-        console.error("/api/conditions/:id/links failed:", error);
-        res.status(500).json({ ok: false, error: String(error?.message || error) });
-      }
-    }
-  );
+  // 全UIリニューアル A(ステップ2+3): 条件明細の紐付け更新(PUT /api/conditions/:id/links)は
+  //   worker へ移設済み(ステップ1・本番反映済)。SSR ポータルの紐付け編集も閲覧専用化した
+  //   ため、search-api の当該 write ルートを物理撤去。GET /api/conditions/search は維持。
 
   // POST /api/conditions/auto-link — 原作/作品/基本契約/稟議 を自動推定して紐付け。
   //   admin 専用(書込)。body: { ids?:number[], dryRun?:boolean(既定true), overwrite?:boolean }
@@ -4499,29 +4387,10 @@ async function startServer() {
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
-  app.post("/api/works/:id/aliases", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      const b = req.body || {};
-      if (!Number.isFinite(id) || !b.alias_title) return res.status(400).json({ ok: false, error: "id and alias_title required" });
-      const aliasId = await addWorkAlias(id, String(b.alias_title), b.party_vendor_id, b.context);
-      res.json({ ok: true, id: aliasId });
-    } catch (error: any) {
-      console.error("/api/works/:id/aliases POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.delete("/api/work-aliases/:id", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
-      await deleteWorkAlias(id);
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/work-aliases/:id DELETE failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
+  // 全UIリニューアル A(ステップ2+3): 作品別名の write(POST /api/works/:id/aliases,
+  //   DELETE /api/work-aliases/:id)は worker へ移設済み(ステップ1・本番反映済)。
+  //   SSR ポータルの別名編集 UI も撤去し閲覧専用化したため、search-api の当該 write
+  //   ルートを物理撤去。閲覧 GET /api/works/:id/aliases は read として維持。
 
 
   // -------------------------------------------------------------------

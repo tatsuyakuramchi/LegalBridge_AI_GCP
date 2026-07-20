@@ -1006,7 +1006,10 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
       return out;
     }
 
-    $('btn-new').addEventListener('click', openCreate);
+    // 全UIリニューアル A(ステップ2+3): SSR ポータルは閲覧専用。取引先の新規/編集は
+    //   admin-ui に集約(POST /api/master/vendors は撤去)。CSV 一括取込は引き続き利用可。
+    void openCreate; void openEdit; // 旧エディタ関数は温存(未使用)。
+    $('btn-new').addEventListener('click', () => toast('取引先の新規登録・編集は admin-ui の取引先マスタで行ってください（本ポータルは閲覧・CSV取込の互換用です）', 'error'));
     $('btn-add-address').addEventListener('click', () => {
       const rows = readAddresses();
       rows.push({ address_label: '', address: '', is_primary: rows.length === 0, sort_order: rows.length });
@@ -1047,9 +1050,8 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
     $('view-close').addEventListener('click', closeViewModal);
     $('view-cancel').addEventListener('click', closeViewModal);
     $('view-edit').addEventListener('click', () => {
-      const code = viewingCode;
-      closeViewModal();
-      if (code) openEdit(code);
+      // SSR read-only 化: 編集は admin-ui に集約。
+      toast('取引先の編集は admin-ui の取引先マスタで行ってください', 'error');
     });
     $('view-backdrop').addEventListener('click', (e) => {
       if (e.target === $('view-backdrop')) closeViewModal();
