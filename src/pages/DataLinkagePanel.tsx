@@ -196,10 +196,10 @@ export const DataLinkagePanel: React.FC = () => {
     <div className="space-y-4 p-1">
       <div className="flex items-center gap-3 flex-wrap">
         <Link2 className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-sm font-mono font-bold uppercase tracking-[0.14em]">
+        <h1 className="text-sm font-bold uppercase tracking-[0.14em]">
           連結チェック（データ整合性）
         </h1>
-        <span className="text-[11px] font-mono text-muted-foreground">
+        <span className="text-[11px] text-muted-foreground">
           散在・孤児レコードの検出と安全な修復
         </span>
         <div className="flex-1" />
@@ -221,7 +221,7 @@ export const DataLinkagePanel: React.FC = () => {
         </button>
       </div>
 
-      <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+      <p className="text-[11px] text-muted-foreground leading-relaxed">
         `documents.form_data` ⇄ `contract_capabilities` ⇄ v3ミラー ⇄ 下書き 等、
         同じ発注条件が複数テーブルに分散している箇所の不整合を点検します。
         修復は安全側（正規化・孤児削除・孤児参照のNULL化）のみで、発行済の正本は変更しません。
@@ -236,7 +236,7 @@ export const DataLinkagePanel: React.FC = () => {
           <span className="text-[12px] font-mono font-bold">
             課題コントロール整合性監査
           </span>
-          <span className="text-[10px] font-mono text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             A1〜A10 / 一部はプレビュー付き修復可
           </span>
           {issueAudit && (
@@ -244,35 +244,35 @@ export const DataLinkagePanel: React.FC = () => {
               className={cn(
                 "text-[10px] font-mono px-1.5 py-0.5 rounded-sm",
                 issueAudit.total_issue_categories > 0
-                  ? "bg-amber-100 text-amber-900"
-                  : "bg-emerald-50 text-emerald-800"
+                  ? "bg-warning/10 text-warning"
+                  : "bg-success/10 text-success"
               )}
             >
               要確認 {issueAudit.total_issue_categories} / {issueAudit.checks.length}
             </span>
           )}
         </div>
-        <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+        <p className="text-[10px] text-muted-foreground leading-relaxed">
           課題 → 文書 → 条件明細 → 実績の紐づきを、文書取り残し・明細未生成・実績未結合・旧版finalの観点で点検します。
         </p>
         {issueAuditError && (
-          <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-3 py-2 text-[10px] font-mono">
+          <div className="border border-destructive/40 bg-destructive/10 text-destructive rounded-sm px-3 py-2 text-[10px] font-mono">
             監査取得失敗: {issueAuditError}
           </div>
         )}
         {issueAudit && (
           <>
-            <div className="text-[10px] font-mono text-muted-foreground">
+            <div className="text-[10px] text-muted-foreground">
               点検時刻: {new Date(issueAudit.generated_at).toLocaleString("ja-JP")}
             </div>
             {issueAuditIssues.length > 0 ? (
               <div className="space-y-2">
                 {issueAuditIssues.map((c) => (
-                  <div key={c.key} className="border border-amber-300 bg-amber-50/40 rounded-sm p-3">
+                  <div key={c.key} className="border border-warning/40 bg-warning/10 rounded-sm p-3">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
                       <span className="text-[12px] font-mono font-bold">{c.label}</span>
-                      <span className="text-[11px] font-mono px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded-sm">
+                      <span className="text-[11px] font-mono px-1.5 py-0.5 bg-warning/15 text-warning rounded-sm">
                         {c.count} 件
                       </span>
                       <div className="flex-1" />
@@ -281,7 +281,7 @@ export const DataLinkagePanel: React.FC = () => {
                           type="button"
                           onClick={() => runIssueRepair(c.repair_action!, c.label)}
                           disabled={!!busyAction}
-                          className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
+                          className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
                         >
                           {busyAction === c.repair_action ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
@@ -291,16 +291,16 @@ export const DataLinkagePanel: React.FC = () => {
                           {REPAIR_LABELS[c.repair_action] || "修復"}（プレビュー付）
                         </button>
                       ) : (
-                        <span className="text-[10px] font-mono text-muted-foreground italic">
+                        <span className="text-[10px] text-muted-foreground italic">
                           手動確認
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                    <p className="text-[10px] text-muted-foreground mt-1">
                       {c.description}
                     </p>
                     {c.sample.length > 0 && (
-                      <div className="mt-2 text-[10px] font-mono text-muted-foreground/80 bg-card border border-border rounded-sm p-2 overflow-x-auto">
+                      <div className="mt-2 text-[10px] text-muted-foreground/80 bg-card border border-border rounded-sm p-2 overflow-x-auto">
                         {c.sample.map((s, i) => (
                           <div key={i} className="whitespace-nowrap">
                             {Object.entries(s)
@@ -314,7 +314,7 @@ export const DataLinkagePanel: React.FC = () => {
                 ))}
               </div>
             ) : (
-              <div className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+              <div className="text-[10px] font-mono text-success flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3" />
                 課題コントロール監査の要確認カテゴリはありません。
               </div>
@@ -324,7 +324,7 @@ export const DataLinkagePanel: React.FC = () => {
                 {issueAuditCleans.map((c) => (
                   <span
                     key={c.key}
-                    className="text-[10px] font-mono px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-sm flex items-center gap-1"
+                    className="text-[10px] font-mono px-2 py-1 bg-success/10 text-success border border-success/40 rounded-sm flex items-center gap-1"
                   >
                     <CheckCircle2 className="w-3 h-3" />
                     {c.label}
@@ -334,11 +334,11 @@ export const DataLinkagePanel: React.FC = () => {
             )}
             {issueAuditErrs.length > 0 && (
               <div className="border border-border rounded-sm p-2">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">
+                <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
                   点検スキップ ({issueAuditErrs.length})
                 </div>
                 {issueAuditErrs.map((c) => (
-                  <div key={c.key} className="text-[10px] font-mono text-muted-foreground">
+                  <div key={c.key} className="text-[10px] text-muted-foreground">
                     {c.label}: {c.error}
                   </div>
                 ))}
@@ -349,22 +349,22 @@ export const DataLinkagePanel: React.FC = () => {
       </div>
 
       {error && (
-        <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[11px] font-mono flex items-start gap-2">
+        <div className="border border-destructive/40 bg-destructive/10 text-destructive rounded-sm px-4 py-2 text-[11px] font-mono flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           {error}
         </div>
       )}
       {lastRepair && (
-        <div className="border border-emerald-200 bg-emerald-50 text-emerald-900 rounded-sm px-4 py-2 text-[11px] font-mono flex items-center gap-2">
+        <div className="border border-success/40 bg-success/10 text-success rounded-sm px-4 py-2 text-[11px] font-mono flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4" />
           {lastRepair}
         </div>
       )}
 
       {data && (
-        <div className="text-[11px] font-mono text-muted-foreground">
+        <div className="text-[11px] text-muted-foreground">
           点検時刻: {new Date(data.generated_at).toLocaleString("ja-JP")} ／ 要対応カテゴリ:{" "}
-          <span className={data.total_issue_categories > 0 ? "text-amber-700 font-bold" : "text-emerald-700 font-bold"}>
+          <span className={data.total_issue_categories > 0 ? "text-warning font-bold" : "text-success font-bold"}>
             {data.total_issue_categories}
           </span>{" "}
           / {data.checks.length}
@@ -377,22 +377,22 @@ export const DataLinkagePanel: React.FC = () => {
           {linkageIssues.map((c) => (
             <div
               key={c.key}
-              className="border border-amber-300 bg-amber-50/40 rounded-sm p-3"
+              className="border border-warning/40 bg-warning/10 rounded-sm p-3"
             >
               <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
                     <span className="text-[12px] font-mono font-bold">{c.label}</span>
-                    <span className="text-[11px] font-mono px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded-sm">
+                    <span className="text-[11px] font-mono px-1.5 py-0.5 bg-warning/15 text-warning rounded-sm">
                       {c.count} 件
                     </span>
                   </div>
-                  <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                  <p className="text-[10px] text-muted-foreground mt-1">
                     {c.description}
                   </p>
                   {c.sample.length > 0 && (
-                    <div className="mt-2 text-[10px] font-mono text-muted-foreground/80 bg-card border border-border rounded-sm p-2 overflow-x-auto">
+                    <div className="mt-2 text-[10px] text-muted-foreground/80 bg-card border border-border rounded-sm p-2 overflow-x-auto">
                       {c.sample.map((s, i) => (
                         <div key={i} className="whitespace-nowrap">
                           {Object.entries(s)
@@ -408,7 +408,7 @@ export const DataLinkagePanel: React.FC = () => {
                     type="button"
                     onClick={() => runRepair(c.repair_action!, c.label)}
                     disabled={!!busyAction}
-                    className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
+                    className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
                   >
                     {busyAction === c.repair_action ? (
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -418,7 +418,7 @@ export const DataLinkagePanel: React.FC = () => {
                     {REPAIR_LABELS[c.repair_action] || "修復"}
                   </button>
                 ) : (
-                  <span className="text-[10px] font-mono text-muted-foreground italic flex-shrink-0">
+                  <span className="text-[10px] text-muted-foreground italic flex-shrink-0">
                     手動対応
                   </span>
                 )}
@@ -431,14 +431,14 @@ export const DataLinkagePanel: React.FC = () => {
       {/* 正常 */}
       {cleans.length > 0 && (
         <div className="border border-border rounded-sm p-3">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
             問題なし ({cleans.length})
           </div>
           <div className="flex flex-wrap gap-2">
             {cleans.map((c) => (
               <span
                 key={c.key}
-                className="text-[10px] font-mono px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-sm flex items-center gap-1"
+                className="text-[10px] font-mono px-2 py-1 bg-success/10 text-success border border-success/40 rounded-sm flex items-center gap-1"
               >
                 <CheckCircle2 className="w-3 h-3" />
                 {c.label}
@@ -451,11 +451,11 @@ export const DataLinkagePanel: React.FC = () => {
       {/* 点検失敗(テーブル/列なし等) */}
       {errs.length > 0 && (
         <div className="border border-border rounded-sm p-3">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">
             点検スキップ ({errs.length}) — テーブル/列が無い環境など
           </div>
           {errs.map((c) => (
-            <div key={c.key} className="text-[10px] font-mono text-muted-foreground">
+            <div key={c.key} className="text-[10px] text-muted-foreground">
               {c.label}: {c.error}
             </div>
           ))}
@@ -463,7 +463,7 @@ export const DataLinkagePanel: React.FC = () => {
       )}
 
       {!data && !loading && !error && (
-        <div className="text-center py-12 text-[12px] font-mono text-muted-foreground">
+        <div className="text-center py-12 text-[12px] text-muted-foreground">
           点検結果がありません。「再点検」を押してください。
         </div>
       )}

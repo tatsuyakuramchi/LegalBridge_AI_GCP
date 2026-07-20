@@ -71,7 +71,7 @@ const Section: React.FC<{
 }> = ({ title, icon, children, headerActions }) => (
   <section className="border border-border rounded-sm bg-card/60">
     <header className="flex items-center justify-between gap-3 px-4 py-2 border-b border-border bg-muted/30">
-      <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider">
         {icon}
         <span className="font-bold">{title}</span>
       </div>
@@ -91,13 +91,13 @@ const Field: React.FC<{
   children: React.ReactNode
 }> = ({ label, required, hint, full, children }) => (
   <label className={cn("space-y-1", full && "md:col-span-2")}>
-    <div className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+    <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
       <span>{label}</span>
-      {required && <span className="text-red-600">*</span>}
+      {required && <span className="text-destructive">*</span>}
     </div>
     {children}
     {hint && (
-      <div className="text-[11px] font-mono text-muted-foreground/60">
+      <div className="text-[11px] text-muted-foreground/60">
         {hint}
       </div>
     )}
@@ -282,8 +282,8 @@ const OrderImportForm: React.FC<{
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2 rounded-sm border text-[11px] font-mono",
           requiredOk
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         )}
       >
         {requiredOk ? (
@@ -416,7 +416,7 @@ const OrderImportForm: React.FC<{
       {/* 送信 */}
       <div className="flex items-center justify-end gap-3">
         {result?.ok && (
-          <span className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-success flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
             登録完了: {result.document_number} ({result.line_count} 明細
             {result.expense_count ? ` + ${result.expense_count} 経費` : ""},
@@ -428,7 +428,7 @@ const OrderImportForm: React.FC<{
           </span>
         )}
         {result?.error && (
-          <span className="text-[10px] font-mono text-red-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-destructive flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
             {result.error}
           </span>
@@ -653,8 +653,8 @@ const LicenseImportForm: React.FC<{
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2 rounded-sm border text-[11px] font-mono",
           requiredOk
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         )}
       >
         {requiredOk ? (
@@ -948,13 +948,13 @@ const LicenseImportForm: React.FC<{
 
       <div className="flex items-center justify-end gap-3">
         {result?.ok && (
-          <span className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-success flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
             登録完了: {result.contract_number} ({result.condition_count} 条件)
           </span>
         )}
         {result?.error && (
-          <span className="text-[10px] font-mono text-red-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-destructive flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
             {result.error}
           </span>
@@ -1156,8 +1156,8 @@ const LicenseMasterImportForm: React.FC<{
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2 rounded-sm border text-[11px] font-mono",
           requiredOk
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         )}
       >
         {requiredOk ? (
@@ -1167,7 +1167,7 @@ const LicenseMasterImportForm: React.FC<{
         )}
       </div>
 
-      <div className="px-4 py-2 rounded-sm bg-blue-50 border border-blue-200 text-[10px] font-mono text-blue-900">
+      <div className="px-4 py-2 rounded-sm bg-primary/10 border border-primary/40 text-[10px] font-mono text-primary">
         ライセンス「基本」契約書は、個別利用許諾条件書の親 (ledger 単位)
         として登録されます。後で個別契約を入れる際は、ledger_id「
         <span className="font-bold">{form.ledger_id || "（自動採番）"}</span>
@@ -1466,13 +1466,13 @@ const LicenseMasterImportForm: React.FC<{
 
       <div className="flex items-center justify-end gap-3">
         {result?.ok && (
-          <span className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-success flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
             登録完了: {result.contract_number} (ledger_id: {result.ledger_id})
           </span>
         )}
         {result?.error && (
-          <span className="text-[10px] font-mono text-red-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-destructive flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
             {result.error}
           </span>
@@ -1596,8 +1596,8 @@ const ServiceMasterImportForm: React.FC<{
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2 rounded-sm border text-[11px] font-mono",
           requiredOk
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         )}
       >
         {requiredOk ? (
@@ -1607,7 +1607,7 @@ const ServiceMasterImportForm: React.FC<{
         )}
       </div>
 
-      <div className="px-4 py-2 rounded-sm bg-blue-50 border border-blue-200 text-[10px] font-mono text-blue-900">
+      <div className="px-4 py-2 rounded-sm bg-primary/10 border border-primary/40 text-[10px] font-mono text-primary">
         業務委託「基本」契約書は、後続の発注書 / 検収書の親 framework
         として contract_capabilities に登録されます。法務検索 (Slack
         /法務検索) の対象にもなります。
@@ -1788,14 +1788,14 @@ const ServiceMasterImportForm: React.FC<{
 
       <div className="flex items-center justify-end gap-3">
         {result?.ok && (
-          <span className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-success flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
             登録完了: {result.contract_number}
             {result.vendor_id && ` (vendor_id: ${result.vendor_id})`}
           </span>
         )}
         {result?.error && (
-          <span className="text-[10px] font-mono text-red-700 flex items-center gap-1">
+          <span className="text-[10px] font-mono text-destructive flex items-center gap-1">
             <AlertCircle className="w-3 h-3" />
             {result.error}
           </span>
@@ -1909,12 +1909,12 @@ export function ImportPage() {
     <div className="px-6 lg:px-10 py-6 space-y-6 max-w-[1600px] mx-auto">
       <header className="border-b border-border pb-3 flex items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+          <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             <Database className="w-3 h-3" />
             <span>Imports · Past Document Registration</span>
           </div>
           <h1 className="text-xl font-bold mt-1">過去文書 DB 登録</h1>
-          <p className="text-[11px] font-mono text-muted-foreground mt-1 max-w-3xl">
+          <p className="text-[11px] text-muted-foreground mt-1 max-w-3xl">
             既に紙 / メール / 旧システムで成立済みの契約や発注を、PDF を再生成
             せずに DB に追記します。後続の検収書・ロイヤリティ計算書からは、
             通常生成した文書と同じく親文書として参照できるようになります。
@@ -1927,7 +1927,7 @@ export function ImportPage() {
           <button
             type="button"
             onClick={() => setBulkOpen(true)}
-            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
+            className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
             title={`${TAB_LABEL_MAP[tab]} の CSV 一括インポート`}
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -1939,7 +1939,7 @@ export function ImportPage() {
             href={vendorImportUrl}
             target="_blank"
             rel="noreferrer"
-            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
+            className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
             title="取引先マスター CSV 一括取込 (search-api 側ページを新タブで開く)"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -2004,7 +2004,7 @@ export function ImportPage() {
           ] as { group: string; tabs: { key: Tab; label: string }[] }[]
         ).map((g) => (
           <div key={g.group} className="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-b-0">
-            <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground/70 w-24 flex-shrink-0">
+            <span className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground/70 w-24 flex-shrink-0">
               ░ {g.group}
             </span>
             <div className="flex flex-wrap gap-1.5">
@@ -2036,14 +2036,14 @@ export function ImportPage() {
       )}
       {tab === "inspection_certificate" && (
         <div className="space-y-4">
-          <div className="border border-emerald-200 bg-emerald-50 rounded-sm p-5">
+          <div className="border border-success/40 bg-success/10 rounded-sm p-5">
             <div className="flex items-start gap-3">
-              <FileSpreadsheet className="w-6 h-6 text-emerald-700 flex-shrink-0 mt-0.5" />
+              <FileSpreadsheet className="w-6 h-6 text-success flex-shrink-0 mt-0.5" />
               <div className="space-y-2">
-                <div className="font-bold text-emerald-900 text-sm">
+                <div className="font-bold text-success text-sm">
                   Trigger waiting inspection CSV
                 </div>
-                <p className="text-[11px] font-mono text-emerald-900/80 leading-relaxed">
+                <p className="text-[11px] font-mono text-success leading-relaxed">
                   Backlog の「トリガー待ち」かつ「納品・検収」の課題を抽出し、親 PO と残検収明細を CSV にします。
                   CSV を確認・補正してから右上の CSV 一括インポートで登録してください。
                 </p>
@@ -2053,7 +2053,7 @@ export function ImportPage() {
           <button
             type="button"
             onClick={downloadInspectionTriggerCsv}
-            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+            className="text-[11px] uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4" />
             トリガー待ち CSV を抽出
@@ -2087,14 +2087,14 @@ export function ImportPage() {
           ここでは CSV 一括インポートの案内のみ表示。 */}
       {tab === "service_contract" && (
         <div className="space-y-4">
-          <div className="border border-emerald-200 bg-emerald-50 rounded-sm p-5">
+          <div className="border border-success/40 bg-success/10 rounded-sm p-5">
             <div className="flex items-start gap-3">
-              <FileSpreadsheet className="w-6 h-6 text-emerald-700 flex-shrink-0 mt-0.5" />
+              <FileSpreadsheet className="w-6 h-6 text-success flex-shrink-0 mt-0.5" />
               <div className="space-y-2">
-                <div className="font-bold text-emerald-900 text-sm">
+                <div className="font-bold text-success text-sm">
                   📋 業務委託 個別/単独契約 (業務明細付き) の一括登録
                 </div>
-                <p className="text-[11px] font-mono text-emerald-900/80 leading-relaxed">
+                <p className="text-[11px] font-mono text-success leading-relaxed">
                   業務委託マスタの単独契約 / 個別契約と、検収書 自動補完用の
                   業務明細 (N 行) を一括取込できます。
                   <br />
@@ -2108,7 +2108,7 @@ export function ImportPage() {
                   マスタを選ぶと、ここで登録した業務明細が
                   <code>order_lines_for_inspection</code> に自動展開されます
                 </p>
-                <p className="text-[10px] font-mono text-emerald-900/60">
+                <p className="text-[10px] font-mono text-success">
                   右上の「CSV 一括インポート」ボタンからテンプレートを
                   ダウンロード → 値を埋めて再アップロードしてください。
                 </p>
@@ -2124,21 +2124,21 @@ export function ImportPage() {
       {/* Phase 17e: 稟議マスタは CSV 一括インポートのみ対応 */}
       {tab === "ringi_master" && (
         <div className="space-y-4">
-          <div className="border border-emerald-200 bg-emerald-50 rounded-sm p-5">
+          <div className="border border-success/40 bg-success/10 rounded-sm p-5">
             <div className="flex items-start gap-3">
-              <FileSpreadsheet className="w-6 h-6 text-emerald-700 flex-shrink-0 mt-0.5" />
+              <FileSpreadsheet className="w-6 h-6 text-success flex-shrink-0 mt-0.5" />
               <div className="space-y-2">
-                <div className="font-bold text-emerald-900 text-sm">
+                <div className="font-bold text-success text-sm">
                   📋 稟議マスタの一括登録
                 </div>
-                <p className="text-[11px] font-mono text-emerald-900/80 leading-relaxed">
+                <p className="text-[11px] font-mono text-success leading-relaxed">
                   稟議番号 (5 桁数字, 例: 00001) と稟議タイトル / 起案者 /
                   承認日 等を CSV で一括投入できます。各文書 (発注書 /
                   個別利用許諾 / NDA 等) から ringi_numbers 列で参照する前に、
                   稟議マスタ側に先に登録しておくと N:N 紐付けがエラーなく
                   通ります。
                 </p>
-                <p className="text-[10px] font-mono text-emerald-800/70">
+                <p className="text-[10px] font-mono text-success">
                   既存の稟議番号と同じ値で再 import すると上書き更新 (upsert) されます。
                 </p>
               </div>
@@ -2147,7 +2147,7 @@ export function ImportPage() {
           <button
             type="button"
             onClick={() => setBulkOpen(true)}
-            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+            className="text-[11px] uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4" />
             稟議マスタ CSV 一括インポートを開く
@@ -2158,23 +2158,23 @@ export function ImportPage() {
       {/* Phase 22.21.34: 取引先マスタ CSV 一括取込 (VendorCsvImportDialog) */}
       {tab === "vendor_master" && (
         <div className="space-y-4">
-          <div className="border border-indigo-200 bg-indigo-50 rounded-sm p-5">
+          <div className="border border-primary/40 bg-primary/10 rounded-sm p-5">
             <div className="flex items-start gap-3">
-              <FileSpreadsheet className="w-6 h-6 text-indigo-700 flex-shrink-0 mt-0.5" />
+              <FileSpreadsheet className="w-6 h-6 text-primary flex-shrink-0 mt-0.5" />
               <div className="space-y-2">
-                <div className="font-bold text-indigo-900 text-sm">
+                <div className="font-bold text-primary text-sm">
                   🏢 取引先マスタ CSV 一括取込
                 </div>
-                <p className="text-[11px] font-mono text-indigo-900/80 leading-relaxed">
+                <p className="text-[11px] font-mono text-primary leading-relaxed">
                   取引先 (vendors) を CSV で一括登録・更新できます。vendor_code
                   と vendor_name は必須、その他 (住所 / 担当者 / 振込先 / 法人
                   個人区分 等) は任意です。
                 </p>
-                <p className="text-[11px] font-mono text-indigo-900/80 leading-relaxed">
+                <p className="text-[11px] font-mono text-primary leading-relaxed">
                   「プレビュー (dry-run)」で 何件 新規 / 更新 / スキップ / エラー
                   になるかを確認した上で、本番取り込みできます。
                 </p>
-                <p className="text-[10px] font-mono text-indigo-800/70">
+                <p className="text-[10px] font-mono text-primary">
                   既存 vendor_code との重複モードは「上書き / スキップ / 空欄補完」
                   から選択。
                 </p>
@@ -2185,7 +2185,7 @@ export function ImportPage() {
             href={vendorImportUrl}
             target="_blank"
             rel="noreferrer"
-            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted inline-flex items-center gap-2"
+            className="text-[11px] uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted inline-flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4" />
             取引先マスタ CSV 一括取込ページを開く (新タブ)
@@ -2197,22 +2197,22 @@ export function ImportPage() {
           CSV 一括インポートへの導線のみ表示。 */}
       {(tab === "nda" || tab === "sales_master") && (
         <div className="space-y-4">
-          <div className="border border-blue-200 bg-blue-50 rounded-sm p-5">
+          <div className="border border-primary/40 bg-primary/10 rounded-sm p-5">
             <div className="flex items-start gap-3">
-              <FileSpreadsheet className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+              <FileSpreadsheet className="w-6 h-6 text-primary flex-shrink-0 mt-0.5" />
               <div className="space-y-2">
-                <div className="font-bold text-blue-900 text-sm">
+                <div className="font-bold text-primary text-sm">
                   {tab === "nda"
                     ? "秘密保持契約書 (NDA)"
                     : "売買基本契約書 (3 バリエーション)"}
                   : CSV 一括インポートのみ対応
                 </div>
-                <p className="text-[11px] font-mono text-blue-800 leading-relaxed">
+                <p className="text-[11px] font-mono text-primary leading-relaxed">
                   {tab === "nda"
                     ? "NDA は単一フォーム入力よりも CSV 一括の方が運用しやすいため、一括インポート専用です。右上の「CSV 一括インポート」ボタンからどうぞ。"
                     : "売買基本契約書は buyer / standard / credit の 3 バリエーションを variant 列で振り分けます。テンプレ CSV をダウンロードしてサンプル行を参照してください。"}
                 </p>
-                <p className="text-[10px] font-mono text-blue-700/80">
+                <p className="text-[10px] font-mono text-primary">
                   generate_pdf 列に「未作成」を入れると、登録と同時に PDF も
                   自動生成 + Drive アップロードされます。「作成済」なら DB
                   登録のみ。
@@ -2223,7 +2223,7 @@ export function ImportPage() {
           <button
             type="button"
             onClick={() => setBulkOpen(true)}
-            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+            className="text-[11px] uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4" />
             CSV 一括インポートを開く

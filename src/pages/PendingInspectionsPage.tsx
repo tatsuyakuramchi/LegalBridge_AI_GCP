@@ -38,9 +38,9 @@ const fmtDate = (v: any): string | null => {
 //   は delivery_events 由来、capability_id 結線のベストエフォート)。
 type TaskKey = "overdue" | "inspect" | "partial" | "waiting"
 const BUCKETS: { key: TaskKey; label: string; short: string; chip: string; badge: string }[] = [
-  { key: "overdue", label: "納期超過・未報告", short: "納期超過", chip: "border-red-300 text-red-700 data-[on=true]:bg-red-600 data-[on=true]:text-white data-[on=true]:border-red-600", badge: "bg-red-100 text-red-800 hover:bg-red-100" },
-  { key: "inspect", label: "検収書作成（報告あり）", short: "要検収", chip: "border-amber-300 text-amber-700 data-[on=true]:bg-amber-500 data-[on=true]:text-white data-[on=true]:border-amber-500", badge: "bg-amber-100 text-amber-800 hover:bg-amber-100" },
-  { key: "partial", label: "一部検収", short: "一部検収", chip: "border-sky-300 text-sky-700 data-[on=true]:bg-sky-600 data-[on=true]:text-white data-[on=true]:border-sky-600", badge: "bg-sky-100 text-sky-800 hover:bg-sky-100" },
+  { key: "overdue", label: "納期超過・未報告", short: "納期超過", chip: "border-destructive/40 text-destructive data-[on=true]:bg-destructive data-[on=true]:text-white data-[on=true]:border-destructive", badge: "bg-destructive/10 text-destructive hover:bg-destructive/10" },
+  { key: "inspect", label: "検収書作成（報告あり）", short: "要検収", chip: "border-warning/40 text-warning data-[on=true]:bg-warning data-[on=true]:text-white data-[on=true]:border-warning", badge: "bg-warning/10 text-warning hover:bg-warning/10" },
+  { key: "partial", label: "一部検収", short: "一部検収", chip: "border-primary/40 text-primary data-[on=true]:bg-primary data-[on=true]:text-white data-[on=true]:border-primary", badge: "bg-primary/10 text-primary hover:bg-primary/10" },
   { key: "waiting", label: "報告待ち", short: "報告待ち", chip: "border-slate-300 text-slate-600 data-[on=true]:bg-slate-600 data-[on=true]:text-white data-[on=true]:border-slate-600", badge: "bg-slate-100 text-slate-700 hover:bg-slate-100" },
 ]
 const bucketOf = (k: TaskKey) => BUCKETS.find((b) => b.key === k)!
@@ -136,10 +136,10 @@ export function PendingInspectionsPage() {
     <div className="px-6 py-6 space-y-5 max-w-[1400px] mx-auto">
       <header className="flex items-end justify-between gap-6 border-b border-border pb-4">
         <div>
-          <h2 className="text-xl font-mono font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
             <ClipboardCheck className="h-5 w-5 text-muted-foreground" /> 検収タスク（発注書）
           </h2>
-          <p className="text-[13px] font-mono text-muted-foreground mt-1.5">
+          <p className="text-[13px] text-muted-foreground mt-1.5">
             納品報告に応じた検収書作成 / 納期超過・未報告の督促を管理します。
           </p>
         </div>
@@ -159,7 +159,7 @@ export function PendingInspectionsPage() {
             className="pl-8"
           />
         </div>
-        <label className="flex items-center gap-2 text-xs font-mono text-muted-foreground cursor-pointer">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
           <input type="checkbox" className="h-4 w-4" checked={onlyUninspected} onChange={(e) => setOnlyUninspected(e.target.checked)} />
           未検収のみ（一度も検収していない）
         </label>
@@ -168,7 +168,7 @@ export function PendingInspectionsPage() {
           <Layers />
           選択をまとめて検収 ({selected.size})
         </Button>
-        <span className="text-[12px] font-mono text-muted-foreground">
+        <span className="text-[12px] text-muted-foreground">
           {loading ? "読み込み中…" : `${pending.length} 件 / 残額合計 ${yen(totalRemaining)}`}
         </span>
       </div>
@@ -200,12 +200,12 @@ export function PendingInspectionsPage() {
         {error ? (
           <div className="p-8 text-center text-sm text-destructive">読み込み失敗: {error}</div>
         ) : pending.length === 0 && !loading ? (
-          <div className="p-12 text-center text-[13px] font-mono text-muted-foreground">
+          <div className="p-12 text-center text-[13px] text-muted-foreground">
             検収待ちの発注書はありません 🎉
           </div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="bg-muted/40 text-[11px] font-mono font-bold text-muted-foreground">
+            <thead className="bg-muted/40 text-[11px] font-bold text-muted-foreground">
               <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left [&>th]:whitespace-nowrap">
                 <th className="w-8">
                   <input
@@ -272,10 +272,10 @@ export function PendingInspectionsPage() {
                     <td className="min-w-[120px]">{r.vendor_name || r.vendor_code || "—"}</td>
                     <td className="min-w-[160px] whitespace-normal">{r.contract_title || "—"}</td>
                     <td className="text-right whitespace-nowrap font-mono">{yen(ordered)}</td>
-                    <td className="text-right whitespace-nowrap font-mono text-muted-foreground">{yen(inspected)}</td>
+                    <td className="text-right whitespace-nowrap text-muted-foreground">{yen(inspected)}</td>
                     <td className="text-right whitespace-nowrap font-mono font-bold">{yen(r.remaining_amount)}</td>
                     <td className="text-right whitespace-nowrap font-mono">
-                      <span className="text-amber-700 font-bold">{r.unissued_line_count}</span>
+                      <span className="text-warning font-bold">{r.unissued_line_count}</span>
                       <span className="text-muted-foreground">/{r.line_count}</span>
                     </td>
                     <td className="text-right whitespace-nowrap">{pct}%</td>
@@ -288,7 +288,7 @@ export function PendingInspectionsPage() {
                     </td>
                     <td className="whitespace-nowrap">
                       {deadline ? (
-                        <span className={r._task === "overdue" ? "text-red-600 font-bold" : "text-muted-foreground"}>
+                        <span className={r._task === "overdue" ? "text-destructive font-bold" : "text-muted-foreground"}>
                           {deadline}
                         </span>
                       ) : plannedDue ? (
@@ -316,9 +316,9 @@ export function PendingInspectionsPage() {
       </div>
 
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        タスク区分は <b className="text-red-700">納期超過・未報告</b>（納期 inspection_deadline を過ぎても納品報告 delivered_at が無い → 督促）、
-        <b className="text-amber-700">検収書作成（報告あり）</b>（納品報告あり・未検収の明細あり → 検収書を作成）、
-        <b className="text-sky-700">一部検収</b>、<b>報告待ち</b> です。納品報告・納期は delivery_events 由来（発注書への結線が取れているものに表示）。納品報告前で納期が無い行は、発注書の予定納期（明細の納期）を <span className="text-slate-400">予定</span> として表示します。
+        タスク区分は <b className="text-destructive">納期超過・未報告</b>（納期 inspection_deadline を過ぎても納品報告 delivered_at が無い → 督促）、
+        <b className="text-warning">検収書作成（報告あり）</b>（納品報告あり・未検収の明細あり → 検収書を作成）、
+        <b className="text-primary">一部検収</b>、<b>報告待ち</b> です。納品報告・納期は delivery_events 由来（発注書への結線が取れているものに表示）。納品報告前で納期が無い行は、発注書の予定納期（明細の納期）を <span className="text-slate-400">予定</span> として表示します。
         検収書を発行して<b>完全検収（残額0）</b>になると、その明細は自動で「発行済」になり一覧から外れます。
         「検収書を作成」で検収書フォームがその発注書を親に事前選択した状態で開きます（分割検収にも対応）。
       </p>
@@ -468,7 +468,7 @@ function BulkInspectionDialog({
                 <div className="text-destructive">エラー: {result.error}</div>
               ) : (
                 <div className="flex gap-4 flex-wrap">
-                  <span className="text-emerald-600">作成 <b>{succeeded}</b> 件</span>
+                  <span className="text-success">作成 <b>{succeeded}</b> 件</span>
                   {failed > 0 && <span className="text-destructive">失敗 <b>{failed}</b> 件</span>}
                 </div>
               )}

@@ -245,7 +245,7 @@ function LinkDocumentPanel({
           </Button>
         </div>
       )}
-      {msg && <p className="text-[11px] font-mono text-muted-foreground">{msg}</p>}
+      {msg && <p className="text-[11px] text-muted-foreground">{msg}</p>}
     </div>
   )
 }
@@ -253,7 +253,7 @@ function LinkDocumentPanel({
 function SectionHead({ label }: { label: string }) {
   return (
     <div className="mt-2 pt-2 border-t border-border">
-      <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-foreground/70">
+      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/70">
         {label}
       </span>
     </div>
@@ -263,11 +263,11 @@ function SectionHead({ label }: { label: string }) {
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="border border-border rounded-md px-3 py-2">
-      <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+      <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         {label}
       </div>
-      <div className="text-lg font-mono font-bold">{value}</div>
-      {sub && <div className="text-[10px] font-mono text-muted-foreground">{sub}</div>}
+      <div className="text-lg font-semibold">{value}</div>
+      {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
     </div>
   )
 }
@@ -352,7 +352,7 @@ function CloudSignHistoryEditor({
       <button
         type="button"
         onClick={openEditor}
-        className="text-[10px] font-mono px-2 py-0.5 rounded border border-border text-muted-foreground hover:border-foreground"
+        className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:border-foreground"
       >
         ✎ 送信履歴
       </button>
@@ -404,7 +404,7 @@ function CloudSignHistoryEditor({
               type="button"
               onClick={save}
               disabled={saving}
-              className="px-2 py-0.5 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              className="px-2 py-0.5 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
             >
               {saving ? "保存中…" : "保存"}
             </button>
@@ -478,7 +478,7 @@ export function ConditionLineDetailPage() {
   if (error || !line) {
     return (
       <div className="px-6 py-10 max-w-[900px] mx-auto">
-        <button onClick={() => navigate("/condition-lines")} className="text-xs font-mono text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+        <button onClick={() => navigate("/condition-lines")} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
           <ArrowLeft className="h-3.5 w-3.5" /> 一覧へ
         </button>
         <p className="mt-6 text-xs font-mono text-destructive">読み込み失敗: {error}</p>
@@ -498,7 +498,7 @@ export function ConditionLineDetailPage() {
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-5">
       <button
         onClick={() => navigate("/condition-lines")}
-        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
+        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> 条件明細一覧へ
       </button>
@@ -508,13 +508,13 @@ export function ConditionLineDetailPage() {
         <div className="flex items-center gap-3 flex-wrap">
           <Badge variant="outline" className="font-mono text-sm">{line.line_code}</Badge>
           <Badge variant="default">{line.status || "—"}</Badge>
-          <span className="text-xs font-mono text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             {line.payment_scheme} · {line.direction === "receivable" ? "受取" : "支払"}
             {line.rights_attribution ? ` · ${line.rights_attribution}` : ""}
           </span>
         </div>
-        <h2 className="text-xl font-mono font-bold">{line.subject || "(件名なし)"}</h2>
-        <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+        <h2 className="text-xl font-semibold">{line.subject || "(件名なし)"}</h2>
+        <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           {line.vendor_name && <span>{line.vendor_name}</span>}
           {line.delivery_date && <span>納期 {String(line.delivery_date).slice(0, 10)}</span>}
           {(line.term_start || line.term_end) && (
@@ -550,7 +550,7 @@ export function ConditionLineDetailPage() {
       </div>
       {depletable && target > 0 && (
         <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-          <div className="h-full bg-emerald-500" style={{ width: `${pct}%` }} />
+          <div className="h-full bg-success" style={{ width: `${pct}%` }} />
         </div>
       )}
 
@@ -558,7 +558,7 @@ export function ConditionLineDetailPage() {
       <section className="space-y-2">
         <SectionHead label="SEC · 01 / 実績と対になる文書" />
         <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] font-mono text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             検収書 / 利用許諾料計算書を明細に手作業でリンクし、ステータスを調整できます。
           </span>
           <button
@@ -575,7 +575,7 @@ export function ConditionLineDetailPage() {
         </div>
         <div className="space-y-1.5">
           {events.length === 0 && (
-            <p className="text-xs font-mono text-muted-foreground py-2">実績はまだありません。</p>
+            <p className="text-xs text-muted-foreground py-2">実績はまだありません。</p>
           )}
           {events.map((e) => (
             <div
@@ -590,16 +590,16 @@ export function ConditionLineDetailPage() {
                   <span>{yen(e.amount_ex_tax)}</span>
                   {e.document_number && <span className="text-muted-foreground">{e.document_number}</span>}
                   {e.lifecycle_status === "final" && !e.voided_at && (
-                    <Badge className="bg-emerald-600 text-white">final</Badge>
+                    <Badge className="bg-success text-white">final</Badge>
                   )}
                   {e.voided_at && <Badge variant="outline" className="text-muted-foreground">取消</Badge>}
                   {e.email_sent_at && (
-                    <Badge variant="outline" className="border-emerald-300 text-emerald-700" title={e.email_to || ""}>
+                    <Badge variant="outline" className="border-success/40 text-success" title={e.email_to || ""}>
                       ✉ メール送信済 {fmtSent2(e.email_sent_at)}
                     </Badge>
                   )}
                   {e.cloudsign_sent_at && (
-                    <Badge variant="outline" className="border-sky-300 text-sky-700">
+                    <Badge variant="outline" className="border-primary/40 text-primary">
                       ✍ CloudSign送信済 {fmtSent2(e.cloudsign_sent_at)}
                     </Badge>
                   )}
@@ -642,7 +642,7 @@ export function ConditionLineDetailPage() {
                   ? navigate(`/issues/${encodeURIComponent(String(issues[0]))}`)
                   : navigate("/documents/new")
               }
-              className="w-full flex items-center gap-2 border border-dashed border-border rounded-md px-3 py-2 text-xs font-mono text-muted-foreground hover:border-foreground hover:text-foreground"
+              className="w-full flex items-center gap-2 border border-dashed border-border rounded-md px-3 py-2 text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
             >
               <Plus className="h-3.5 w-3.5" /> 未実施 — 文書を作成
             </button>

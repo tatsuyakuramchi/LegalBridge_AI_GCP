@@ -61,7 +61,7 @@ function MiniLane({ stage }: { stage: UnifiedRow["stage"] }) {
           className={cn(
             "text-[9px] font-mono w-4 h-4 flex items-center justify-center rounded-sm border",
             c.on
-              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+              ? "bg-success/10 text-success border-success/40"
               : "bg-muted text-muted-foreground/50 border-border"
           )}
           title={c.label}
@@ -116,8 +116,8 @@ export function UnifiedIssuesListPage() {
     <div className="space-y-4 p-4">
       <div className="flex items-center gap-3 flex-wrap">
         <Layers className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-sm font-mono font-bold uppercase tracking-[0.14em]">新課題(統一課題)</h1>
-        <span className="text-[11px] font-mono text-muted-foreground">契約単位で締結+支払フェイズ課題を束ねる</span>
+        <h1 className="text-sm font-bold uppercase tracking-[0.14em]">新課題(統一課題)</h1>
+        <span className="text-[11px] text-muted-foreground">契約単位で締結+支払フェイズ課題を束ねる</span>
         <div className="flex-1" />
         <button
           type="button"
@@ -144,19 +144,19 @@ export function UnifiedIssuesListPage() {
             className="pl-8 h-8 text-[12px]"
           />
         </div>
-        <label className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground cursor-pointer">
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
           <input type="checkbox" checked={hideCompleted} onChange={(e) => setHideCompleted(e.target.checked)} />
           完了を隠す
         </label>
-        <label className="flex items-center gap-1.5 text-[11px] font-mono text-muted-foreground cursor-pointer">
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
           <input type="checkbox" checked={onlyNextAction} onChange={(e) => setOnlyNextAction(e.target.checked)} />
           次アクション有りのみ
         </label>
-        <span className="text-[11px] font-mono text-muted-foreground">{filtered.length} / {rows.length} 件</span>
+        <span className="text-[11px] text-muted-foreground">{filtered.length} / {rows.length} 件</span>
       </div>
 
       {error && (
-        <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[12px] font-mono">取得失敗: {error}</div>
+        <div className="border border-destructive/40 bg-destructive/10 text-destructive rounded-sm px-4 py-2 text-[12px] font-mono">取得失敗: {error}</div>
       )}
 
       {loading ? (
@@ -166,7 +166,7 @@ export function UnifiedIssuesListPage() {
       ) : (
         <div className="border border-border rounded-sm overflow-hidden">
           {/* ヘッダ行 */}
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 px-3 py-2 bg-muted/50 text-[10px] font-mono uppercase tracking-wider text-muted-foreground border-b border-border">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 px-3 py-2 bg-muted/50 text-[10px] uppercase tracking-wider text-muted-foreground border-b border-border">
             <span>契約 / 取引先</span>
             <span>段階</span>
             <span className="text-right">明細</span>
@@ -175,7 +175,7 @@ export function UnifiedIssuesListPage() {
             <span></span>
           </div>
           {filtered.length === 0 ? (
-            <div className="text-center py-10 text-[12px] font-mono text-muted-foreground">該当なし</div>
+            <div className="text-center py-10 text-[12px] text-muted-foreground">該当なし</div>
           ) : (
             filtered.map((r) => (
               <button
@@ -192,7 +192,7 @@ export function UnifiedIssuesListPage() {
                 disabled={!r.pending && r.capability_id == null}
                 className={cn(
                   "w-full grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 px-3 py-2.5 items-center text-left border-b border-border last:border-0 hover:bg-muted/40",
-                  r.pending && "bg-amber-50/40"
+                  r.pending && "bg-warning/10"
                 )}
               >
                 <div className="min-w-0">
@@ -202,11 +202,11 @@ export function UnifiedIssuesListPage() {
                         ? r.contracting_issue_key
                         : r.document_number || `cap${r.capability_id}`}
                     </span>
-                    {r.pending && <Badge className="bg-amber-500 text-white hover:bg-amber-500 text-[9px]">未着手</Badge>}
+                    {r.pending && <Badge className="bg-warning text-white hover:bg-warning text-[9px]">未着手</Badge>}
                     {r.record_type && <Badge variant="outline" className="text-[9px]">{r.record_type}</Badge>}
-                    {r.completed && <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[9px]">完了</Badge>}
+                    {r.completed && <Badge className="bg-success text-white hover:bg-success text-[9px]">完了</Badge>}
                   </div>
-                  <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1 truncate">
+                  <div className="text-[10px] text-muted-foreground flex items-center gap-1 truncate">
                     <User className="w-3 h-3 flex-shrink-0" />{r.vendor_name || "—"}
                     {r.contract_title ? <span className="truncate"> · {r.contract_title}</span> : null}
                   </div>
@@ -214,20 +214,20 @@ export function UnifiedIssuesListPage() {
                 <MiniLane stage={r.stage} />
                 <span className="text-[11px] font-mono text-right tabular-nums">
                   {r.line_count}
-                  {r.open_lines > 0 && <span className="text-sky-700"> / 開{r.open_lines}</span>}
+                  {r.open_lines > 0 && <span className="text-primary"> / 開{r.open_lines}</span>}
                 </span>
                 <span className="text-[11px] font-mono text-right tabular-nums">
                   {r.pending ? (
-                    <span className="text-amber-700">{r.status_name || "起案済"}</span>
+                    <span className="text-warning">{r.status_name || "起案済"}</span>
                   ) : Number(r.remaining_amount) > 0 ? (
-                    <span className="text-amber-700 font-bold">残{yen(r.remaining_amount)}</span>
+                    <span className="text-warning font-bold">残{yen(r.remaining_amount)}</span>
                   ) : (
                     <span className="text-muted-foreground">{r.event_count}実績</span>
                   )}
                 </span>
                 <span className="text-[11px] font-mono text-right tabular-nums">
                   {r.issue_count}
-                  {r.next_action_lines > 0 && <span className="text-amber-700"> ▲{r.next_action_lines}</span>}
+                  {r.next_action_lines > 0 && <span className="text-warning"> ▲{r.next_action_lines}</span>}
                 </span>
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </button>
@@ -236,7 +236,7 @@ export function UnifiedIssuesListPage() {
         </div>
       )}
 
-      <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+      <p className="text-[10px] text-muted-foreground leading-relaxed">
         段階レーン: 締=締結文書 / 検=検収書 / 計=計算書。残=固定費の未消化額、実績=支払イベント数。
         課題列の ▲ は「次に出すべき文書がある明細数」。行クリックで新課題詳細へ。
         「未着手」= 起案済だが締結文書が未作成の課題(クリックで課題詳細→文書作成へ)。文書作成で通常の契約に昇格。

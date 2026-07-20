@@ -120,7 +120,7 @@ function SectionHead({ label, icon }: { label: string; icon?: React.ReactNode })
   return (
     <div className="mt-1 pt-2 border-t border-border flex items-center gap-1.5">
       {icon}
-      <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-foreground/70">
+      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-foreground/70">
         {label}
       </span>
     </div>
@@ -130,7 +130,7 @@ function SectionHead({ label, icon }: { label: string; icon?: React.ReactNode })
 function LifecycleBadge({ status }: { status?: string }) {
   const s = status || "final"
   if (s === "final")
-    return <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">final</Badge>
+    return <Badge className="bg-success text-white hover:bg-success">final</Badge>
   if (s === "archived_draft" || s === "voided" || s === "superseded")
     return <Badge variant="outline" className="text-muted-foreground line-through">{s}</Badge>
   return <Badge variant="outline" className="text-muted-foreground">{s}</Badge>
@@ -138,9 +138,9 @@ function LifecycleBadge({ status }: { status?: string }) {
 
 function PhaseBadge({ phase }: { phase: string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    contracting: { label: "締結", cls: "bg-indigo-100 text-indigo-900" },
-    payment: { label: "支払", cls: "bg-amber-100 text-amber-900" },
-    mixed: { label: "締結+支払", cls: "bg-violet-100 text-violet-900" },
+    contracting: { label: "締結", cls: "bg-primary/10 text-primary" },
+    payment: { label: "支払", cls: "bg-warning/10 text-warning" },
+    mixed: { label: "締結+支払", cls: "bg-info/10 text-info" },
   }
   const m = map[phase] || { label: phase, cls: "bg-muted text-foreground" }
   return <span className={cn("text-[10px] font-mono px-1.5 py-0.5 rounded-sm", m.cls)}>{m.label}</span>
@@ -149,13 +149,13 @@ function PhaseBadge({ phase }: { phase: string }) {
 function LineStatusBadge({ status }: { status: string | null }) {
   const s = status || ""
   if (s === "fulfilled" || s === "expired")
-    return <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">{s === "expired" ? "期間満了" : "完済"}</Badge>
+    return <Badge className="bg-success text-white hover:bg-success">{s === "expired" ? "期間満了" : "完済"}</Badge>
   if (s === "cancelled" || s === "closed_short")
     return <Badge variant="outline" className="text-muted-foreground line-through">{s}</Badge>
   if (s === "pending")
     return <Badge variant="outline" className="text-muted-foreground">開始前</Badge>
   // open / partially_fulfilled / active
-  return <Badge className="bg-sky-600 text-white hover:bg-sky-600">{s === "active" ? "継続中" : s === "partially_fulfilled" ? "一部消化" : "未消化"}</Badge>
+  return <Badge className="bg-primary text-white hover:bg-primary">{s === "active" ? "継続中" : s === "partially_fulfilled" ? "一部消化" : "未消化"}</Badge>
 }
 
 // 段階レーン(締結 → 検収 → 計算)。書類が出ている段階を点灯。
@@ -180,7 +180,7 @@ function StageLane({ documents }: { documents: UDoc[] }) {
             className={cn(
               "text-[10px] font-mono px-2 py-0.5 rounded-sm border",
               s.on
-                ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                ? "bg-success/10 text-success border-success/40"
                 : "bg-muted text-muted-foreground border-border"
             )}
           >
@@ -293,7 +293,7 @@ export function UnifiedIssuePage() {
         <Button variant="ghost" size="sm" onClick={() => navigate("/unified")} className="gap-1">
           <ArrowLeft className="w-4 h-4" /> 新課題一覧
         </Button>
-        <span className="text-[11px] font-mono text-muted-foreground">統一課題(契約単位)</span>
+        <span className="text-[11px] text-muted-foreground">統一課題(契約単位)</span>
       </div>
 
       {loading && (
@@ -302,12 +302,12 @@ export function UnifiedIssuePage() {
         </div>
       )}
       {error && (
-        <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[12px] font-mono">
+        <div className="border border-destructive/40 bg-destructive/10 text-destructive rounded-sm px-4 py-2 text-[12px] font-mono">
           取得失敗: {error}
         </div>
       )}
       {createError && (
-        <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[12px] font-mono">
+        <div className="border border-destructive/40 bg-destructive/10 text-destructive rounded-sm px-4 py-2 text-[12px] font-mono">
           {createError}
         </div>
       )}
@@ -327,7 +327,7 @@ export function UnifiedIssuePage() {
               {h.contract_title && (
                 <div className="text-[13px] text-foreground/90">{h.contract_title}</div>
               )}
-              <div className="flex items-center gap-4 flex-wrap text-[11px] font-mono text-muted-foreground">
+              <div className="flex items-center gap-4 flex-wrap text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1"><User className="w-3 h-3" />{h.vendor_name || "—"}</span>
                 <span className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
@@ -352,7 +352,7 @@ export function UnifiedIssuePage() {
                       className="inline-flex items-center gap-1 rounded-sm border border-border px-1.5 py-0.5 text-[11px] hover:bg-muted/60"
                       title={mt.title}
                     >
-                      <span className="font-mono text-sky-700">{mt.matter_code || `#${mt.id}`}</span>
+                      <span className="font-mono text-primary">{mt.matter_code || `#${mt.id}`}</span>
                       <span className="text-muted-foreground truncate max-w-[160px]">{mt.title}</span>
                     </button>
                   ))}
@@ -366,7 +366,7 @@ export function UnifiedIssuePage() {
           <div>
             <SectionHead label="SEC · 01 / 取引循環進捗(条件明細)" icon={<ListChecks className="w-3 h-3 text-foreground/60" />} />
             {lines.length === 0 ? (
-              <div className="text-[11px] font-mono text-muted-foreground py-3">条件明細はまだありません。</div>
+              <div className="text-[11px] text-muted-foreground py-3">条件明細はまだありません。</div>
             ) : (
               <div className="mt-2 space-y-2">
                 {lines.map((l) => (
@@ -398,12 +398,12 @@ export function UnifiedIssuePage() {
                       )}
                     </div>
                     {/* 完了条件: 固定費=残額 / ロイヤリティ=期間+MG/AG */}
-                    <div className="mt-1.5 text-[10px] font-mono text-muted-foreground flex items-center gap-4 flex-wrap">
+                    <div className="mt-1.5 text-[10px] text-muted-foreground flex items-center gap-4 flex-wrap">
                       {["lump_sum", "per_unit", "installment"].includes(l.payment_scheme || "") ? (
                         <>
                           <span>契約 {yen(l.amount_ex_tax)}</span>
                           <span>消化 {yen(l.consumed_amount)}</span>
-                          <span className={cn(Number(l.remaining_amount) > 0 && "text-amber-700 font-bold")}>
+                          <span className={cn(Number(l.remaining_amount) > 0 && "text-warning font-bold")}>
                             残 {l.remaining_amount == null ? "—" : yen(l.remaining_amount)}
                           </span>
                         </>
@@ -421,7 +421,7 @@ export function UnifiedIssuePage() {
               </div>
             )}
             {ghostLines.length > 0 && (
-              <div className="mt-2 text-[10px] font-mono text-amber-700">
+              <div className="mt-2 text-[10px] font-mono text-warning">
                 次に出すべき文書: {ghostLines.length}件(各明細の「作成」から起案)
               </div>
             )}
@@ -431,7 +431,7 @@ export function UnifiedIssuePage() {
           <div>
             <SectionHead label={`SEC · 02 / 構成課題(${issues.length})`} icon={<GitMerge className="w-3 h-3 text-foreground/60" />} />
             {issues.length === 0 ? (
-              <div className="text-[11px] font-mono text-muted-foreground py-3">紐づく Backlog 課題はありません。</div>
+              <div className="text-[11px] text-muted-foreground py-3">紐づく Backlog 課題はありません。</div>
             ) : (
               <div className="mt-2 space-y-1.5">
                 {issues.map((i) => (
@@ -444,7 +444,7 @@ export function UnifiedIssuePage() {
                       {i.issue_key}
                     </button>
                     {i.status_name && (
-                      <span className="text-[10px] font-mono text-muted-foreground">{i.status_name}</span>
+                      <span className="text-[10px] text-muted-foreground">{i.status_name}</span>
                     )}
                     {i.merged && <Badge variant="outline" className="text-[10px] text-muted-foreground">統合済</Badge>}
                     <div className="flex-1" />
@@ -461,7 +461,7 @@ export function UnifiedIssuePage() {
                 ))}
               </div>
             )}
-            <div className="mt-1 text-[10px] font-mono text-muted-foreground">
+            <div className="mt-1 text-[10px] text-muted-foreground">
               終結・統合は各課題の詳細画面から実行できます。
             </div>
           </div>
@@ -470,7 +470,7 @@ export function UnifiedIssuePage() {
           <div>
             <SectionHead label={`SEC · 03 / 文書(${documents.length})`} icon={<FileText className="w-3 h-3 text-foreground/60" />} />
             {documents.length === 0 ? (
-              <div className="text-[11px] font-mono text-muted-foreground py-3">文書はまだありません。</div>
+              <div className="text-[11px] text-muted-foreground py-3">文書はまだありません。</div>
             ) : (
               <div className="mt-2 space-y-1.5">
                 {documents.map((d) => (
@@ -486,7 +486,7 @@ export function UnifiedIssuePage() {
                         href={d.drive_link}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-[10px] font-mono underline text-muted-foreground hover:text-foreground flex items-center gap-1"
+                        className="text-[10px] underline text-muted-foreground hover:text-foreground flex items-center gap-1"
                       >
                         <ExternalLink className="w-3 h-3" /> Drive
                       </a>
@@ -511,7 +511,7 @@ export function UnifiedIssuePage() {
       )}
 
       {!loading && !h && !error && (
-        <div className="text-center py-12 text-[12px] font-mono text-muted-foreground">
+        <div className="text-center py-12 text-[12px] text-muted-foreground">
           新課題が見つかりません。
         </div>
       )}
