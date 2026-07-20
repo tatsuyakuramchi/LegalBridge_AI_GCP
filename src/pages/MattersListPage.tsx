@@ -212,21 +212,14 @@ export function MattersListPage() {
             </div>
           ) : (
             rows.map((m) => (
-              // UIC-07(設計 v1.4 Phase B): ネストした interactive control(button 内 role=button)を解消。
-              //   行コンテナは非インタラクティブな div にし、遷移は単一の overlay button で担う
-              //   (行全体をクリック可・キーボード可)。統合カートは overlay の上に載る独立 button。
-              //   [&>*]:pointer-events-none で行内テキストのクリックを overlay へ透過させる。
+              // UIC-07(設計 v1.4 Phase B): ネストした interactive control を避けるため、
+              //   詳細遷移は右端の明示的な「開く」ボタン、統合カートは別ボタン(兄弟・非ネスト)。
+              //   旧: 透明オーバーレイ全面ボタン + [&>*]:pointer-events-none は、ビルド時の
+              //   ユーティリティ順で overlay が pointer-events:none になり無反応化するため撤去。
               <div
                 key={m.id}
-                className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_auto] gap-y-1.5 md:gap-2 px-3 py-2.5 border-border/60 md:border-b max-md:mb-2 max-md:rounded-lg max-md:border max-md:bg-card items-start md:items-center text-left hover:bg-muted/40 transition-colors w-full [&>*]:pointer-events-none"
+                className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_auto] gap-y-1.5 md:gap-2 px-3 py-2.5 border-border/60 md:border-b max-md:mb-2 max-md:rounded-lg max-md:border max-md:bg-card items-start md:items-center hover:bg-muted/40 transition-colors w-full"
               >
-                {/* 行全体を案件詳細へ(単一のインタラクティブ要素)。 */}
-                <button
-                  type="button"
-                  onClick={() => navigate(`/matters/${m.id}`)}
-                  aria-label={`案件 ${m.matter_code || `#${m.id}`}${m.title ? ` ${m.title}` : ""} を開く`}
-                  className="absolute inset-0 z-0 pointer-events-auto rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                />
                 {/* 案件 / 相手方 */}
                 <span className="min-w-0">
                   <span className="flex items-center gap-2">
@@ -328,9 +321,14 @@ export function MattersListPage() {
                     <GitMerge className="h-3.5 w-3.5" />
                   </button>
                 </span>
-                <span className="justify-self-start md:justify-self-end inline-flex items-center gap-0.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] font-semibold text-primary">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/matters/${m.id}`)}
+                  aria-label={`案件 ${m.matter_code || `#${m.id}`}${m.title ? ` ${m.title}` : ""} を開く`}
+                  className="justify-self-start md:justify-self-end inline-flex items-center gap-0.5 rounded-md border border-primary/40 bg-primary/5 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
                   開く <ChevronRight className="h-3.5 w-3.5" />
-                </span>
+                </button>
               </div>
             ))
           )}
