@@ -126,6 +126,7 @@ export function MatterDetailPage() {
 
   const [data, setData] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(true)
+  const [loadErr, setLoadErr] = React.useState<string | null>(null)
   const [saving, setSaving] = React.useState(false)
   const [edit, setEdit] = React.useState<any>({})
   // 閲覧主体UI: 案件情報の編集フォームは普段は畳んでおく。
@@ -204,6 +205,7 @@ export function MatterDetailPage() {
 
   const load = React.useCallback(async () => {
     setLoading(true)
+    setLoadErr(null)
     try {
       const json: any = await matterClient.get(matterId)
       setData(json)
@@ -223,7 +225,9 @@ export function MatterDetailPage() {
         blocked_reason: json.matter.blocked_reason || "",
       })
     } catch (e: any) {
-      push(String(e?.message || e), "error")
+      const msg = String(e?.message || e)
+      setLoadErr(msg)
+      push(msg, "error")
     } finally {
       setLoading(false)
     }
@@ -684,10 +688,28 @@ export function MatterDetailPage() {
       .slice(0, 10)
   }, [data])
 
-  if (loading || !data) {
+  if (loading) {
     return (
       <div className="px-3 py-10 text-center text-[12px] text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin inline mr-2" />読み込み中…
+      </div>
+    )
+  }
+  if (!data) {
+    return (
+      <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-4">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/matters")}>
+          <ArrowLeft className="h-4 w-4 mr-1" /> 案件一覧に戻る
+        </Button>
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-center space-y-3">
+          <p className="text-sm font-semibold text-destructive">案件詳細を読み込めませんでした</p>
+          {loadErr && (
+            <p className="text-[12px] font-mono text-muted-foreground break-all">{loadErr}</p>
+          )}
+          <Button variant="outline" size="sm" onClick={() => load()}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" /> 再読み込み
+          </Button>
+        </div>
       </div>
     )
   }
