@@ -18,8 +18,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { AppFormField, CompactFormGrid } from "@/src/components/form"
 import { useToast } from "@/components/ui/toast"
 import {
   Dialog,
@@ -142,11 +142,11 @@ export function MattersListPage() {
       {/* Header */}
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
-          <p className="retro-tag mb-1.5">MAT · 一覧</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight flex items-center gap-2">
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">案件管理</p>
+          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <FolderKanban className="h-6 w-6 text-muted-foreground" /> 案件管理
           </h2>
-          <p className="text-[13px] font-mono text-muted-foreground mt-1.5">
+          <p className="text-[13px] text-muted-foreground mt-1.5">
             重複・部分発生した Backlog 課題を1案件に束ね、文書・送信履歴・条件明細を総合管理します。
           </p>
         </div>
@@ -192,7 +192,7 @@ export function MattersListPage() {
         <CardContent className="p-0">
           {/* LB-06 (§5.2): 作業中心の列構成。
               案件/相手方 | 現在工程(+ブロッカー) | 次アクション | 担当 | 期限 | 文書等 | 更新 */}
-          <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-2 px-3 py-2.5 border-b border-border text-[11px] font-mono font-bold text-muted-foreground">
+          <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-2 px-3 py-2.5 border-b border-border text-[11px] font-semibold text-muted-foreground">
             <span>案件 / 相手方</span>
             <span>工程</span>
             <span>次アクション</span>
@@ -242,12 +242,12 @@ export function MattersListPage() {
                 </span>
                 {/* 現在工程 + ブロッカー */}
                 <span className="min-w-0">
-                  <span className="block text-[12px] font-mono truncate">
+                  <span className="block text-[12px] truncate">
                     {m.lifecycle_stage ? STAGE_LABEL[m.lifecycle_stage] || m.lifecycle_stage : "—"}
                   </span>
                   {m.blocked_reason && (
                     <span
-                      className="inline-flex items-center gap-1 text-[10px] font-mono text-destructive"
+                      className="inline-flex items-center gap-1 text-[10px] text-destructive"
                       title={`ブロッカー: ${m.blocked_reason}`}
                     >
                       <AlertTriangle className="h-3 w-3 shrink-0" />
@@ -262,25 +262,25 @@ export function MattersListPage() {
                       <span className="block text-[12px] truncate" title={m.next_task_title}>
                         {m.next_task_title}
                       </span>
-                      <span className="block text-[10px] font-mono text-muted-foreground truncate">
+                      <span className="block text-[10px] text-muted-foreground truncate">
                         {m.next_task_assignee_name || ""}
                         {m.next_task_due_at ? ` 〜${fmtShortDate(m.next_task_due_at)}` : ""}
                       </span>
                     </>
                   ) : (
-                    <span className="text-[11px] font-mono text-muted-foreground">
+                    <span className="text-[11px] text-muted-foreground">
                       {m.open_task_count > 0 ? `未完了 ${m.open_task_count} 件(次アクション未選定)` : "—"}
                     </span>
                   )}
                 </span>
                 {/* 担当 */}
-                <span className="text-[11px] font-mono truncate" title={m.owner_name || ""}>
+                <span className="text-[11px] truncate" title={m.owner_name || ""}>
                   <span className="md:hidden text-muted-foreground">担当 </span>
                   {m.owner_name || "—"}
                 </span>
                 {/* 期限 */}
                 <span
-                  className={`text-left md:text-center text-[11px] font-mono tabular-nums ${
+                  className={`text-left md:text-center text-[11px] tabular-nums ${
                     isOverdue(m) ? "text-destructive font-bold" : "text-muted-foreground"
                   }`}
                   title={isOverdue(m) ? "期限超過" : undefined}
@@ -302,7 +302,7 @@ export function MattersListPage() {
                 </span>
                 {/* 最終更新 + 統合カード追加 */}
                 <span className="flex items-center justify-end gap-1.5">
-                  <span className="text-[11px] font-mono text-muted-foreground tabular-nums">
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
                     {fmtShortDate(m.updated_at)}
                   </span>
                   <button
@@ -321,7 +321,7 @@ export function MattersListPage() {
                     }}
                     className={`relative z-10 pointer-events-auto inline-flex items-center justify-center h-6 w-6 rounded-sm border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                       mergeCart.has(m.id)
-                        ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40"
+                        ? "border-primary bg-primary/10 text-primary"
                         : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
                     }`}
                   >
@@ -341,18 +341,17 @@ export function MattersListPage() {
           <DialogHeader>
             <DialogTitle>新規案件</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-[12px]">案件名 *</Label>
+          <CompactFormGrid columns={1} className="py-2">
+            <AppFormField label="案件名" required htmlFor="mt-title">
               <Input
+                id="mt-title"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
                 placeholder="例: 株式会社〇〇 ライセンス案件"
                 className="h-8 text-[12px]"
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[12px]">相手方（取引先マスタから検索）</Label>
+            </AppFormField>
+            <AppFormField label="相手方" description="取引先マスタから検索">
               <VendorSearchSelect
                 vendors={vendors}
                 selectedCode={form.vendor_code}
@@ -365,18 +364,17 @@ export function MattersListPage() {
                   })
                 }
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[12px]">代表 Backlog 課題（Request から検索）</Label>
+            </AppFormField>
+            <AppFormField label="代表 Backlog 課題" description="Request から検索">
               <IssuePicker
                 issues={issues as any}
                 value={form.primary_issue_key || undefined}
                 onSelect={(i) => setForm({ ...form, primary_issue_key: i?.issueKey ?? "" })}
               />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[12px]">ステータス</Label>
+            </AppFormField>
+            <AppFormField label="ステータス" htmlFor="mt-status">
               <NativeSelect
+                id="mt-status"
                 value={form.status}
                 onChange={(e: any) => setForm({ ...form, status: e.target.value })}
                 className="h-8 text-[12px]"
@@ -386,8 +384,8 @@ export function MattersListPage() {
                 <option value="closed">完了</option>
                 <option value="archived">アーカイブ</option>
               </NativeSelect>
-            </div>
-          </div>
+            </AppFormField>
+          </CompactFormGrid>
           <DialogFooter>
             <Button variant="ghost" size="sm" onClick={() => setOpenCreate(false)}>
               キャンセル
