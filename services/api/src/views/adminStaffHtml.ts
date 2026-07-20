@@ -199,51 +199,18 @@ export function adminStaffPage(opts: AdminStaffPageOpts): string {
         const pill = role === 'admin'
           ? '<span class="pill admin">admin</span>'
           : '<span class="pill viewer">viewer</span>';
-        const btnLabel = role === 'admin' ? 'viewer に変更' : 'admin に昇格';
-        const newRole = role === 'admin' ? 'viewer' : 'admin';
+        // 全UIリニューアル A(ステップ2+3): SSR ポータルは閲覧専用。役割変更は admin-ui に
+        //   集約(search-api の PATCH /api/master/staff/:email/role は撤去)。操作列は表示のみ。
         html += '<tr>'
           + '<td>' + escapeHtml(s.staff_name || '') + '</td>'
           + '<td><span style="font-family:ui-monospace,monospace;font-size:12px;">' + escapeHtml(s.email || '') + '</span></td>'
           + '<td>' + escapeHtml(s.department || '-') + '</td>'
           + '<td>' + pill + '</td>'
-          + '<td>'
-          + (s.email
-              ? '<button data-email="' + escapeHtml(s.email) + '" data-role="' + newRole + '" class="role-btn">' + btnLabel + '</button>'
-              : '<span class="muted">email 無</span>')
-          + '</td>'
+          + '<td><span class="muted" style="font-size:11px;">admin-ui で変更</span></td>'
           + '</tr>';
       }
       html += '</tbody></table>';
       $('staff-container').innerHTML = html;
-      document.querySelectorAll('.role-btn').forEach((btn) => {
-        btn.addEventListener('click', async () => {
-          const email = btn.dataset.email;
-          const role = btn.dataset.role;
-          if (!confirm(email + ' を ' + role + ' に変更します。よろしいですか?')) return;
-          btn.disabled = true;
-          try {
-            const res = await fetch(
-              '/api/master/staff/' + encodeURIComponent(email) + '/role',
-              {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ app_role: role }),
-              }
-            );
-            const data = await res.json();
-            if (!res.ok || data.ok === false) {
-              throw new Error(data.error || 'HTTP ' + res.status);
-            }
-            $('staff-msg').innerHTML =
-              '<div class="toast">✓ ' + escapeHtml(email) + ' → ' + escapeHtml(role) + ' に変更しました</div>';
-            await loadStaff();
-          } catch (err) {
-            $('staff-msg').innerHTML =
-              '<div class="error-row">❌ 変更失敗: ' + escapeHtml(String(err.message || err)) + '</div>';
-            btn.disabled = false;
-          }
-        });
-      });
     }
 
     $('staff-search').addEventListener('input', renderStaff);

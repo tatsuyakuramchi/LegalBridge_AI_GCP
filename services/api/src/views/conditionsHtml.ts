@@ -74,7 +74,10 @@ export function conditionsPage(
   opts: { active?: PopNavKey; deptCode?: string | null; canEdit?: boolean } = {}
 ): string {
   // 編集(紐付けモーダル)は admin のみ。FIN viewer 等の閲覧専用ビューでは無効化。
-  const canEdit = opts.canEdit ?? role === "admin";
+  // 全UIリニューアル A(ステップ2+3): SSR ポータルは閲覧専用。条件明細の紐付け編集は
+  //   admin-ui に集約(search-api の PUT /api/conditions/:id/links は撤去)。canEdit を
+  //   常に false に固定し、紐付けモーダル・自動紐付け/状態ボタンを描画しない。
+  const canEdit = false;
   const toolbar = `
       ${canEdit ? '<button class="pop-btn sm" id="btn-autolink" title="原作/作品/基本契約/稟議を自動推定して空欄を補完(手動設定は温存)">🔗 自動紐付け</button>' : ""}
       ${canEdit ? '<button class="pop-btn sm" id="btn-autostatus" title="発注書締結済/検収書発行済/支払申請出力済 を実データから自動判定して同期(手動切替も可)">✅ 状態 自動判定</button>' : ""}

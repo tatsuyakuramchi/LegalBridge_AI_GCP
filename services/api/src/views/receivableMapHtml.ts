@@ -177,40 +177,18 @@ export function receivableMapPage(role: Role = "viewer"): string {
     try{
       var d=await jget("/api/works/"+encodeURIComponent(workId)+"/aliases");
       var rows=d.rows||[];
+      // 全UIリニューアル A(ステップ2+3): SSR ポータルは閲覧専用。別名の追加/削除は
+      //   admin-ui の作品モデルに集約(search-api の write ルートは撤去)。表示のみ残す。
       var list=rows.length?rows.map(function(a){
         return '<div class="alias-row"><b>'+esc(a.alias_title)+'</b>'+
           (a.party_name?' <span class="kpill">'+esc(a.party_name)+'</span>':'')+
           (a.context?' <span class="ctx">'+esc(a.context)+'</span>':'')+
-          '<span style="flex:1"></span><a href="javascript:void(0)" onclick="delAlias('+a.id+','+workId+')" style="color:#c43c63;text-decoration:none;font-weight:800;">削除</a></div>';
-      }).join(""):'<div class="ctx">別名は未登録です。他社が付けた改題タイトル等を登録すると、その名称で作品を検索できます。</div>';
+          '</div>';
+      }).join(""):'<div class="ctx">別名は未登録です。</div>';
       p.innerHTML='<div class="alias-card"><h3>📝 タイトル別名(他社/改題タイトルの名寄せ)</h3>'+list+
-        '<div class="alias-add">'+
-          '<input id="al-title" placeholder="別名(例: K社の出版タイトル)" style="min-width:220px;">'+
-          '<input id="al-ctx" placeholder="文脈(例: K社 海外出版版)" style="min-width:200px;">'+
-          '<button class="pop-btn sm" onclick="addAlias('+workId+')">＋ 別名を追加</button>'+
-        '</div></div>';
+        '<div class="ctx" style="margin-top:8px">別名の追加・削除は admin-ui の作品モデルで行ってください(このポータルは閲覧専用です)。</div></div>';
     }catch(e){p.innerHTML='';}
   }
-  window.addAlias=async function(workId){
-    var title=(document.getElementById("al-title").value||"").trim();
-    if(!title){alert("別名を入力してください");return;}
-    var ctx=(document.getElementById("al-ctx").value||"").trim();
-    try{
-      var res=await fetch("/api/works/"+encodeURIComponent(workId)+"/aliases",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({alias_title:title,context:ctx||null})});
-      var d=await res.json().catch(function(){return{};});
-      if(!res.ok||d.ok===false)throw new Error(d.error||("HTTP "+res.status));
-      loadAliases(workId);
-    }catch(e){alert("追加に失敗: "+(e&&e.message?e.message:e));}
-  };
-  window.delAlias=async function(id,workId){
-    if(!confirm("この別名を削除しますか?"))return;
-    try{
-      var res=await fetch("/api/work-aliases/"+id,{method:"DELETE",credentials:"same-origin"});
-      var d=await res.json().catch(function(){return{};});
-      if(!res.ok||d.ok===false)throw new Error(d.error||("HTTP "+res.status));
-      loadAliases(workId);
-    }catch(e){alert("削除に失敗: "+(e&&e.message?e.message:e));}
-  };
 
   /* ---- 他社/改題タイトル → 作品 解決 ---- */
   var resolveTimer=null;
