@@ -183,7 +183,7 @@ export function ReceivableMapPanel() {
       ) : (
         <div className="space-y-0">
           {/* 系譜合計 */}
-          <div className="flex gap-6 flex-wrap rounded-2xl px-5 py-3 mb-4 text-white bg-gradient-to-br from-violet-500 to-violet-400">
+          <div className="flex gap-6 flex-wrap rounded-2xl px-5 py-3 mb-4 text-white bg-gradient-to-br from-info to-info">
             <Total k="系譜合計 受領" v={`¥${yen(totals.received)}`} />
             <Total k="上流へ分配" v={`− ¥${yen(totals.distributed)}`} />
             <Total k="当社 留保" v={`¥${yen(totals.retained)}`} />
@@ -253,10 +253,10 @@ function Tier({ n, isSel }: { n: Row; isSel: boolean }) {
   const deriv = n.derivation_type ? DERIV[n.derivation_type] || n.derivation_type : w.is_original ? "原版" : null
   const retained = (n.cascade_base || n.received || 0) - (n.distributed || 0)
   return (
-    <div className={`rounded-2xl px-3.5 py-3 bg-card/60 border ${isSel ? "border-info ring-2 ring-violet-500/20" : "border-border"}`}>
+    <div className={`rounded-2xl px-3.5 py-3 bg-card/60 border ${isSel ? "border-info ring-2 ring-info" : "border-border"}`}>
       <div className="flex items-center gap-2 mb-2.5 flex-wrap">
         <span className="font-bold text-sm">{workLabel(w)}</span>
-        {deriv && <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{deriv}</Badge>}
+        {deriv && <Badge className="bg-warning/10 text-warning hover:bg-warning/10">{deriv}</Badge>}
         {isSel && <Badge className="bg-info/10 text-info hover:bg-info/10">選択中</Badge>}
       </div>
 
@@ -270,7 +270,7 @@ function Tier({ n, isSel }: { n: Row; isSel: boolean }) {
         {/* 当社 */}
         <div className="flex flex-col gap-3 min-w-0">
           <h3 className="text-xs font-bold text-muted-foreground">● 当社</h3>
-          <div className="rounded-2xl p-3.5 text-white bg-gradient-to-br from-violet-500 to-violet-400 shadow-lg shadow-violet-500/30">
+          <div className="rounded-2xl p-3.5 text-white bg-gradient-to-br from-info to-info shadow-lg shadow-violet-500/30">
             <div className="font-bold text-sm">当社</div>
             <BigRow k="受領(直接)" v={`¥${yen(n.received)}`} />
             {(n.cascade_base || 0) > (n.received || 0) && <BigRow k="分配基礎(累計)" v={`¥${yen(n.cascade_base)}`} />}
@@ -422,7 +422,7 @@ function AliasPanel({
             {a.party_name && <Badge className="bg-info/10 text-info hover:bg-info/10">{a.party_name}</Badge>}
             {a.context && <span className="text-muted-foreground text-[11px]">{a.context}</span>}
             <span className="flex-1" />
-            <button className="text-pink-600 font-bold" onClick={() => del(a.id)}>
+            <button className="text-destructive font-bold" onClick={() => del(a.id)}>
               削除
             </button>
           </div>

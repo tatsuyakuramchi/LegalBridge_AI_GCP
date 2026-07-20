@@ -113,7 +113,7 @@ export function GenericImportPage() {
       </div>
 
       {loadError && (
-        <div className="rounded border border-red-300 bg-red-50 text-red-700 px-3 py-2 text-sm">
+        <div className="rounded border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 text-sm">
           一覧取得エラー: {loadError}
         </div>
       )}
@@ -142,13 +142,13 @@ export function GenericImportPage() {
                     setFile(null)
                   }}
                   className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
-                    selected === o.name ? "bg-blue-50 font-semibold" : ""
+                    selected === o.name ? "bg-primary/10 font-semibold" : ""
                   }`}
                 >
                   <span>{o.name}</span>
                   <span
                     className={`ml-2 text-xs rounded px-1 ${
-                      o.kind === "view" ? "bg-purple-100 text-purple-700" : "bg-gray-100 text-gray-600"
+                      o.kind === "view" ? "bg-info/10 text-info" : "bg-gray-100 text-gray-600"
                     }`}
                   >
                     {o.kind}
@@ -182,7 +182,7 @@ export function GenericImportPage() {
                     </div>
                   )}
                   {current.kind === "view" && (
-                    <div className="text-xs text-amber-600 mt-1">
+                    <div className="text-xs text-warning mt-1">
                       ※ ビュー。INSTEAD OF トリガ経由で実テーブルへ書き込まれます。
                     </div>
                   )}
@@ -226,14 +226,14 @@ export function GenericImportPage() {
                 <button
                   onClick={runImport}
                   disabled={!file || busy}
-                  className="bg-blue-600 text-white rounded px-4 py-2 text-sm disabled:opacity-50"
+                  className="bg-primary text-white rounded px-4 py-2 text-sm disabled:opacity-50"
                 >
                   {busy ? "取込中…" : "CSV を取込"}
                 </button>
               </div>
 
               {opError && (
-                <div className="rounded border border-red-300 bg-red-50 text-red-700 px-3 py-2 text-sm">
+                <div className="rounded border border-destructive/40 bg-destructive/10 text-destructive px-3 py-2 text-sm">
                   {opError}
                 </div>
               )}
@@ -242,14 +242,14 @@ export function GenericImportPage() {
                 <div className="rounded border bg-gray-50 p-3 text-sm space-y-2">
                   <div>
                     対象 <b>{result.object}</b> / 全 {result.total} 行 → 追加{" "}
-                    <b className="text-green-700">{result.inserted}</b> · 更新{" "}
-                    <b className="text-blue-700">{result.updated}</b> · エラー{" "}
-                    <b className={result.errors.length ? "text-red-700" : ""}>{result.errors.length}</b>
+                    <b className="text-success">{result.inserted}</b> · 更新{" "}
+                    <b className="text-primary">{result.updated}</b> · エラー{" "}
+                    <b className={result.errors.length ? "text-destructive" : ""}>{result.errors.length}</b>
                   </div>
                   {result.errors.length > 0 && (
                     <div className="max-h-48 overflow-auto border-t pt-2">
                       {result.errors.slice(0, 50).map((er, i) => (
-                        <div key={i} className="text-xs text-red-700">
+                        <div key={i} className="text-xs text-destructive">
                           行 {er.row}: {er.message}
                         </div>
                       ))}

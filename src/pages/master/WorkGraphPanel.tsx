@@ -59,9 +59,9 @@ type Edge = {
 }
 
 const KIND_META: Record<string, { label: string; cls: string }> = {
-  license: { label: "利用許諾", cls: "border-sky-300 text-sky-700" },
-  product: { label: "物販", cls: "border-violet-300 text-violet-700" },
-  service: { label: "委託", cls: "border-amber-300 text-amber-700" },
+  license: { label: "利用許諾", cls: "border-primary/40 text-primary" },
+  product: { label: "物販", cls: "border-info/40 text-info" },
+  service: { label: "委託", cls: "border-warning/40 text-warning" },
 }
 const KindBadge = ({ kind }: { kind: string | null }) => {
   const m = kind ? KIND_META[kind] : null
@@ -870,8 +870,8 @@ export function WorkGraphPanel() {
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-5">
       <header className="border-b border-border pb-5">
         <p className="retro-tag mb-1.5">WORK · GRAPH</p>
-        <h2 className="text-2xl font-mono font-bold tracking-tight">権利フロー（3カード）</h2>
-        <p className="text-xs font-mono text-muted-foreground mt-1.5">
+        <h2 className="text-2xl font-semibold tracking-tight">権利フロー（3カード）</h2>
+        <p className="text-xs text-muted-foreground mt-1.5">
           原作 → 作品 → 派生物 を 向き×種別の条件明細でつなぐグラフ表示（統合Phase3c・ビュー）。
         </p>
         {/* 関係の明確化: 原作=マテリアルの集合 / 許諾はマテリアル単位 / 作品=必要マテリアルを選んで構成。
@@ -882,19 +882,19 @@ export function WorkGraphPanel() {
           </summary>
           <div className="px-3 pb-2.5 pt-0.5 space-y-1.5 text-muted-foreground leading-relaxed">
             <p>
-              <span className="font-bold text-sky-700">原作</span> は1つ以上の{" "}
-              <span className="font-bold text-emerald-700">原作マテリアル</span>{" "}
+              <span className="font-bold text-primary">原作</span> は1つ以上の{" "}
+              <span className="font-bold text-success">原作マテリアル</span>{" "}
               で構成されます（マテリアルごとに権利者が異なる場合があります）。
               <span className="font-bold">利用許諾条件はマテリアル単位</span>でぶら下がります。
             </p>
             <p>
-              <span className="font-bold text-violet-700">作品</span> は原作から
+              <span className="font-bold text-info">作品</span> は原作から
               <span className="font-bold">必要なマテリアルだけを選んで</span>構成します。
               選んだマテリアルの条件が、この作品の<span className="font-bold">履行義務（支払う利用料）</span>になります。
             </p>
             <div className="rounded border border-border bg-card px-2.5 py-1.5 text-[10px]">
-              例: 原作A（マテリアル B / C / D / F）から <span className="font-bold text-emerald-700">C・D</span> を使う作品G
-              → 作品Gの利用許諾条件書に載るのは <span className="font-bold text-emerald-700">C・D の条件</span>。
+              例: 原作A（マテリアル B / C / D / F）から <span className="font-bold text-success">C・D</span> を使う作品G
+              → 作品Gの利用許諾条件書に載るのは <span className="font-bold text-success">C・D の条件</span>。
             </div>
           </div>
         </details>
@@ -923,9 +923,9 @@ export function WorkGraphPanel() {
       {workId ? <RightsTreePanel workId={workId} /> : null}
 
       {loading ? (
-        <div className="text-xs font-mono text-muted-foreground py-8 text-center">読み込み中…</div>
+        <div className="text-xs text-muted-foreground py-8 text-center">読み込み中…</div>
       ) : !work ? (
-        <div className="text-xs font-mono text-muted-foreground py-8 text-center">作品を選択してください。</div>
+        <div className="text-xs text-muted-foreground py-8 text-center">作品を選択してください。</div>
       ) : (
         <>
         {/* PLW-D: 作品1:文書N:明細N — この作品に明細単位で帰属する文書/明細/条件を集約。 */}
@@ -933,16 +933,16 @@ export function WorkGraphPanel() {
         {/* 関係の明確化: 作品(own)が「どの原作のどのマテリアルを利用し、何を履行するか」をマテリアル単位でまとめて先頭に表示。
             これがこの作品の利用許諾条件書に載る条件（=支払う利用料）の実体であることを明示する。 */}
         {!isSource && consumedGroups.length > 0 && (
-          <div className="rounded-md border border-sky-300 bg-sky-50/40 p-3 space-y-2">
+          <div className="rounded-md border border-primary/40 bg-primary/10 p-3 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
                 この作品が利用する原作マテリアル／履行する利用許諾条件
               </span>
-              <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+              <Badge variant="outline" className="border-success/40 text-success">
                 マテリアル {consumedGroups.length}
               </Badge>
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               下のマテリアルの条件を履行（利用料を支払う）ことで、この作品を販売できます。これがこの作品の利用許諾条件書に記載される条件です。
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -952,7 +952,7 @@ export function WorkGraphPanel() {
                     <button
                       type="button"
                       onClick={() => navigate(`/works/${g.workId}`)}
-                      className="block w-full text-left text-[10px] text-sky-700 truncate hover:underline"
+                      className="block w-full text-left text-[10px] text-primary truncate hover:underline"
                       title="この原作を開く"
                     >
                       <span className="font-bold">原作 ↗</span>{" "}
@@ -960,12 +960,12 @@ export function WorkGraphPanel() {
                     </button>
                   ) : (
                     <div className="text-[10px] text-muted-foreground truncate">
-                      <span className="text-sky-700 font-bold">原作</span>{" "}
+                      <span className="text-primary font-bold">原作</span>{" "}
                       {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
                     </div>
                   )}
                   <div className="font-semibold truncate">
-                    <span className="text-emerald-700">◦ マテリアル</span>{" "}
+                    <span className="text-success">◦ マテリアル</span>{" "}
                     {g.matCode || ""} {g.matName || (g.matCode ? "" : "（未設定）")}
                   </div>
                   <div className="space-y-1 pt-0.5 border-t border-border/50">
@@ -980,7 +980,7 @@ export function WorkGraphPanel() {
                           </span>
                         </div>
                         {/* 相手方(支払先の取引先)。誰に利用料を払うかを明示し、3者の関係を補強する。 */}
-                        <div className="text-[10px] text-amber-700 truncate">
+                        <div className="text-[10px] text-warning truncate">
                           相手方: {e.counterparty || "（未設定）"}
                         </div>
                       </div>
@@ -994,16 +994,16 @@ export function WorkGraphPanel() {
         {/* 本丸(原作ビュー): 原作 → マテリアル(権利者) → 条件明細(算定) の 1原作:N材料:N条件 を
             一目で見せる構成ツリー。クリックせずに全体構造が把握できる(下の中カードで編集)。 */}
         {isSource && (
-          <div className="rounded-md border border-sky-300 bg-sky-50/40 p-3 space-y-2">
+          <div className="rounded-md border border-primary/40 bg-primary/10 p-3 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+              <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
                 原作の構成（マテリアル → 条件明細）
               </span>
-              <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+              <Badge variant="outline" className="border-success/40 text-success">
                 マテリアル {materials.length}
               </Badge>
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               原作は複数の原作マテリアルで構成され（権利者が異なる場合あり）、各マテリアルに複数の条件明細（直販／サブライセンス等の算定）がぶら下がります（1原作 : N材料 : N条件）。
             </p>
             {/* 原作⇄作品の往復: この原作を利用している自社作品へのクイックリンク（原作→作品）。 */}
@@ -1017,7 +1017,7 @@ export function WorkGraphPanel() {
                     key={u.id}
                     type="button"
                     onClick={() => navigate(`/works/${u.id}`)}
-                    className="text-violet-700 hover:underline"
+                    className="text-info hover:underline"
                     title="この作品を開く"
                   >
                     {u.work_code || `#${u.id}`} {u.title} ↗
@@ -1026,7 +1026,7 @@ export function WorkGraphPanel() {
               )}
             </div>
             {materials.length === 0 ? (
-              <p className="text-[11px] font-mono text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 まだマテリアルがありません。下の中カードの「素材を追加」から登録してください。
               </p>
             ) : (
@@ -1037,23 +1037,23 @@ export function WorkGraphPanel() {
                     <div key={m.id} className="rounded border border-border bg-card px-2.5 py-2 text-[11px] font-mono space-y-1">
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-semibold truncate">
-                          <span className="text-emerald-700">◦ マテリアル</span>{" "}
+                          <span className="text-success">◦ マテリアル</span>{" "}
                           {matDisplay(m.material_code, work?.title, m.material_name)}
                           {m.is_default && (
-                            <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>
+                            <Badge variant="outline" className="ml-1 border-success/40 text-success">本体</Badge>
                           )}
                         </div>
                         <button
                           type="button"
                           onClick={() => openMatEditor(m.id)}
-                          className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50"
+                          className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border border-primary text-primary hover:bg-primary/10"
                           title="このマテリアルの条件明細を編集/追加"
                         >
                           条件編集 ▾
                         </button>
                       </div>
                       {m.rights_holder && (
-                        <div className="text-[10px] text-amber-700 truncate">権利者: {m.rights_holder}</div>
+                        <div className="text-[10px] text-warning truncate">権利者: {m.rights_holder}</div>
                       )}
                       <div className="space-y-0.5 pt-0.5 border-t border-border/50">
                         {conds.length === 0 ? (
@@ -1073,8 +1073,8 @@ export function WorkGraphPanel() {
                                     <span
                                       className={`shrink-0 text-[8px] font-mono px-1 py-0.5 rounded-sm border ${
                                         isMlc
-                                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                                          : "border-sky-300 bg-sky-50 text-sky-700"
+                                          ? "border-success/40 bg-success/10 text-success"
+                                          : "border-primary/40 bg-primary/10 text-primary"
                                       }`}
                                       title={isMlc ? "原作マスター(MLC)登録条件" : `文書由来: ${c.document_number || ""}`}
                                     >
@@ -1091,13 +1091,13 @@ export function WorkGraphPanel() {
                                     <button type="button" onClick={() => startEditCond(c)}
                                       className="text-[9px] font-mono px-1 py-0.5 rounded border border-border hover:border-foreground/40" title="編集">編集</button>
                                     <button type="button" onClick={() => void deleteCond(c, m.id)}
-                                      className="text-[9px] font-mono px-1 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50" title="削除">削除</button>
+                                      className="text-[9px] font-mono px-1 py-0.5 rounded border border-destructive/40 text-destructive hover:bg-destructive/10" title="削除">削除</button>
                                   </span>
                                 </div>
                                 {editing && (
-                                  <div className="rounded border border-sky-200 bg-sky-50/40 p-1.5 space-y-1 text-[10px]">
+                                  <div className="rounded border border-primary/40 bg-primary/10 p-1.5 space-y-1 text-[10px]">
                                     {!isMlc && (
-                                      <p className="text-[9px] text-amber-700">⚠ 文書由来の条件です。編集は文書側の表示と差異が出る場合があります。</p>
+                                      <p className="text-[9px] text-warning">⚠ 文書由来の条件です。編集は文書側の表示と差異が出る場合があります。</p>
                                     )}
                                     <div className="grid grid-cols-2 gap-1">
                                       <label className="space-y-0.5"><span className="text-muted-foreground">名称</span>
@@ -1124,10 +1124,10 @@ export function WorkGraphPanel() {
                                       <label className="space-y-0.5"><span className="text-muted-foreground">地域</span><input className={ecls} value={matEditForm.region_territory || ""} onChange={(e) => setMatEditForm({ ...matEditForm, region_territory: e.target.value })} /></label>
                                       <label className="space-y-0.5"><span className="text-muted-foreground">言語</span><input className={ecls} value={matEditForm.region_language || ""} onChange={(e) => setMatEditForm({ ...matEditForm, region_language: e.target.value })} /></label>
                                     </div>
-                                    {matEditErr && <p className="text-[9px] text-red-600">{matEditErr}</p>}
+                                    {matEditErr && <p className="text-[9px] text-destructive">{matEditErr}</p>}
                                     <div className="flex justify-end gap-1">
                                       <button type="button" onClick={() => setMatEditId(null)} className="text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">取消</button>
-                                      <button type="button" onClick={() => void saveEditCond(m.id)} disabled={matEditSaving} className="text-[9px] px-1.5 py-0.5 rounded border border-sky-500 bg-sky-50 text-sky-700 font-bold disabled:opacity-50">{matEditSaving ? "保存中…" : "保存"}</button>
+                                      <button type="button" onClick={() => void saveEditCond(m.id)} disabled={matEditSaving} className="text-[9px] px-1.5 py-0.5 rounded border border-primary bg-primary/10 text-primary font-bold disabled:opacity-50">{matEditSaving ? "保存中…" : "保存"}</button>
                                     </div>
                                   </div>
                                 )}
@@ -1150,7 +1150,7 @@ export function WorkGraphPanel() {
             <CardContent className="px-3.5 py-3 space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-mono font-bold">原作 / 調達（支払）▶</h3>
-                <Badge variant="outline" className="border-amber-300 text-amber-700">支払 {upstream.length}</Badge>
+                <Badge variant="outline" className="border-warning/40 text-warning">支払 {upstream.length}</Badge>
               </div>
               {/* 増分⑥+(§3.2/決定§8.2): 原作をその場で新規登録 → 候補一覧に追加し各支払エッジで選択可に */}
               {!isSource && (
@@ -1159,7 +1159,7 @@ export function WorkGraphPanel() {
                     <button
                       type="button"
                       onClick={() => setShowNewSource(true)}
-                      className="text-[11px] font-mono px-2 py-0.5 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+                      className="text-[11px] font-mono px-2 py-0.5 rounded border border-success text-success hover:bg-success/10"
                     >
                       ＋ 原作を新規
                     </button>
@@ -1177,14 +1177,14 @@ export function WorkGraphPanel() {
                           type="button"
                           onClick={createSource}
                           disabled={creatingSource || !newSourceTitle.trim()}
-                          className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                          className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
                         >
                           {creatingSource ? "作成中…" : "作成"}
                         </button>
                         <button
                           type="button"
                           onClick={() => { setShowNewSource(false); setNewSourceTitle("") }}
-                          className="text-[11px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                          className="text-[11px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
                         >
                           取消
                         </button>
@@ -1217,7 +1217,7 @@ export function WorkGraphPanel() {
                   <button
                     type="button"
                     onClick={startEdit}
-                    className="text-[10px] font-mono px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+                    className="text-[10px] px-2 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
                   >
                     編集
                   </button>
@@ -1270,7 +1270,7 @@ export function WorkGraphPanel() {
                   {/* UIC-13(段階A): 系譜・派生設定(旧 WorkModelPanel から移植)。
                       派生元を指定すると翻訳版・改題版などのチェーンになる。 */}
                   <div className="pt-1 space-y-1.5 border-t border-dashed border-border">
-                    <div className="text-[9.5px] font-mono uppercase tracking-wider text-muted-foreground">系譜・派生</div>
+                    <div className="text-[9.5px] uppercase tracking-wider text-muted-foreground">系譜・派生</div>
                     <WorkPicker
                       items={parentCandidates}
                       value={form.parent_work_id || undefined}
@@ -1294,13 +1294,13 @@ export function WorkGraphPanel() {
                     rows={2}
                     className="w-full text-[11px] font-mono border border-input rounded bg-transparent px-2 py-1 focus:outline-none focus:border-foreground"
                   />
-                  {saveErr && <p role="alert" className="text-[10px] font-mono text-red-600">{saveErr}</p>}
+                  {saveErr && <p role="alert" className="text-[10px] font-mono text-destructive">{saveErr}</p>}
                   <div className="flex items-center justify-end gap-1.5 pt-0.5">
                     <button
                       type="button"
                       onClick={() => setEditing(false)}
                       disabled={saving}
-                      className="text-[11px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      className="text-[11px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground disabled:opacity-50"
                     >
                       キャンセル
                     </button>
@@ -1308,7 +1308,7 @@ export function WorkGraphPanel() {
                       type="button"
                       onClick={saveEdit}
                       disabled={saving || !form.title?.trim()}
-                      className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
                     >
                       {saving ? "保存中…" : "保存"}
                     </button>
@@ -1369,7 +1369,7 @@ export function WorkGraphPanel() {
                       type="button"
                       onClick={createOwnFromSource}
                       disabled={creatingOwn || !newOwnTitle.trim()}
-                      className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
                     >
                       {creatingOwn ? "作成中…" : "作成"}
                     </button>
@@ -1384,8 +1384,8 @@ export function WorkGraphPanel() {
                   旧 v3 ライセンスマトリクス(直接保存する license-matrix API)は撤去し、
                   条件明細の唯一の書込み口＝Document Command へ一本化した。既存条件は下の素材一覧で閲覧。 */}
               {isSource && materials.length > 0 && (
-                <div className="space-y-1.5 rounded-md border border-indigo-200 bg-indigo-50/30 px-2.5 py-2">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-indigo-700">
+                <div className="space-y-1.5 rounded-md border border-primary/40 bg-primary/10 px-2.5 py-2">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
                     利用許諾条件（原作マスター）
                   </div>
                   <p className="text-[9px] text-muted-foreground/70">
@@ -1396,7 +1396,7 @@ export function WorkGraphPanel() {
                     <button
                       type="button"
                       onClick={createLicenseDocForSource}
-                      className="text-[10px] font-mono px-2.5 py-1 rounded border border-indigo-500 bg-indigo-50 text-indigo-700 font-bold hover:bg-indigo-100"
+                      className="text-[10px] font-mono px-2.5 py-1 rounded border border-primary bg-primary/10 text-primary font-bold hover:bg-primary/10"
                     >
                       文書フォームで条件を登録（個別利用許諾条件書）
                     </button>
@@ -1419,18 +1419,18 @@ export function WorkGraphPanel() {
                         >
                           <span className="truncate">
                             <span className="font-semibold">{m.material_code || "—"}</span>{work?.title ? ` ${work.title}　` : " "}{m.material_name}
-                            {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
-                            {m.rights_holder && <span className="text-[10px] text-amber-700"> · 権利者: {m.rights_holder}</span>}
+                            {m.is_default && <Badge variant="outline" className="ml-1 border-success/40 text-success">本体</Badge>}
+                            {m.rights_holder && <span className="text-[10px] text-warning"> · 権利者: {m.rights_holder}</span>}
                           </span>
-                          <span className="text-[10px] text-sky-700 shrink-0">
+                          <span className="text-[10px] text-primary shrink-0">
                             {matCondOpen === m.id ? "▲ 閉じる" : "利用許諾条件 ▾"}
                           </span>
                         </button>
                       ) : (
                         <div className="px-2 py-1">
                           <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
-                          {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
-                          {m.rights_holder && <span className="text-[10px] text-amber-700"> · 権利者: {m.rights_holder}</span>}
+                          {m.is_default && <Badge variant="outline" className="ml-1 border-success/40 text-success">本体</Badge>}
+                          {m.rights_holder && <span className="text-[10px] text-warning"> · 権利者: {m.rights_holder}</span>}
                         </div>
                       )}
                       {isSource && matCondOpen === m.id && (
@@ -1438,16 +1438,16 @@ export function WorkGraphPanel() {
                           {/* 条件の追加・編集は「個別利用許諾条件書」文書フォームに一本化。
                               ここは既存条件の確認＋文書由来条件の紐づけ(下の details)のみ。 */}
                           <div className="space-y-1">
-                            <p className="text-[10px] font-mono text-muted-foreground">
+                            <p className="text-[10px] text-muted-foreground">
                               条件の追加・編集は上の
-                              <strong className="text-indigo-700">「文書フォームで条件を登録（個別利用許諾条件書）」</strong>
+                              <strong className="text-primary">「文書フォームで条件を登録（個別利用許諾条件書）」</strong>
                               から行います（データの唯一の入力口＝文書作成）。この素材はその原作の構成要素として扱われます。
                             </p>
                             <div className="flex items-center justify-end">
                               <button
                                 type="button"
                                 onClick={() => setMatCondOpen(null)}
-                                className="text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                                className="text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
                               >
                                 閉じる
                               </button>
@@ -1455,11 +1455,11 @@ export function WorkGraphPanel() {
                           </div>
 
                           {/* 上級(任意): 既存の金銭条件を文書番号で呼び出してこのマテリアルへ紐づける(複数可) */}
-                          <details className="rounded border border-sky-200">
-                            <summary className="cursor-pointer px-1.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-sky-700 select-none">
+                          <details className="rounded border border-primary/40">
+                            <summary className="cursor-pointer px-1.5 py-1 text-[10px] uppercase tracking-[0.14em] text-primary select-none">
                               ▶ 既存の金銭条件を文書番号から呼び出して紐づける（任意）
                             </summary>
-                            <div className="p-1.5 space-y-1.5 border-t border-sky-200">
+                            <div className="p-1.5 space-y-1.5 border-t border-primary/40">
                               <div className="flex items-center gap-1.5">
                                 <input
                                   value={matRecallDoc}
@@ -1483,12 +1483,12 @@ export function WorkGraphPanel() {
                                         ? `${l.rate_pct ?? "—"}%${l.mg_amount ? ` MG${yen(l.mg_amount)}` : ""}${l.ag_amount ? ` AG${yen(l.ag_amount)}` : ""}`
                                         : yen(l.amount_ex_tax) || l.payment_scheme}
                                       {l.region_language_label && <span className="text-muted-foreground">{" · 🌐 "}{l.region_language_label}</span>}
-                                      {!here && l.source_material_id != null && <span className="text-amber-600">{" · 他素材に紐付け済"}</span>}
+                                      {!here && l.source_material_id != null && <span className="text-warning">{" · 他素材に紐付け済"}</span>}
                                     </div>
                                     {here ? (
                                       <button type="button" onClick={() => void assignRecalled(m.id, l, false)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">外す</button>
                                     ) : (
-                                      <button type="button" onClick={() => void assignRecalled(m.id, l, true)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50">紐づける</button>
+                                      <button type="button" onClick={() => void assignRecalled(m.id, l, true)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-primary text-primary hover:bg-primary/10">紐づける</button>
                                     )}
                                   </div>
                                 )
@@ -1530,7 +1530,7 @@ export function WorkGraphPanel() {
                     type="button"
                     onClick={addMaterial}
                     disabled={adding || !matName.trim()}
-                    className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
                   >
                     {adding ? "追加中…" : "追加"}
                   </button>
@@ -1580,7 +1580,7 @@ export function WorkGraphPanel() {
                       type="button"
                       onClick={addProduct}
                       disabled={addingProduct || !prodName.trim()}
-                      className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
                     >
                       {addingProduct ? "追加中…" : "追加"}
                     </button>
@@ -1595,7 +1595,7 @@ export function WorkGraphPanel() {
             <CardContent className="px-3.5 py-3 space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-mono font-bold">◀ 受取（派生物 / 卸）</h3>
-                <Badge variant="outline" className="border-emerald-300 text-emerald-700">受取 {downstream.length}</Badge>
+                <Badge variant="outline" className="border-success/40 text-success">受取 {downstream.length}</Badge>
               </div>
               {downstream.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground py-1">受取エッジはありません。</p>
@@ -1611,11 +1611,11 @@ export function WorkGraphPanel() {
         </div>
         {/* N:N活性化 Stage3: 原作起点ピッカー — 原作を選ぶ→その利用許諾条件明細を共有結線 */}
         {!isSource && (
-          <div className="rounded-md border border-dashed border-sky-300 p-3 space-y-2">
-            <div className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+          <div className="rounded-md border border-dashed border-primary/40 p-3 space-y-2">
+            <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-primary">
               ＋ 原作のマテリアル条件から、この作品で使うものを選ぶ
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground -mt-1">
+            <p className="text-[10px] text-muted-foreground -mt-1">
               原作を選ぶ→各条件に「利用するマテリアル」を指定→「この作品に追加」。追加した条件がこの作品の履行義務（上のサマリー）になります。
             </p>
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1635,7 +1635,7 @@ export function WorkGraphPanel() {
               {pickerLoading && <span className="text-[10px] text-muted-foreground">読込中…</span>}
             </div>
             {pickerSource && !pickerLoading && pickerLines.length === 0 && (
-              <p className="text-[11px] font-mono text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 この原作に紐づく利用許諾条件明細がありません（明細の出所原作が未設定の可能性）。
               </p>
             )}
@@ -1646,10 +1646,10 @@ export function WorkGraphPanel() {
                 <div className="text-[10px] font-mono font-bold flex items-center gap-1.5 flex-wrap">
                   {g.mat ? (
                     <>
-                      <span className="text-emerald-700">◦ マテリアル</span>
+                      <span className="text-success">◦ マテリアル</span>
                       <span>{matDisplay(g.mat.material_code, pickerSrcTitle, g.mat.material_name)}</span>
                       {g.mat.rights_holder_name && (
-                        <span className="text-amber-700">（権利者: {g.mat.rights_holder_name}）</span>
+                        <span className="text-warning">（権利者: {g.mat.rights_holder_name}）</span>
                       )}
                       <span className="text-muted-foreground/60">· 条件 {g.lines.length}件</span>
                     </>
@@ -1671,8 +1671,8 @@ export function WorkGraphPanel() {
                           {l.payment_scheme === "royalty"
                             ? l.rate_pct != null && <span className="text-muted-foreground">{l.rate_pct}%</span>
                             : l.amount_ex_tax != null && <span className="text-muted-foreground">{yen(l.amount_ex_tax)}</span>}
-                          {l.counterparty && <span className="text-[10px] text-amber-700">相手方: {l.counterparty}</span>}
-                          {l.linked_here && <span className="text-[10px] text-emerald-700">✓ 利用中</span>}
+                          {l.counterparty && <span className="text-[10px] text-warning">相手方: {l.counterparty}</span>}
+                          {l.linked_here && <span className="text-[10px] text-success">✓ 利用中</span>}
                         </div>
                         {!knownMat && !l.linked_here && (
                           <div className="flex items-center gap-1.5">
@@ -1699,7 +1699,7 @@ export function WorkGraphPanel() {
                         <button
                           type="button"
                           onClick={() => void removeComponentLine(l)}
-                          className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                          className="shrink-0 text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
                         >
                           外す
                         </button>
@@ -1709,7 +1709,7 @@ export function WorkGraphPanel() {
                           onClick={() => void addComponentLine(l)}
                           disabled={!(pickerLineMat[l.id] || l.source_material_id != null)}
                           title={!(pickerLineMat[l.id] || l.source_material_id != null) ? "原作マテリアルを選択してください" : undefined}
-                          className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                          className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-primary text-primary hover:bg-primary/10 disabled:opacity-50"
                         >
                           この作品に追加
                         </button>
@@ -1726,7 +1726,7 @@ export function WorkGraphPanel() {
         )}
         {/* 増分⑧: 個別条件書から condition_lines をこの作品へ参照リンク(§3.6/§10.7: 明細は新規作成しない) */}
         <div className="rounded-md border border-dashed border-input p-3 space-y-2">
-          <div className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
             ＋ 条件明細をこの作品に追加（個別条件書から参照）
           </div>
           {/* (B) A1-軽量(§10.7): ここから個別条件書を起票 → 保存で明細生成 → 戻って下の検索で結合 */}
@@ -1743,7 +1743,7 @@ export function WorkGraphPanel() {
             <button
               type="button"
               onClick={issueNewConditionDoc}
-              className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+              className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10"
             >
               個別条件書を起票 ↗
             </button>
@@ -1769,7 +1769,7 @@ export function WorkGraphPanel() {
             </button>
           </div>
           {edgeSearched && edgeLines.length === 0 && (
-            <p className="text-[11px] font-mono text-muted-foreground">該当する条件明細がありません。</p>
+            <p className="text-[11px] text-muted-foreground">該当する条件明細がありません。</p>
           )}
           {edgeLines.map((l) => {
             const linkedHere = String(l.work_id ?? "") === String(workId)
@@ -1793,7 +1793,7 @@ export function WorkGraphPanel() {
                   <button
                     type="button"
                     onClick={() => void attachEdge(l.id, null)}
-                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                    className="shrink-0 text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
                   >
                     外す
                   </button>
@@ -1801,7 +1801,7 @@ export function WorkGraphPanel() {
                   <button
                     type="button"
                     onClick={() => void attachEdge(l.id, Number(workId))}
-                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10"
                   >
                     {l.work_id ? "付替えて追加" : "追加"}
                   </button>
