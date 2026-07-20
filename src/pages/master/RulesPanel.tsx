@@ -64,7 +64,7 @@ export function RulesPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {workflowRules.length} rules
         </span>
         <div className="flex-1" />
@@ -86,17 +86,17 @@ export function RulesPanel() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <GitBranch className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm font-mono font-bold uppercase">
+                  <p className="text-sm font-semibold">
                     {rule.department}
                   </p>
                 </div>
                 <span
                   className={`h-1.5 w-1.5 rounded-full ${
-                    rule.is_active ? "bg-emerald-500" : "bg-muted-foreground/40"
+                    rule.is_active ? "bg-success" : "bg-muted-foreground/40"
                   }`}
                 />
               </div>
-              <ul className="space-y-1 text-[10px] font-mono">
+              <ul className="space-y-1 text-[10px]">
                 <li className="flex justify-between">
                   <span className="text-muted-foreground uppercase tracking-[0.14em]">
                     承認者
@@ -125,7 +125,7 @@ export function RulesPanel() {
                   <span className="block text-muted-foreground uppercase tracking-[0.14em]">
                     返信先チャンネル
                   </span>
-                  <span className="font-bold text-cyan-700 dark:text-cyan-300">
+                  <span className="font-bold text-info">
                     {rule.slack_channel_id || "デフォルト"}
                   </span>
                 </li>
@@ -147,7 +147,7 @@ export function RulesPanel() {
         ))}
         {workflowRules.length === 0 && (
           <div className="col-span-full p-12 text-center border border-dashed border-border rounded-md">
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
               No routing rules configured.
             </p>
           </div>

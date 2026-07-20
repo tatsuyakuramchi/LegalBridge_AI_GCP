@@ -301,7 +301,7 @@ export function RingiPanel() {
                 <TableCell>
                   <div className="font-mono font-bold">{r.ringi_number}</div>
                   {r.backlog_issue_key && (
-                    <div className="text-[10px] font-mono text-muted-foreground">
+                    <div className="text-[10px] text-muted-foreground">
                       {r.backlog_issue_key}
                     </div>
                   )}
@@ -347,7 +347,7 @@ export function RingiPanel() {
                     className={cn(
                       "text-[10px] flex items-center justify-end gap-1 mt-1",
                       r.linked_document_count && r.linked_document_count > 0
-                        ? "text-emerald-700"
+                        ? "text-success"
                         : "text-muted-foreground"
                     )}
                   >
@@ -436,13 +436,13 @@ export function RingiPanel() {
                 disabled={!creating && !!editing?.id}
               />
               {creating && (
-                <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                <p className="text-[10px] text-muted-foreground mt-1">
                   5 桁数字を入力すると、種別から自動でプレフィックスが付きます
                   (例: ringi → R-00001)
                 </p>
               )}
               {!creating && (
-                <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                <p className="text-[10px] text-muted-foreground mt-1">
                   既存番号は変更不可。削除→再登録してください。
                 </p>
               )}
@@ -517,7 +517,7 @@ export function RingiPanel() {
             </Field>
             {!creating && editing?.linked_document_count != null && (
               <Field label="紐付き文書">
-                <div className="text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-muted/30">
+                <div className="text-xs px-2 py-1.5 border border-input rounded-sm bg-muted/30">
                   {editing.linked_document_count} 件
                 </div>
               </Field>
@@ -527,7 +527,7 @@ export function RingiPanel() {
                 value={data?.remarks || ""}
                 onChange={(e) => set({ remarks: e.target.value })}
                 rows={3}
-                className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
+                className="w-full text-xs px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
                 placeholder="任意"
               />
             </Field>

@@ -36,9 +36,9 @@ export function MasterLayout() {
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
-          <p className="retro-tag mb-1.5">MST · 参照マスター</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight">参照マスター</h2>
-          <p className="text-xs font-mono text-muted-foreground mt-1.5">
+          <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">参照マスター</p>
+          <h2 className="text-2xl font-semibold tracking-tight">参照マスター</h2>
+          <p className="text-xs text-muted-foreground mt-1.5">
             取引先・担当者・稟議・ルーティングの参照データ。契約は /contracts、金銭は /finance、保守は /data-maintenance へ移設済み。
           </p>
         </div>
@@ -59,9 +59,9 @@ export function MasterLayout() {
               to={t.to}
               className={({ isActive }) =>
                 cn(
-                  "inline-flex items-center gap-2 px-4 py-2.5 text-[11px] font-mono font-bold uppercase tracking-[0.16em] border-b-2 -mb-px transition-colors",
+                  "inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px transition-colors",
                   isActive
-                    ? "border-foreground text-foreground"
+                    ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )
               }
@@ -74,8 +74,8 @@ export function MasterLayout() {
       </nav>
 
       {/* UIC-19: 参照マスター外の管理面への控えめな導線。 */}
-      <div className="flex items-center gap-3 text-[10px] font-mono text-muted-foreground">
-        <span className="uppercase tracking-wider">その他</span>
+      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="uppercase tracking-wider text-[10px]">その他</span>
         {secondary.map((s) => (
           <NavLink
             key={s.to}

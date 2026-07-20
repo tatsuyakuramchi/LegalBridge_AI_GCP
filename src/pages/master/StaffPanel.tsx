@@ -158,7 +158,7 @@ export function StaffPanel() {
             className="pl-8"
           />
         </div>
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
           {staffList.length} entries
         </span>
         <div className="flex-1" />
@@ -188,16 +188,16 @@ export function StaffPanel() {
                 <AvatarFallback>{s.staff_name.charAt(0)}</AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="text-sm font-mono font-bold truncate">
+                <p className="text-sm font-semibold truncate">
                   {s.staff_name}
                 </p>
-                <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground truncate">
+                <p className="text-[10px] text-muted-foreground truncate">
                   {s.department || "—"}
                 </p>
                 <div className="mt-1 flex items-center gap-1.5 flex-wrap">
                   <Badge variant="outline">@{s.slack_user_id}</Badge>
                   {(s.app_role || "").toLowerCase() === "admin" ? (
-                    <Badge className="bg-violet-600 text-white hover:bg-violet-600">
+                    <Badge className="bg-info text-white hover:bg-info">
                       admin
                     </Badge>
                   ) : (
@@ -211,7 +211,7 @@ export function StaffPanel() {
         {filtered.length === 0 && (
           <div className="col-span-full p-12 text-center border border-dashed border-border rounded-md">
             <User className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
-            <p className="text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
               No staff registered.
             </p>
           </div>
@@ -293,14 +293,14 @@ export function StaffPanel() {
                     >
                       viewer
                     </Button>
-                    <span className="text-[11px] font-mono text-muted-foreground ml-1">
+                    <span className="text-[11px] text-muted-foreground ml-1">
                       {roleSaving
                         ? "変更中…"
                         : `現在: ${(data?.app_role || "viewer").toLowerCase()}`}
                     </span>
                   </div>
                 ) : (
-                  <p className="text-[11px] font-mono text-muted-foreground">
+                  <p className="text-[11px] text-muted-foreground">
                     メール登録後に役割を変更できます。
                   </p>
                 )}
