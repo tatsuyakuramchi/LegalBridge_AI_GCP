@@ -59,8 +59,8 @@ const DERIV_LABEL: Record<string, string> = {
 }
 
 const KIND_META: Record<Kind, { label: string; cls: string; icon: React.ComponentType<{ className?: string }> }> = {
-  source: { label: "原作", cls: "border-sky-300 text-sky-700", icon: BookMarked },
-  own: { label: "自社作品", cls: "border-violet-300 text-violet-700", icon: Boxes },
+  source: { label: "原作", cls: "border-primary/40 text-primary", icon: BookMarked },
+  own: { label: "自社作品", cls: "border-info/40 text-info", icon: Boxes },
 }
 
 const FILTERS: { key: Filter; label: string }[] = [
@@ -214,11 +214,11 @@ export function WorksListPanel() {
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
           <p className="retro-tag mb-1.5">MST · WORKS</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <Network className="h-5 w-5" />
             作品管理
           </h2>
-          <p className="text-xs font-mono text-muted-foreground mt-1.5">
+          <p className="text-xs text-muted-foreground mt-1.5">
             原作・自社作品・派生を一元管理し、権利フローを 3カードで編集する。
           </p>
         </div>
@@ -283,7 +283,7 @@ export function WorksListPanel() {
               <span className="font-bold">{r.code}</span>
               <span className="truncate">{r.title}</span>
               {r.derivation_type && (
-                <Badge variant="outline" className="h-4 shrink-0 border-violet-300 text-violet-700 text-[9px]">
+                <Badge variant="outline" className="h-4 shrink-0 border-info/40 text-info text-[9px]">
                   {DERIV_LABEL[r.derivation_type] || r.derivation_type}
                 </Badge>
               )}
@@ -296,7 +296,7 @@ export function WorksListPanel() {
         )
         return (
           <details className="rounded-md border border-border bg-card">
-            <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
+            <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground hover:text-foreground">
               系譜（派生ツリー） — 自社作品の親→派生
             </summary>
             <div className="px-2 pb-2">
@@ -308,7 +308,7 @@ export function WorksListPanel() {
 
       {/* 一覧 */}
       {loading ? (
-        <div className="text-xs font-mono text-muted-foreground py-12 text-center">読み込み中…</div>
+        <div className="text-xs text-muted-foreground py-12 text-center">読み込み中…</div>
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={<Network />}
@@ -355,9 +355,9 @@ export function WorksListPanel() {
                   </div>
                   <div className="font-mono font-bold text-sm truncate">{r.title}</div>
                   {r.title_kana && (
-                    <div className="text-[11px] font-mono text-muted-foreground truncate">{r.title_kana}</div>
+                    <div className="text-[11px] text-muted-foreground truncate">{r.title_kana}</div>
                   )}
-                  <div className="text-[11px] font-mono text-muted-foreground truncate">{r.sub}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">{r.sub}</div>
                 </CardContent>
               </Card>
             )
@@ -366,7 +366,7 @@ export function WorksListPanel() {
       )}
 
       {/* 増分⑨: works 未統合の LO- 原作(旧台帳)への導線。データ移行(§8 #4)完了後に撤去予定。 */}
-      <p className="text-[11px] font-mono text-muted-foreground/70 pt-2 border-t border-border/60">
+      <p className="text-[11px] text-muted-foreground/70 pt-2 border-t border-border/60">
         ※ 一覧は正準 works を表示します。works 未統合の LO- 原作は{" "}
         <Link to="/master/ledgers" className="underline hover:text-foreground">
           原作台帳（レガシー）
@@ -384,7 +384,7 @@ export function WorksListPanel() {
           </DialogHeader>
           <DialogBody className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-xs font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
+              <label className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
                 タイトル
               </label>
               <Input
@@ -397,12 +397,12 @@ export function WorksListPanel() {
                 placeholder={createKind === "own" ? "例: 〇〇ゲーム" : "例: 原作タイトル"}
                 className="font-mono"
               />
-              <p className="text-[11px] font-mono text-muted-foreground">
+              <p className="text-[11px] text-muted-foreground">
                 登録後、3カードエディタが開きます。詳細項目はエディタで編集します。
               </p>
             </div>
             {createErr && (
-              <p role="alert" className="text-[11px] font-mono text-red-600">
+              <p role="alert" className="text-[11px] font-mono text-destructive">
                 {createErr}
               </p>
             )}

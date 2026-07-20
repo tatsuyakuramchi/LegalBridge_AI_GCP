@@ -152,10 +152,10 @@ export function RequestsPage() {
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
           <p className="retro-tag mb-1.5">REQ · 一覧</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight">
+          <h2 className="text-2xl font-semibold tracking-tight">
             依頼一覧（Backlog）
           </h2>
-          <p className="text-[13px] font-mono text-muted-foreground mt-1.5">
+          <p className="text-[13px] text-muted-foreground mt-1.5">
             法務対応が必要な依頼をリアルタイムに一覧表示します。
           </p>
           {batch.length > 0 && (
@@ -222,7 +222,7 @@ export function RequestsPage() {
           </div>
           {/* 完了/終結/キャンセル の表示切替 (デフォルト: 非表示) */}
           <label
-            className="flex items-center gap-1.5 text-[12px] font-mono text-muted-foreground hover:text-foreground cursor-pointer select-none"
+            className="flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground cursor-pointer select-none"
             title="完了・終結・キャンセルの課題を一覧に含めるか"
           >
             <input
@@ -276,7 +276,7 @@ export function RequestsPage() {
                 onClick={() => setStatusFilter(active ? null : b.name)}
                 className={`px-2 py-1 rounded-sm border transition-colors ${
                   active
-                    ? "bg-emerald-600 text-white border-emerald-700"
+                    ? "bg-success text-white border-success"
                     : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
                 }`}
                 title={active ? "クリックで解除" : `${b.name} だけ表示`}
@@ -296,7 +296,7 @@ export function RequestsPage() {
       {filtered.length === 0 ? (
         <div className="p-16 text-center border border-dashed border-border rounded-xl">
           <Inbox className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-          <p className="text-[13px] font-mono text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             該当する依頼はありません。
           </p>
         </div>
@@ -341,7 +341,7 @@ export function RequestsPage() {
                   <h3 className="text-sm font-mono font-bold leading-snug line-clamp-2">
                     {issue.summary}
                   </h3>
-                  <div className="flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                     <span
                       className="flex items-center gap-1"
                       title={requesterStaff?.email || requesterSlackId || undefined}
@@ -388,7 +388,7 @@ export function RequestsPage() {
                         }
                         className={`inline-flex items-center gap-1 text-[11px] font-mono transition-colors border px-2 py-1 rounded-md ${
                           mergeCart.has(issue.issueKey)
-                            ? "border-emerald-600 text-emerald-700 bg-emerald-500/10 hover:bg-emerald-500/20"
+                            ? "border-success text-success bg-success hover:bg-success"
                             : "border-border text-muted-foreground hover:text-foreground hover:border-foreground"
                         }`}
                         title={
@@ -411,7 +411,7 @@ export function RequestsPage() {
                       <button
                         type="button"
                         onClick={() => openQuickCreate(issue.issueKey)}
-                        className="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
+                        className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                         title={`${issue.issueKey} の子課題を起案`}
                       >
                         <GitBranch className="h-3 w-3" />

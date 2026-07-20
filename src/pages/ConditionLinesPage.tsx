@@ -64,9 +64,9 @@ function StatusBadge({ status }: { status: string | null }) {
   const s = status || "—"
   const cls =
     s === "fulfilled" || s === "expired" // 成就 / 成就（満了）= 完了
-      ? "bg-emerald-600 text-white"
+      ? "bg-success text-white"
       : s === "partially_fulfilled" || s === "active"
-        ? "bg-amber-500 text-white"
+        ? "bg-warning text-white"
         : s === "cancelled" || s === "closed_short"
           ? "bg-muted text-muted-foreground line-through"
           : ""
@@ -79,9 +79,9 @@ function StatusBadge({ status }: { status: string | null }) {
 
 // 取引種別バッジ(統合Phase3): license=利用許諾 / product=物販 / service=委託
 const KIND_META: Record<string, { label: string; cls: string }> = {
-  license: { label: "利用許諾", cls: "border-sky-300 text-sky-700" },
-  product: { label: "物販", cls: "border-violet-300 text-violet-700" },
-  service: { label: "委託", cls: "border-amber-300 text-amber-700" },
+  license: { label: "利用許諾", cls: "border-primary/40 text-primary" },
+  product: { label: "物販", cls: "border-info/40 text-info" },
+  service: { label: "委託", cls: "border-warning/40 text-warning" },
 }
 function KindBadge({ kind }: { kind: string }) {
   const m = KIND_META[kind]
@@ -324,8 +324,8 @@ export function ConditionLinesPage() {
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
           <p className="retro-tag mb-1.5">COND · LINES</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight">条件明細</h2>
-          <p className="text-xs font-mono text-muted-foreground mt-1.5">
+          <h2 className="text-2xl font-semibold tracking-tight">条件明細</h2>
+          <p className="text-xs text-muted-foreground mt-1.5">
             消化・残高・当期発行状況の運用コックピット（導出ビュー駆動）。
           </p>
         </div>
@@ -335,7 +335,7 @@ export function ConditionLinesPage() {
             onClick={syncCloudSign}
             disabled={syncing}
             title="CloudSign の送信・締結状態を一括取込して送信履歴に反映"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border text-[11px] font-mono text-muted-foreground hover:border-foreground disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border text-[11px] text-muted-foreground hover:border-foreground disabled:opacity-50"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "同期中…" : "送信履歴を同期"}
@@ -345,7 +345,7 @@ export function ConditionLinesPage() {
             onClick={sendInspectionDigest}
             disabled={digesting}
             title="検収待ち/期限超過の件数を Slack に通知(日次ダイジェスト)"
-            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border text-[11px] font-mono text-muted-foreground hover:border-foreground disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border text-[11px] text-muted-foreground hover:border-foreground disabled:opacity-50"
           >
             <Bell className={`h-3.5 w-3.5 ${digesting ? "animate-pulse" : ""}`} />
             {digesting ? "送信中…" : "検収待ちをSlack通知"}
@@ -378,7 +378,7 @@ export function ConditionLinesPage() {
             key={b.name}
             type="button"
             onClick={() => setStatusFilter(statusFilter === b.name ? null : b.name)}
-            className={`px-2.5 py-1 rounded-md border ${statusFilter === b.name ? "bg-emerald-600 text-white border-emerald-700" : "border-border text-muted-foreground hover:border-foreground"}`}
+            className={`px-2.5 py-1 rounded-md border ${statusFilter === b.name ? "bg-success text-white border-success" : "border-border text-muted-foreground hover:border-foreground"}`}
           >
             {STATUS_LABEL[b.name] || b.name} ({b.count})
           </button>
@@ -398,14 +398,14 @@ export function ConditionLinesPage() {
         <button
           type="button"
           onClick={() => setInspectionFilter(inspectionFilter === "pending" ? "all" : "pending")}
-          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "pending" ? "bg-amber-500 text-white border-amber-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "pending" ? "bg-warning text-white border-warning" : "border-border text-muted-foreground hover:border-foreground"}`}
         >
           検収待ち ({inspectionCounts.pending})
         </button>
         <button
           type="button"
           onClick={() => setInspectionFilter(inspectionFilter === "overdue" ? "all" : "overdue")}
-          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "overdue" ? "bg-red-600 text-white border-red-700" : inspectionCounts.overdue > 0 ? "border-red-400 text-red-600 hover:border-red-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "overdue" ? "bg-destructive text-white border-destructive" : inspectionCounts.overdue > 0 ? "border-destructive text-destructive hover:border-destructive" : "border-border text-muted-foreground hover:border-foreground"}`}
         >
           期限超過 ({inspectionCounts.overdue})
         </button>
@@ -418,7 +418,7 @@ export function ConditionLinesPage() {
       ) : filtered.length === 0 ? (
         <div className="p-16 text-center border border-dashed border-border rounded-xl">
           <Inbox className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-          <p className="text-[13px] font-mono text-muted-foreground">
+          <p className="text-[13px] text-muted-foreground">
             条件明細がありません（新スキーマ未適用の可能性）。
           </p>
         </div>
@@ -473,11 +473,11 @@ export function ConditionLinesPage() {
                         ) : null}
                       </span>
                     ) : r.inspection_overdue ? (
-                      <Badge variant="outline" className="border-red-400 text-red-600">
+                      <Badge variant="outline" className="border-destructive text-destructive">
                         検収待ち·超過
                       </Badge>
                     ) : r.inspection_pending ? (
-                      <Badge variant="outline" className="border-amber-400 text-amber-700">
+                      <Badge variant="outline" className="border-warning text-warning">
                         検収待ち
                       </Badge>
                     ) : (
@@ -491,7 +491,7 @@ export function ConditionLinesPage() {
                     {r.sent_at ? (
                       r.sent_channel === "メール" ? (
                         <div>
-                          <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+                          <Badge variant="outline" className="border-success/40 text-success">
                             ✉ メール
                           </Badge>
                           <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
@@ -501,14 +501,14 @@ export function ConditionLinesPage() {
                         </div>
                       ) : r.cloudsign_completed_at ? (
                         <div>
-                          <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+                          <Badge variant="outline" className="border-success/40 text-success">
                             ✅ 締結済
                           </Badge>
                           <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.cloudsign_completed_at)}</div>
                         </div>
                       ) : (
                         <div>
-                          <Badge variant="outline" className="border-sky-300 text-sky-700">
+                          <Badge variant="outline" className="border-primary/40 text-primary">
                             ✍ クラウドサイン
                           </Badge>
                           <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
@@ -530,7 +530,7 @@ export function ConditionLinesPage() {
                         onClick={() => sendRow(r)}
                         disabled={sendingDoc === r.send_doc_number}
                         title={`${r.send_doc_number} を取引先へメール送信`}
-                        className="block mt-1 text-[10px] underline text-emerald-700 dark:text-emerald-300 disabled:opacity-50"
+                        className="block mt-1 text-[10px] underline text-success dark:text-success disabled:opacity-50"
                       >
                         {sendingDoc === r.send_doc_number
                           ? "送信中…"
@@ -547,7 +547,7 @@ export function ConditionLinesPage() {
                   </td>
                   <td className="px-3 py-2 text-center">
                     {r.has_overdue ? (
-                      <Badge variant="default" className="bg-red-600 text-white">未発行</Badge>
+                      <Badge variant="default" className="bg-destructive text-white">未発行</Badge>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
@@ -559,7 +559,7 @@ export function ConditionLinesPage() {
                         title="この明細を削除(実績が無い明細のみ)"
                         onClick={() => deleteLine(r)}
                         disabled={deletingId === r.id}
-                        className="text-muted-foreground hover:text-red-600 disabled:opacity-40 mr-2 align-middle"
+                        className="text-muted-foreground hover:text-destructive disabled:opacity-40 mr-2 align-middle"
                       >
                         {deletingId === r.id ? (
                           <Loader2 className="h-3.5 w-3.5 inline animate-spin" />
