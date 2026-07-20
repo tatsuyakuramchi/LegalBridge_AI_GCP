@@ -206,8 +206,10 @@ function infoRow(label: string, value: any): string {
  * 項目のみを「全件」並べる。Slack /法務検索 → Web 詳細で
  * 「文書情報だけでなく取引先情報も表示」を満たすための区画。
  */
-function vendorInfoCard(cp: any): string {
+function vendorInfoCard(cp: any, role: Role = "viewer"): string {
   if (!cp) return "";
+  // §12: 口座/反社/与信(格付) は admin のみ表示。viewer には描画しない。
+  const isAdmin = role === "admin";
   const yen = (n: any) =>
     n == null || n === "" ? "" : `¥${Number(n).toLocaleString("ja-JP")}`;
   const ppl = (n: any) =>
@@ -242,13 +244,14 @@ function vendorInfoCard(cp: any): string {
     infoRow("主要事業", cp.mainBusiness),
     infoRow("資本金", yen(cp.capitalYen)),
     infoRow("従業員数", ppl(cp.employeeCount)),
-    infoRow("格付", cp.rating),
-    infoRow("反社チェック", cp.antisocialCheckResult),
-    infoRow("振込先銀行", cp.bankName),
-    infoRow("支店", cp.branchName),
-    infoRow("口座種別", cp.accountType),
-    infoRow("口座番号", cp.accountNumber),
-    infoRow("口座名義", cp.accountHolderKana),
+    // §12: 与信/反社/口座は admin のみ(viewer には空文字→filter(Boolean)で除去)。
+    isAdmin ? infoRow("格付", cp.rating) : "",
+    isAdmin ? infoRow("反社チェック", cp.antisocialCheckResult) : "",
+    isAdmin ? infoRow("振込先銀行", cp.bankName) : "",
+    isAdmin ? infoRow("支店", cp.branchName) : "",
+    isAdmin ? infoRow("口座種別", cp.accountType) : "",
+    isAdmin ? infoRow("口座番号", cp.accountNumber) : "",
+    isAdmin ? infoRow("口座名義", cp.accountHolderKana) : "",
     infoRow("基本契約参照", cp.masterContractRef),
     infoRow("マスタ更新日", cp.masterUpdatedAt),
   ].filter(Boolean);
@@ -532,7 +535,7 @@ export function detailPage(
       </div>
     </div>
 
-    ${vendorInfoCard(cp)}
+    ${vendorInfoCard(cp, role)}
 
     <section class="category-block basic">
       <h3>🟦 基本契約 <span class="count">(${cat.basic?.length || 0}件)</span></h3>
