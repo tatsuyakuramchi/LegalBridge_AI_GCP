@@ -125,15 +125,15 @@ export const READ_PATHS_ON_POST: RegExp[] = [
   //   worker が同仕様(app_role 更新 + staff_role_change 監査ログ)を提供し、staging
   //   で検証済み。既定で PATCH は worker(write)へ振られるため、ここでの search-api
   //   への明示 pin を撤去した。search-api 側の当該ルートは soak 後に撤去(ステップ2)。
-  // 統合 P3-2: 条件明細の紐付け更新 (PUT /api/conditions/:id/links) は
-  //   search-api の正規実装。既定で PUT は worker へ振られるため明示。
-  /^\/api\/conditions\/\d+\/links(?:\?|$)/,
-  // 統合 P3-3: 請求権受領(sublicense)の書込(deals/reports/receipts/import)も
-  //   全て search-api 正規実装へ。
+  // 全UIリニューアル A(ステップ1): 条件明細リンク更新 (PUT /api/conditions/:id/links)
+  //   と作品別名 write (POST /api/works/:id/aliases, DELETE /api/work-aliases/:id) は
+  //   worker へ移設済み(staging 検証: 列/SQL 健全 + alias INSERT→DELETE round-trip)。
+  //   既定で PUT/POST/DELETE は worker(write)へ振られるため search-api pin を撤去。
+  //   閲覧 GET(/api/works/:id/aliases)は READ_PATHS_ON_GET により search-api(read)維持。
+  //   search-api 側の当該 write ルートは soak 後に撤去(ステップ2)。
+  // 統合 P3-3: 請求権受領(sublicense)の書込(deals/reports/receipts/import)は
+  //   SSR ポータル専用(admin-ui 参照 0)。search-api に据え置き(別途評価)。
   /^\/api\/sublicense(?:\/|\?|$)/,
-  // 統合 P3-4: 作品別名(タイトル名寄せ)の追加/削除は search-api 正規実装へ。
-  /^\/api\/works\/\d+\/aliases(?:\?|$)/,
-  /^\/api\/work-aliases\/\d+(?:\?|$)/,
   // 統合 P3-5: 作品モデル(v3)の write(POST/PUT/import)は search-api 正規実装へ。
   /^\/api\/v3\//,
 ];
