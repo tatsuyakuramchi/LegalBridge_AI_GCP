@@ -3808,7 +3808,9 @@ async function startServer() {
 
   // GET /api/conditions/search — 条件明細の検索 (支払日/納期/種類/取引先/担当/キーワード)
   //   admin または FIN 部署のみ(VIEW 側の閲覧専用ビューと整合)。
-  app.get("/api/conditions/search", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), async (req, res) => {
+  //   設計 §5/§13: 統合検索 namespace /api/search/conditions にも同一実装を登録(DRY)。
+  //   listConditions は vendor_name/code のみ返し機密(口座/反社/与信)を含まない。
+  const conditionsSearchHandler = async (req: any, res: any) => {
     try {
       const q = req.query as Record<string, string>;
       const result = await listConditions({
@@ -3826,10 +3828,12 @@ async function startServer() {
       });
       res.json({ ok: true, ...result });
     } catch (error: any) {
-      console.error("/api/conditions/search failed:", error);
+      console.error("conditions search failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
-  });
+  };
+  app.get("/api/conditions/search", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), conditionsSearchHandler);
+  app.get("/api/search/conditions", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), conditionsSearchHandler);
 
   // PUT /api/conditions/:id/links — 明細行の 原作/作品/マスター契約 紐付けを更新
   //   書き込みは admin 専用(FIN viewer の閲覧専用ビューからは編集不可)。

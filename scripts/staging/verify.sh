@@ -62,6 +62,11 @@ SVA="$(get '/api/search/vendors?limit=5' admin)"
 [[ "$(code '/api/search/vendors?limit=1' viewer)" == "200" ]] && ok "/api/search/vendors -> 200" || ng "/api/search/vendors が 200 でない"
 if echo "$SVV" | grep -qiE 'account_number|antisocial_check_result'; then ng "/api/search/vendors(viewer)に口座/反社が漏出"; else ok "/api/search/vendors(viewer)に口座/反社なし"; fi
 if echo "$SVA" | grep -qiE 'account_number|antisocial_check_result'; then ng "/api/search/vendors(admin)にも口座/反社が漏出(射影は常に安全のはず)"; else ok "/api/search/vendors(admin)にも口座/反社なし(構造安全)"; fi
+# conditions: admin/FIN のみ(admin→200 / viewer→403)。listConditions は vendor_name のみで機密なし。
+[[ "$(code '/api/search/conditions?limit=1' admin)" == "200" ]] && ok "/api/search/conditions(admin) -> 200" || ng "/api/search/conditions(admin)が 200 でない"
+[[ "$(code '/api/search/conditions?limit=1' viewer)" == "403" ]] && ok "/api/search/conditions(viewer) -> 403(admin/FIN 限定)" || ng "/api/search/conditions(viewer)が 403 でない"
+# contracts: admin-ui 内部(requirePortalSecret)。staging は secret 未設定で素通り→200。route 登録の確認(404 でない)。
+cc="$(code '/api/search/contracts?limit=1' admin)"; [[ "$cc" != "404" ]] && ok "/api/search/contracts 登録あり(-> $cc, 404 でない)" || ng "/api/search/contracts が 404(未登録)"
 
 echo ""
 echo "==== 結果: PASS=$pass FAIL=$fail ===="
