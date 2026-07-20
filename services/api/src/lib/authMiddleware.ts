@@ -39,8 +39,27 @@ type ResourceIdGetter = (req: Request) => string;
  */
 export type ReqUser = {
   email: string | null;
-  source: "iap_jwt" | "iap_header" | "portal_secret" | "dev_env" | "anonymous";
+  source: "iap_jwt" | "iap_header" | "portal_secret" | "dev_env" | "anonymous" | "staging_dev";
+  /** staging dev-auth 時に x-staging-role で注入された実効ロール(admin|viewer)。 */
+  stagingRole?: "admin" | "viewer";
 };
+
+/**
+ * staging 専用の dev-auth（全UIリニューアル A / §12 検証用）。
+ *   `STAGING_DEV_AUTH=1`（staging のみ設定・本番は絶対に設定しない）かつ
+ *   リクエストに `x-staging-role` ヘッダがある場合だけ、そのロールのユーザーを注入する。
+ *   ヘッダが無ければ null を返し通常の認証経路(portal_secret/IAP)へフォールバックするため、
+ *   admin-ui の内部呼び出し(portal_secret=admin)を上書きしない。fail-closed。
+ */
+function maybeStagingDevUser(req: Request): ReqUser | null {
+  if (process.env.STAGING_DEV_AUTH !== "1") return null;
+  // 二重防御: IAP 強制環境(=本番)では、たとえ env が誤設定されても発動しない。
+  if (isIapEnforced()) return null;
+  const hdr = (req.header("x-staging-role") || "").trim().toLowerCase();
+  if (!hdr) return null;
+  const role: "admin" | "viewer" = hdr === "admin" ? "admin" : "viewer";
+  return { email: `staging-${role}@dev.local`, source: "staging_dev", stagingRole: role };
+}
 
 interface Options {
   /** リソース ID をどう組み立てるか (例: req → "vendor:123") */
@@ -198,6 +217,13 @@ export function requireSignedUrlOrIap(opts: Options): RequestHandler {
   const renderErr = opts.renderErrorPage || defaultErrorHtml;
 
   return async (req: Request, res: Response, next: NextFunction) => {
+    // 0) staging dev-auth（STAGING_DEV_AUTH=1 + x-staging-role のときのみ）
+    const sdev = maybeStagingDevUser(req);
+    if (sdev) {
+      (req as any).user = sdev;
+      logAccess(req, "allow_signed", { via: "staging_dev", role: sdev.stagingRole });
+      return next();
+    }
     // 1) 署名URL (Slack ディープリンク主経路)
     let resourceId = "";
     try {
@@ -297,6 +323,13 @@ export function requireIapUser(opts: {
   const renderErr = opts.renderErrorPage || defaultErrorHtml;
 
   return async (req: Request, res: Response, next: NextFunction) => {
+    // 0s) staging dev-auth（STAGING_DEV_AUTH=1 + x-staging-role のときのみ）
+    const sdev = maybeStagingDevUser(req);
+    if (sdev) {
+      (req as any).user = sdev;
+      logAccess(req, "allow_signed", { layer: "iap_user", via: "staging_dev", role: sdev.stagingRole });
+      return next();
+    }
     // 0) LB_PORTAL_SECRET fallback (Phase 22 で追加):
     //    admin-ui のような別 Cloud Run サービスから search-api を直接 *.run.app
     //    URL で叩く経路は IAP を通らないため、共有シークレット (= 既存の
@@ -671,6 +704,9 @@ export async function resolveAppRole(req: Request): Promise<Role> {
 
   // admin-ui からの内部呼び出し (portal_secret) は admin 扱い
   if (user?.source === "portal_secret") return "admin";
+
+  // staging dev-auth: x-staging-role で注入されたロールをそのまま実効ロールに。
+  if (user?.source === "staging_dev") return user.stagingRole === "admin" ? "admin" : "viewer";
 
   const email = (user?.email || "").trim().toLowerCase();
 
