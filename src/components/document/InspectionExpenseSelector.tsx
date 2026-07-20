@@ -66,7 +66,7 @@ export const InspectionExpenseSelector: React.FC<Props> = ({
     const next = new Set(selectedLineNos);
     if (next.has(lineNo)) next.delete(lineNo);
     else next.add(lineNo);
-    onChange(Array.from(next).sort((a, b) => a - b));
+    onChange(Array.from(next).sort((a, b) => Number(a) - Number(b)));
   };
 
   const toggleAll = (on: boolean) => {
