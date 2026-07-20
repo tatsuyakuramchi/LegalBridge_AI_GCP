@@ -154,8 +154,8 @@ export function UnlinkedConditionsPanel() {
     <div className="space-y-5">
       <div>
         <p className="retro-tag mb-1.5">MST · UNLINKED CL</p>
-        <h3 className="text-lg font-mono font-bold tracking-tight">未リンク利用許諾CL 棚卸し</h3>
-        <p className="text-xs font-mono text-muted-foreground mt-1 leading-snug">
+        <h3 className="text-lg font-semibold tracking-tight">未リンク利用許諾CL 棚卸し</h3>
+        <p className="text-xs text-muted-foreground mt-1 leading-snug">
           発注書(受託者帰属)などで発生した「素材未割当の利用許諾条件(CL)」を、原作マテリアルへ
           まとめて後付けリンクします。<b>新規作成しない＝二重CLを作りません</b>。リンクすると
           原作ビュー・利用許諾料計算書・条件引用(lc-candidates)に正しく出るようになります。
@@ -164,7 +164,7 @@ export function UnlinkedConditionsPanel() {
 
       {/* リンク先の指定 */}
       <div className="rounded-md border border-border bg-muted/20 px-3 py-3 space-y-2">
-        <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
           リンク先 — 原作 / 原作マテリアル
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -211,11 +211,11 @@ export function UnlinkedConditionsPanel() {
 
       {/* 一覧 */}
       {loading ? (
-        <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground py-6 justify-center">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-6 justify-center">
           <Loader2 className="h-4 w-4 animate-spin" /> 読み込み中…
         </div>
       ) : rows.length === 0 ? (
-        <div className="font-mono text-[11px] text-muted-foreground py-8 text-center border border-dashed border-border rounded">
+        <div className="text-[11px] text-muted-foreground py-8 text-center border border-dashed border-border rounded">
           未リンクの利用許諾CLはありません。
         </div>
       ) : (
@@ -231,12 +231,12 @@ export function UnlinkedConditionsPanel() {
                     onChange={(e) => toggleDoc(list[0]?.document_number ?? null, e.target.checked)}
                     className="h-3.5 w-3.5"
                   />
-                  <FileText className="h-3.5 w-3.5 text-indigo-600" />
+                  <FileText className="h-3.5 w-3.5 text-primary" />
                   <span className="font-mono text-[11px] font-bold">{docNo}</span>
                   {list[0]?.contract_title && (
-                    <span className="font-mono text-[10px] text-muted-foreground truncate">{list[0].contract_title}</span>
+                    <span className="text-[10px] text-muted-foreground truncate">{list[0].contract_title}</span>
                   )}
-                  <span className="ml-auto font-mono text-[10px] text-muted-foreground">{list.length} 件</span>
+                  <span className="ml-auto text-[10px] text-muted-foreground">{list.length} 件</span>
                 </div>
                 <ul className="divide-y divide-border">
                   {list.map((c) => (
@@ -258,7 +258,7 @@ export function UnlinkedConditionsPanel() {
 
       {/* フッタ: 一括リンク */}
       <div className="sticky bottom-0 flex items-center gap-3 border-t border-border bg-background/95 backdrop-blur px-1 py-3">
-        <span className="font-mono text-[11px] text-muted-foreground">
+        <span className="text-[11px] text-muted-foreground">
           選択 {checked.size} 件
           {sip && matId && (
             <> → <b>{materials.find((m) => String(m.id) === String(matId))?.material_code || "素材"}</b> へ</>

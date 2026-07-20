@@ -123,10 +123,10 @@ export function SublicenseConditionPanel() {
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
       <header className="border-b border-border pb-5">
         <p className="retro-tag mb-1.5">Master · 再許諾（閲覧）</p>
-        <h2 className="text-2xl font-mono font-bold tracking-tight flex items-center gap-2">
+        <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
           <Coins className="h-6 w-6 text-muted-foreground" /> 再許諾条件 一覧
         </h2>
-        <p className="text-[13px] font-mono text-muted-foreground mt-1.5">
+        <p className="text-[13px] text-muted-foreground mt-1.5">
           再許諾（②権利許諾）／自社製造他社販売（③プロダクトアウト）の条件は、
           <strong>「再許諾条件書」文書作成フォームで作成・修正</strong>します（データの唯一の入力口）。
           本画面は登録済み条件の閲覧用です。
@@ -142,7 +142,7 @@ export function SublicenseConditionPanel() {
 
       {/* STEP 1: 作品 */}
       <section className="space-y-2">
-        <div className="text-[11px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
+        <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
           <Search className="h-3.5 w-3.5" /> 1. 作品（自社作品）を選ぶ
         </div>
         <EntitySearchSelect entity="work" value={work?.id ?? null} onSelect={setWork} placeholder="作品を検索（コード / タイトル）" />
@@ -151,7 +151,7 @@ export function SublicenseConditionPanel() {
       {/* STEP 2: 再許諾先 */}
       {workId && (
         <section className="space-y-2">
-          <div className="text-[11px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
             <Building2 className="h-3.5 w-3.5" /> 2. 再許諾先を選ぶ
           </div>
           <EntitySearchSelect entity="vendor" value={vendor?.id ?? null} onSelect={setVendor} placeholder="再許諾先（取引先）を検索（名称 / コード）" />
@@ -162,14 +162,14 @@ export function SublicenseConditionPanel() {
       {workId && vendorId && (
         <section className="space-y-3">
           <div className="flex items-center gap-2">
-            <div className="text-[11px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
-              <Coins className="h-3.5 w-3.5 text-violet-600" /> 3. 登録済みの再許諾条件
+            <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
+              <Coins className="h-3.5 w-3.5 text-info" /> 3. 登録済みの再許諾条件
             </div>
             {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </div>
 
           {rows.length === 0 ? (
-            <p className="text-[12px] font-mono text-muted-foreground border border-dashed border-border rounded-md px-3 py-6 text-center">
+            <p className="text-[12px] text-muted-foreground border border-dashed border-border rounded-md px-3 py-6 text-center">
               この作品 × 再許諾先の再許諾条件はまだありません。上の「再許諾条件書を作成」から文書フォームで登録してください。
             </p>
           ) : (
@@ -177,17 +177,17 @@ export function SublicenseConditionPanel() {
               {rows.map((c, i) => (
                 <div key={c.id} className="rounded-xl border border-border border-t-[3px] border-t-violet-500 bg-card p-4 space-y-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-mono font-bold text-violet-700">条件 #{i + 1} (id:{c.id})</span>
+                    <span className="text-[10px] font-mono font-bold text-info">条件 #{i + 1} (id:{c.id})</span>
                     {c.document_id ? (
                       <button
                         type="button"
                         onClick={() => openSourceDoc(c.document_id!)}
-                        className="ml-auto inline-flex items-center gap-1 text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground"
+                        className="ml-auto inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground"
                       >
                         <ExternalLink className="h-3 w-3" /> 元文書を開く（{c.document_number || `id:${c.document_id}`}）
                       </button>
                     ) : (
-                      <span className="ml-auto text-[10px] font-mono text-muted-foreground/70">旧・契約無し条件（文書なし）</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground/70">旧・契約無し条件（文書なし）</span>
                     )}
                   </div>
 
@@ -208,7 +208,7 @@ export function SublicenseConditionPanel() {
             </div>
           )}
 
-          <div className="rounded-md border border-emerald-200 bg-emerald-50/40 dark:bg-emerald-950/20 px-3 py-2.5 text-[11px] font-mono leading-relaxed text-emerald-900 dark:text-emerald-200">
+          <div className="rounded-md border border-success/40 bg-success/10 dark:bg-success px-3 py-2.5 text-[11px] font-mono leading-relaxed text-success dark:text-success">
             <strong>この条件が再許諾料の源泉です。</strong> 作成・修正は「再許諾条件書」文書フォームで行い、
             再許諾料のライブ計算・受領記録・分配は請求テーブル画面で行います。
           </div>

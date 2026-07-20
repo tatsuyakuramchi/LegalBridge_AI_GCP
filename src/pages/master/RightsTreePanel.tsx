@@ -41,7 +41,7 @@ const yen = (n: number) => "¥" + Math.round(n).toLocaleString("ja-JP")
 function Badge({ kind }: { kind: Right["type"] }) {
   if (kind === "own")
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300">
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-info/40 bg-info/10 text-info dark:border-info dark:bg-info dark:text-info">
         <InfinityIcon className="h-3 w-3" /> 買い切り
       </span>
     )
@@ -54,7 +54,7 @@ function MetaChips({ r }: { r: Right }) {
   if (r.type === "own") {
     return (
       <div className="flex flex-wrap gap-1.5 mt-1.5">
-        <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md border border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300">
+        <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-md border border-info/40 bg-info/10 text-info dark:border-info dark:bg-info dark:text-info">
           <Coins className="h-3 w-3" /> 一時金 {r.amount_label}
         </span>
         <span className="text-[11px] px-2 py-0.5 rounded-md border border-border bg-muted/40 text-muted-foreground">
@@ -71,8 +71,8 @@ function MetaChips({ r }: { r: Right }) {
   )
   const calcTone =
     r.dir === "in"
-      ? "border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300 font-mono"
-      : "border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-300 font-mono"
+      ? "border-success/40 text-success dark:border-success dark:text-success font-mono"
+      : "border-warning/40 text-warning dark:border-warning dark:text-warning font-mono"
   return (
     <div className="flex flex-wrap gap-1.5 mt-1.5">
       {r.calc ? chip("計算条件", r.calc, calcTone) : null}
@@ -83,7 +83,7 @@ function MetaChips({ r }: { r: Right }) {
 }
 
 const Leaf: React.FC<{ r: Right }> = ({ r }) => {
-  const stripe = r.type === "own" ? "bg-violet-500" : r.dir === "in" ? "bg-emerald-500" : r.type === "free" ? "bg-gray-400" : "bg-amber-500"
+  const stripe = r.type === "own" ? "bg-info" : r.dir === "in" ? "bg-success" : r.type === "free" ? "bg-gray-400" : "bg-warning"
   return (
     <div className="flex items-stretch gap-2.5 rounded-lg border border-border bg-card px-3 py-2 hover:border-foreground/40">
       <span className={`w-1 rounded ${stripe} flex-none`} />
@@ -92,7 +92,7 @@ const Leaf: React.FC<{ r: Right }> = ({ r }) => {
           <span className="font-semibold text-[13px]">{r.name}</span>
           <span className="text-[11px] text-muted-foreground">· {r.party}</span>
           <Badge kind={r.type} />
-          {r.document_number ? <span className="text-[10px] font-mono text-muted-foreground/70">{r.document_number}</span> : null}
+          {r.document_number ? <span className="text-[10px] text-muted-foreground/70">{r.document_number}</span> : null}
         </div>
         <MetaChips r={r} />
       </div>
@@ -104,7 +104,7 @@ function Branch({ title, dir, count, children, defaultOpen = true }: {
   title: string; dir: "in" | "out"; count: number; children: React.ReactNode; defaultOpen?: boolean
 }) {
   const [open, setOpen] = React.useState(defaultOpen)
-  const tone = dir === "in" ? "text-emerald-700 dark:text-emerald-300" : "text-amber-700 dark:text-amber-300"
+  const tone = dir === "in" ? "text-success dark:text-success" : "text-warning dark:text-warning"
   return (
     <div>
       <button
@@ -114,7 +114,7 @@ function Branch({ title, dir, count, children, defaultOpen = true }: {
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? "" : "-rotate-90"}`} />
         <span className="text-[11px]">{dir === "in" ? "▲" : "▼"}</span>
         {title}
-        <span className="text-[10px] font-mono text-muted-foreground font-semibold">{count} 件</span>
+        <span className="text-[10px] text-muted-foreground font-semibold">{count} 件</span>
       </button>
       {open ? <div className="mt-2 ml-3 border-l border-dashed border-border pl-4 space-y-2">{children}</div> : null}
     </div>
@@ -124,24 +124,24 @@ function Branch({ title, dir, count, children, defaultOpen = true }: {
 function TerritorySummaryCard({ summary, overlaps }: { summary: TerritorySummary[]; overlaps: string[] }) {
   if (!summary.length) return null
   return (
-    <div className="rounded-lg border border-dashed border-emerald-300 bg-emerald-50/60 dark:border-emerald-800 dark:bg-emerald-950/30 px-3 py-2.5">
-      <div className="text-[11px] font-extrabold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5 mb-1">
+    <div className="rounded-lg border border-dashed border-success/40 bg-success/10 dark:border-success dark:bg-success px-3 py-2.5">
+      <div className="text-[11px] font-extrabold text-success dark:text-success flex items-center gap-1.5 mb-1">
         🌐 許諾地域サマリー
-        <span className="text-[10px] font-mono text-muted-foreground bg-card border border-emerald-300 dark:border-emerald-800 rounded px-1.5">
+        <span className="text-[10px] text-muted-foreground bg-card border border-success/40 dark:border-success rounded px-1.5">
           {summary.length} 地域
         </span>
       </div>
       {summary.map((s, i) => (
-        <div key={i} className="flex items-center gap-2.5 flex-wrap py-1 border-t border-dashed border-emerald-200 dark:border-emerald-900 first:border-t-0 text-[12px]">
+        <div key={i} className="flex items-center gap-2.5 flex-wrap py-1 border-t border-dashed border-success/40 dark:border-success first:border-t-0 text-[12px]">
           <span className="font-bold min-w-[80px]">{s.territory}</span>
-          <span className="font-mono text-[11px] border border-emerald-300 dark:border-emerald-800 rounded px-2 bg-card">
+          <span className="font-mono text-[11px] border border-success/40 dark:border-success rounded px-2 bg-card">
             {s.languages.join("・") || "—"}
           </span>
           <span className="text-[11px] text-muted-foreground">{s.rights.join(" / ")}</span>
         </div>
       ))}
       {overlaps.length ? (
-        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-md px-2.5 py-1.5">
+        <div className="mt-2 flex items-start gap-1.5 text-[11px] text-warning dark:text-warning bg-warning/10 dark:bg-warning border border-warning/40 dark:border-warning rounded-md px-2.5 py-1.5">
           <AlertTriangle className="h-3.5 w-3.5 flex-none mt-0.5" />
           <span>{overlaps.join("、")} は広域許諾と範囲が重複します。媒体・独占条件をご確認ください。</span>
         </div>
@@ -186,7 +186,7 @@ export function RightsTreePanel({ workId }: { workId: number | string }) {
         </button>
       </div>
 
-      {error ? <div className="text-[12px] text-red-600">読み込みに失敗しました: {error}</div> : null}
+      {error ? <div className="text-[12px] text-destructive">読み込みに失敗しました: {error}</div> : null}
       {loading && !data ? <div className="text-[12px] text-muted-foreground">読み込み中…</div> : null}
 
       {data ? (
@@ -194,17 +194,17 @@ export function RightsTreePanel({ workId }: { workId: number | string }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="rounded-md border border-border bg-card px-3 py-2">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-bold">◆ 買い切り保有</div>
-              <div className="text-[15px] font-bold text-violet-700 dark:text-violet-300 tabular-nums">{data.totals.buyout_count} 件</div>
+              <div className="text-[15px] font-bold text-info dark:text-info tabular-nums">{data.totals.buyout_count} 件</div>
               <div className="text-[10px] text-muted-foreground">一時金 {yen(data.totals.buyout_amount)}</div>
             </div>
             <div className="rounded-md border border-border bg-card px-3 py-2">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-bold">▼ 取得した権利</div>
-              <div className="text-[15px] font-bold text-amber-700 dark:text-amber-300 tabular-nums">{data.totals.acquired_count} 件</div>
+              <div className="text-[15px] font-bold text-warning dark:text-warning tabular-nums">{data.totals.acquired_count} 件</div>
               <div className="text-[10px] text-muted-foreground">支払・保有</div>
             </div>
             <div className="rounded-md border border-border bg-card px-3 py-2">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-bold">▲ 許諾した権利</div>
-              <div className="text-[15px] font-bold text-emerald-700 dark:text-emerald-300 tabular-nums">{data.totals.granted_count} 件</div>
+              <div className="text-[15px] font-bold text-success dark:text-success tabular-nums">{data.totals.granted_count} 件</div>
               <div className="text-[10px] text-muted-foreground">受領</div>
             </div>
             <div className="rounded-md border border-border bg-card px-3 py-2">

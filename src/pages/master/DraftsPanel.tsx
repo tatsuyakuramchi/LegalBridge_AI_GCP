@@ -191,7 +191,7 @@ export function DraftsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
           {rows.length} drafts {selected.size > 0 && `· ${selected.size} 選択中`}
         </span>
         <div className="flex-1" />
@@ -243,7 +243,7 @@ export function DraftsPanel() {
       </div>
 
       <div className="rounded-sm border border-input bg-background overflow-hidden">
-        <div className="grid grid-cols-[36px_1fr_180px_180px_120px_100px_140px] gap-2 px-3 py-2 border-b border-input bg-muted/30 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+        <div className="grid grid-cols-[36px_1fr_180px_180px_120px_100px_140px] gap-2 px-3 py-2 border-b border-input bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
           <button
             type="button"
             onClick={toggleAll}
@@ -265,7 +265,7 @@ export function DraftsPanel() {
         </div>
 
         {rows.length === 0 && !loading && (
-          <div className="px-3 py-6 text-center text-[11px] font-mono text-muted-foreground">
+          <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
             {query ? `"${query}" に該当する draft はありません` : "draft はありません"}
           </div>
         )}
@@ -278,7 +278,7 @@ export function DraftsPanel() {
               className={cn(
                 "grid grid-cols-[36px_1fr_180px_180px_120px_100px_140px] gap-2 px-3 py-2 border-b border-input/60 text-[11px] font-mono items-center",
                 "hover:bg-muted/30 transition-colors",
-                checked && "bg-sky-50/60"
+                checked && "bg-primary/10"
               )}
             >
               <button
@@ -317,7 +317,7 @@ export function DraftsPanel() {
                 <button
                   type="button"
                   onClick={() => openInEditor(r)}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-mono uppercase tracking-wider border border-input rounded-sm hover:bg-muted text-foreground"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-wider border border-input rounded-sm hover:bg-muted text-foreground"
                   title="文書作成画面でこの課題を開く (DBSYNC で draft が自動復元)"
                 >
                   <ExternalLink className="h-3 w-3" />
@@ -327,7 +327,7 @@ export function DraftsPanel() {
                   type="button"
                   onClick={() => deleteOne(r)}
                   disabled={busy}
-                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-mono uppercase tracking-wider border border-destructive/40 text-destructive rounded-sm hover:bg-destructive/10 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] uppercase tracking-wider border border-destructive/40 text-destructive rounded-sm hover:bg-destructive/10 disabled:opacity-50"
                   title="この draft を削除"
                 >
                   <Trash2 className="h-3 w-3" />
@@ -339,7 +339,7 @@ export function DraftsPanel() {
         })}
       </div>
 
-      <div className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+      <div className="text-[10px] text-muted-foreground leading-relaxed">
         ※ 通常 PDF 発行 / 📦 一括完了 では draft は自動削除されます。<br />
         ※ 課題を破棄した場合などに残った draft をここから掃除できます。<br />
         ※ 「サイズ」列は form_data の JSON バイト数、(数字k) はキー数。

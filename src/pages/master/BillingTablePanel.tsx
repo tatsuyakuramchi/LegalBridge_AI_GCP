@@ -155,11 +155,11 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
     <div className="rounded-lg border border-border bg-card overflow-hidden">
       <div className="px-4 py-2.5 bg-muted/40 border-b border-border space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <Coins className="h-3.5 w-3.5 text-amber-600" />
+          <Coins className="h-3.5 w-3.5 text-warning" />
           <span className="font-mono text-[11px] font-bold">
             再許諾条件 #{cond.condition_no ?? cid}
           </span>
-          <span className="font-mono text-[10px] text-muted-foreground">
+          <span className="text-[10px] text-muted-foreground">
             {cond.counterparty_name || "（再許諾先未設定）"} / 料率 {cond.rate_pct ?? "—"}%
             {isQtyBased(cond) ? ` / 卸値 ${yen(cond.unit_price, cond.currency)}×数量` : " / 売上×料率"}
             {cond.region_language_label ? ` / ${cond.region_language_label}` : ""}
@@ -167,12 +167,12 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
         </div>
         <div className="font-mono text-[10px]">
           {hasParent ? (
-            <span className="text-emerald-700">
+            <span className="text-success">
               親ライセンスイン: {cond.licensor_name || "（ライセンサー未設定）"} 料率 {cond.parent_rate_pct ?? "—"}%
               {cond.licensor_work_title ? `（源泉: ${cond.licensor_work_title}）` : ""} → 分配算出可
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-amber-700">
+            <span className="inline-flex items-center gap-1 text-warning">
               <AlertTriangle className="h-3 w-3" /> 親ライセンスイン条件が未リンク → 分配は算出されません（再許諾条件登録で料率元を紐づけてください）
             </span>
           )}
@@ -181,7 +181,7 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
 
       <div className="p-3 overflow-x-auto">
         {loading ? (
-          <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground py-2">
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground py-2">
             <Loader2 className="h-3.5 w-3.5 animate-spin" /> 受領記録を読み込み中…
           </div>
         ) : (
@@ -191,12 +191,12 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
                 <th className="text-left font-bold py-1 pr-2">期間</th>
                 <th className="text-right font-bold py-1 px-2">報告売上</th>
                 <th className="text-right font-bold py-1 px-2">報告数量</th>
-                <th className="text-right font-bold py-1 px-2 text-sky-700">受領再許諾料</th>
+                <th className="text-right font-bold py-1 px-2 text-primary">受領再許諾料</th>
                 <th className="text-right font-bold py-1 px-2">受領額</th>
                 <th className="text-left font-bold py-1 px-2">受領日</th>
                 <th className="text-right font-bold py-1 px-2">分配基準額</th>
                 <th className="text-right font-bold py-1 px-2">個数</th>
-                <th className="text-right font-bold py-1 px-2 text-rose-700">→ライセンサー支払</th>
+                <th className="text-right font-bold py-1 px-2 text-destructive">→ライセンサー支払</th>
                 <th className="py-1 pl-2"></th>
               </tr>
             </thead>
@@ -208,18 +208,18 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
                   const ec = "w-full text-[10px] font-mono bg-background border border-input rounded px-1 py-0.5 focus:outline-none focus:border-foreground"
                   const set = (k: string, v: any) => setEditDraft({ ...editDraft, [k]: v })
                   return (
-                    <tr key={x.id} className="border-b border-border/60 bg-amber-50/50 dark:bg-amber-950/20">
+                    <tr key={x.id} className="border-b border-border/60 bg-warning/10 dark:bg-warning">
                       <td className="py-1 pr-2"><input className={ec} value={editDraft.period} onChange={(e) => set("period", e.target.value)} placeholder="YYYY-MM" /></td>
                       <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.reported_sales} onChange={(e) => set("reported_sales", e.target.value)} disabled={isQtyBased(cond)} /></td>
                       <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.reported_quantity} onChange={(e) => set("reported_quantity", e.target.value)} /></td>
-                      <td className="text-right py-1 px-2 font-bold text-sky-700">{yen(eRoy, cond.currency)}</td>
+                      <td className="text-right py-1 px-2 font-bold text-primary">{yen(eRoy, cond.currency)}</td>
                       <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.received_amount} onChange={(e) => set("received_amount", e.target.value)} /></td>
                       <td className="py-1 px-2"><input className={ec} type="date" value={editDraft.received_date} onChange={(e) => set("received_date", e.target.value)} /></td>
                       <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.distribution_base} onChange={(e) => set("distribution_base", e.target.value)} /></td>
                       <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.distribution_qty} onChange={(e) => set("distribution_qty", e.target.value)} /></td>
-                      <td className="text-right py-1 px-2 font-bold text-rose-700">{eDist == null ? "—" : yen(eDist, cond.parent_currency || cond.currency)}</td>
+                      <td className="text-right py-1 px-2 font-bold text-destructive">{eDist == null ? "—" : yen(eDist, cond.parent_currency || cond.currency)}</td>
                       <td className="py-1 pl-2 text-right whitespace-nowrap">
-                        <button type="button" onClick={() => void saveEdit()} disabled={savingEdit} className="text-emerald-600 hover:text-emerald-700 mr-1.5 disabled:opacity-40">
+                        <button type="button" onClick={() => void saveEdit()} disabled={savingEdit} className="text-success hover:text-success mr-1.5 disabled:opacity-40">
                           {savingEdit ? <Loader2 className="h-3 w-3 animate-spin inline" /> : <Check className="h-3.5 w-3.5 inline" />}
                         </button>
                         <button type="button" onClick={cancelEdit} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5 inline" /></button>
@@ -232,14 +232,14 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
                     <td className="py-1 pr-2">{x.period || "—"}</td>
                     <td className="text-right py-1 px-2">{yen(x.reported_sales, cond.currency)}</td>
                     <td className="text-right py-1 px-2">{x.reported_quantity ?? "—"}</td>
-                    <td className="text-right py-1 px-2 font-bold text-sky-700">{yen(x.computed_royalty_ex_tax, cond.currency)}</td>
+                    <td className="text-right py-1 px-2 font-bold text-primary">{yen(x.computed_royalty_ex_tax, cond.currency)}</td>
                     <td className="text-right py-1 px-2">{yen(x.received_amount, cond.currency)}</td>
                     <td className="py-1 px-2">{x.received_date || "—"}</td>
                     <td className="text-right py-1 px-2">{yen(x.distribution_base, cond.currency)}</td>
                     <td className="text-right py-1 px-2">{x.distribution_qty ?? "—"}</td>
-                    <td className="text-right py-1 px-2 font-bold text-rose-700">{yen(x.computed_distribution_ex_tax, cond.currency)}</td>
+                    <td className="text-right py-1 px-2 font-bold text-destructive">{yen(x.computed_distribution_ex_tax, cond.currency)}</td>
                     <td className="py-1 pl-2 text-right whitespace-nowrap">
-                      <button type="button" onClick={() => startEdit(x)} className="text-muted-foreground hover:text-sky-600 mr-1.5"><Pencil className="h-3 w-3 inline" /></button>
+                      <button type="button" onClick={() => startEdit(x)} className="text-muted-foreground hover:text-primary mr-1.5"><Pencil className="h-3 w-3 inline" /></button>
                       <button type="button" onClick={() => void del(x.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3 inline" /></button>
                     </td>
                   </tr>
@@ -251,9 +251,9 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
               {receipts.length > 0 && (
                 <tr className="border-t border-border font-bold">
                   <td className="py-1 pr-2" colSpan={3}>合計</td>
-                  <td className="text-right py-1 px-2 text-sky-700">{yen(totalRecv, cond.currency)}</td>
+                  <td className="text-right py-1 px-2 text-primary">{yen(totalRecv, cond.currency)}</td>
                   <td colSpan={4}></td>
-                  <td className="text-right py-1 px-2 text-rose-700">{yen(totalDist, cond.currency)}</td>
+                  <td className="text-right py-1 px-2 text-destructive">{yen(totalDist, cond.currency)}</td>
                   <td></td>
                 </tr>
               )}
@@ -267,14 +267,14 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
             <div><label className={labelCls}>期間(YYYY-MM)</label><input className={inputCls} value={draft.period} onChange={(e) => setDraft({ ...draft, period: e.target.value })} placeholder="2026-03" /></div>
             <div><label className={labelCls}>報告売上</label><input className={inputCls} type="number" value={draft.reported_sales} onChange={(e) => setDraft({ ...draft, reported_sales: e.target.value })} disabled={isQtyBased(cond)} /></div>
             <div><label className={labelCls}>報告数量</label><input className={inputCls} type="number" value={draft.reported_quantity} onChange={(e) => setDraft({ ...draft, reported_quantity: e.target.value })} /></div>
-            <div><label className={cn(labelCls, "text-sky-700")}>受領再許諾料(計算)</label><div className="text-[11px] font-mono font-bold text-sky-700 py-1">{yen(draftRoyalty, cond.currency)}</div></div>
+            <div><label className={cn(labelCls, "text-primary")}>受領再許諾料(計算)</label><div className="text-[11px] font-mono font-bold text-primary py-1">{yen(draftRoyalty, cond.currency)}</div></div>
             <div><label className={labelCls}>受領額</label><input className={inputCls} type="number" value={draft.received_amount} onChange={(e) => setDraft({ ...draft, received_amount: e.target.value })} /></div>
             <div><label className={labelCls}>受領日</label><input className={inputCls} type="date" value={draft.received_date} onChange={(e) => setDraft({ ...draft, received_date: e.target.value })} /></div>
             <div><label className={labelCls}>分配基準額(既定上書)</label><input className={inputCls} type="number" value={draft.distribution_base} onChange={(e) => setDraft({ ...draft, distribution_base: e.target.value })} placeholder={isQtyBased(cond) ? "既定=卸値" : "既定=受領料"} /></div>
             <div><label className={labelCls}>個数(既定上書)</label><input className={inputCls} type="number" value={draft.distribution_qty} onChange={(e) => setDraft({ ...draft, distribution_qty: e.target.value })} placeholder={isQtyBased(cond) ? "既定=数量" : "既定=1"} /></div>
           </div>
           <div className="flex items-center gap-3 mt-2">
-            <span className="font-mono text-[10px] text-rose-700">
+            <span className="font-mono text-[10px] text-destructive">
               → ライセンサー支払(分配)予測: <b>{draftDist == null ? "（親未リンク）" : yen(draftDist, cond.parent_currency || cond.currency)}</b>
             </span>
             <button type="button" onClick={() => void add()} disabled={saving}
@@ -311,18 +311,18 @@ export function BillingTablePanel() {
     <div className="space-y-5">
       <div>
         <p className="retro-tag mb-1.5">MST · BILLING</p>
-        <h3 className="text-lg font-mono font-bold tracking-tight">請求・分配テーブル（再許諾）</h3>
-        <p className="text-xs font-mono text-muted-foreground mt-1 leading-snug">
+        <h3 className="text-lg font-semibold tracking-tight">請求・分配テーブル（再許諾）</h3>
+        <p className="text-xs text-muted-foreground mt-1 leading-snug">
           作品の<b>再許諾条件（sublicense_out）</b>ごとに、受領記録を入力します。
-          <span className="inline-flex items-center gap-1 mx-1"><ArrowDownToLine className="h-3 w-3 text-sky-700" />受領再許諾料</span>（当社が受領）と、
-          <span className="inline-flex items-center gap-1 mx-1"><ArrowUpFromLine className="h-3 w-3 text-rose-700" />ライセンサーへ支払（分配＝基準額×個数×親ライセンスイン料率）</span>
+          <span className="inline-flex items-center gap-1 mx-1"><ArrowDownToLine className="h-3 w-3 text-primary" />受領再許諾料</span>（当社が受領）と、
+          <span className="inline-flex items-center gap-1 mx-1"><ArrowUpFromLine className="h-3 w-3 text-destructive" />ライセンサーへ支払（分配＝基準額×個数×親ライセンスイン料率）</span>
           をライブ計算し、入金/出金台帳（payments）へ同期します。
         </p>
       </div>
 
       <div className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
         <div className="flex items-center justify-between gap-2 mb-1">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">対象作品</div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">対象作品</div>
           {workId && (
             <a
               href={`/billing-print/${encodeURIComponent(workId)}?title=${encodeURIComponent(work?.label || "")}`}
@@ -337,15 +337,15 @@ export function BillingTablePanel() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground py-6 justify-center">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-6 justify-center">
           <Loader2 className="h-4 w-4 animate-spin" /> 再許諾条件を読み込み中…
         </div>
       ) : !workId ? (
-        <div className="font-mono text-[11px] text-muted-foreground py-8 text-center border border-dashed border-border rounded">
+        <div className="text-[11px] text-muted-foreground py-8 text-center border border-dashed border-border rounded">
           作品を選択してください。
         </div>
       ) : conds.length === 0 ? (
-        <div className="font-mono text-[11px] text-muted-foreground py-8 text-center border border-dashed border-border rounded">
+        <div className="text-[11px] text-muted-foreground py-8 text-center border border-dashed border-border rounded">
           この作品に再許諾条件（sublicense_out）はありません。「再許諾条件登録」で登録してください。
         </div>
       ) : (
