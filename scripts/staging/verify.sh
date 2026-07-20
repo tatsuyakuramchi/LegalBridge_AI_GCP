@@ -51,6 +51,18 @@ for p in "/api/v3/works/search?limit=1"; do
   st="$(code "$p" viewer)"; [[ "$st" == "200" ]] && ok "$p -> 200" || ng "$p -> $st"
 done
 
+echo "== §5/§13 統合検索 namespace(/api/search/*) =="
+# works: 統合(kind 列)・200
+SW="$(get '/api/search/works?limit=20' viewer)"
+[[ "$(code '/api/search/works?limit=1' viewer)" == "200" ]] && ok "/api/search/works -> 200" || ng "/api/search/works が 200 でない"
+echo "$SW" | grep -q '"kind"' && ok "/api/search/works が kind 列を返す(統合)" || ng "/api/search/works に kind 列が無い"
+# vendors: 常に機密除外の射影(viewer/admin 両方で口座/反社が返らない = 構造安全)
+SVV="$(get '/api/search/vendors?limit=5' viewer)"
+SVA="$(get '/api/search/vendors?limit=5' admin)"
+[[ "$(code '/api/search/vendors?limit=1' viewer)" == "200" ]] && ok "/api/search/vendors -> 200" || ng "/api/search/vendors が 200 でない"
+if echo "$SVV" | grep -qiE 'account_number|antisocial_check_result'; then ng "/api/search/vendors(viewer)に口座/反社が漏出"; else ok "/api/search/vendors(viewer)に口座/反社なし"; fi
+if echo "$SVA" | grep -qiE 'account_number|antisocial_check_result'; then ng "/api/search/vendors(admin)にも口座/反社が漏出(射影は常に安全のはず)"; else ok "/api/search/vendors(admin)にも口座/反社なし(構造安全)"; fi
+
 echo ""
 echo "==== 結果: PASS=$pass FAIL=$fail ===="
 [[ $fail -eq 0 ]] && exit 0 || exit 1

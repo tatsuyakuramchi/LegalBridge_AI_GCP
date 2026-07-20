@@ -93,6 +93,8 @@ export const WRITE_PATHS_ON_GET: RegExp[] = [
 //   - /api/contracts/search  : 親契約 picker (registerContractsV2)
 //   - /api/contracts/:id      : 契約詳細 (registerContractsV2)
 export const READ_PATHS_ON_GET: RegExp[] = [
+  // 設計 §5/§13: 統合検索 namespace は search-api 専用 read。worker にミラー無し。
+  /^\/api\/search\//,
   /^\/api\/contracts\/search(?:\?|$)/,
   /^\/api\/contracts\/\d+(?:\/|\?|$)/,
   // 統合 P3-2: 条件明細横断検索は search-api 専用 read。
