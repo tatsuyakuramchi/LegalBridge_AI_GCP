@@ -131,6 +131,48 @@ export type VendorRow = {
   bank_accounts?: VendorBankAccount[];
 };
 
+// ====================================================================
+// §12 機密フィールドの役割別フィルタ
+//   viewer には「口座 / 反社 / 与信(評点)」を一切返さない。admin は従来どおり全開示。
+//   admin-ui の内部呼び出し(portal_secret)は resolveAppRole で admin に解決されるため
+//   編集画面は影響を受けない(§20)。フィルタは各出力境界(ハンドラ/レンダラ)で明示適用する。
+//   ※ upsert 後の読み戻し(internal getVendor)には適用しない(書込み応答は admin 向け)。
+// ====================================================================
+
+/** viewer に返してはいけない vendor 機密列(スカラ)。 */
+export const VENDOR_SENSITIVE_FIELDS = [
+  "rating", // 与信/評点
+  "antisocial_check_result", // 反社チェック結果
+  "bank_info",
+  "bank_name",
+  "branch_name",
+  "account_type",
+  "account_number",
+  "account_holder_kana", // 口座(単一列レガシー)
+] as const;
+
+/** 単一 vendor から機密列＋口座配列を除去した複製を返す(admin はそのまま)。 */
+export function redactVendor<T extends Record<string, any>>(
+  row: T,
+  role: "admin" | "viewer"
+): T {
+  if (!row || role === "admin") return row;
+  const clone: any = { ...row };
+  for (const f of VENDOR_SENSITIVE_FIELDS) delete clone[f];
+  // 口座は 1:N 配列でも保持されるため空配列に落とす(存在自体は隠さない)。
+  if (Array.isArray(clone.bank_accounts)) clone.bank_accounts = [];
+  return clone;
+}
+
+/** vendor 配列を一括 redact(admin はそのまま)。 */
+export function redactVendors<T extends Record<string, any>>(
+  rows: T[],
+  role: "admin" | "viewer"
+): T[] {
+  if (role === "admin" || !Array.isArray(rows)) return rows;
+  return rows.map((r) => redactVendor(r, role));
+}
+
 const SELECT_COLUMNS = `
   id, vendor_code, vendor_name, corporate_number, trade_name, pen_name, vendor_suffix, entity_type,
   withholding_enabled, aliases, address, phone, email, payment_terms, main_business,
@@ -1132,9 +1174,17 @@ const VENDOR_EXPORT_COLUMNS = [
   "is_invoice_issuer", "invoice_registration_number",
 ] as const;
 
-export async function getVendorExportCsv(codes?: string[]): Promise<string> {
+export async function getVendorExportCsv(
+  codes?: string[],
+  role: "admin" | "viewer" = "admin"
+): Promise<string> {
   const cols = VENDOR_EXPORT_COLUMNS;
   const filter = (codes || []).map((c) => String(c).trim()).filter(Boolean);
+  // §12: viewer 出力では口座/反社/与信の列値を空欄化(列見出しは維持し形式を安定させる)。
+  const redactSet: Set<string> =
+    role === "admin"
+      ? new Set()
+      : new Set(VENDOR_SENSITIVE_FIELDS as readonly string[]);
 
   // 住所/振込先/窓口担当は 1:N の primary(★メイン) を採用し、無ければレガシー単一
   //   カラムにフォールバック。codes 指定時はその vendor_code のみ。
@@ -1202,7 +1252,11 @@ export async function getVendorExportCsv(codes?: string[]): Promise<string> {
     /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   const lines: string[] = [cols.join(",")];
   for (const row of r.rows) {
-    lines.push(cols.map((c) => esc(fmt(c, (row as any)[c]))).join(","));
+    lines.push(
+      cols
+        .map((c) => esc(redactSet.has(c) ? "" : fmt(c, (row as any)[c])))
+        .join(",")
+    );
   }
   return lines.join("\n");
 }
