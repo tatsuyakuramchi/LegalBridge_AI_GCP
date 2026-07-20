@@ -127,10 +127,10 @@ export function ArchivePage() {
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
           <p className="retro-tag mb-1.5">ARC · LEDGER</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight">
+          <h2 className="text-2xl font-semibold tracking-tight">
             Archive
           </h2>
-          <p className="text-xs font-mono text-muted-foreground mt-1.5">
+          <p className="text-xs text-muted-foreground mt-1.5">
             Immutable record of all legal artifacts generated through Arcs OS.
           </p>
         </div>
@@ -166,7 +166,7 @@ export function ArchivePage() {
       {filtered.length === 0 ? (
         <div className="p-16 text-center border border-dashed border-border rounded-md">
           <ArchiveIcon className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
             No archived assets yet.
           </p>
         </div>
@@ -226,16 +226,16 @@ export function ArchivePage() {
                   <p className="text-sm font-mono font-bold truncate">
                     {asset.asset_name}
                   </p>
-                  <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground mt-1">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground mt-1">
                     Ref · {asset.asset_number}
                   </p>
                   {(asset as any).base_document_number &&
                     (asset as any).base_document_number !== asset.asset_number && (
-                      <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground/70">
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground/70">
                         Base · {(asset as any).base_document_number}
                       </p>
                     )}
-                  <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                     With · {asset.counterparty}
                   </p>
                 </div>
@@ -247,7 +247,7 @@ export function ArchivePage() {
                         href={asset.file_link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground border border-border rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+                        className="text-[11px] uppercase tracking-wider text-muted-foreground hover:text-foreground border border-border rounded-sm px-1.5 py-0.5 flex items-center gap-1"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <ExternalLink className="h-2.5 w-2.5" />
@@ -286,7 +286,7 @@ export function ArchivePage() {
                             )
                           }
                         }}
-                        className="text-[11px] font-mono uppercase tracking-wider text-emerald-700 border border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100 rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+                        className="text-[11px] uppercase tracking-wider text-success border border-success bg-success/10 hover:bg-success/10 rounded-sm px-1.5 py-0.5 flex items-center gap-1"
                         title="この版を真の契約として設定 (他の版は旧版扱いに)"
                       >
                         ★ 真にする
@@ -299,7 +299,7 @@ export function ArchivePage() {
                       type="button"
                       onClick={() => handleReedit(asset.asset_number)}
                       disabled={reeditBusy === asset.asset_number}
-                      className="text-[11px] font-mono uppercase tracking-wider text-foreground border border-foreground/40 rounded-sm px-1.5 py-0.5 flex items-center gap-1 hover:bg-muted disabled:opacity-50"
+                      className="text-[11px] uppercase tracking-wider text-foreground border border-foreground/40 rounded-sm px-1.5 py-0.5 flex items-center gap-1 hover:bg-muted disabled:opacity-50"
                       title="この文書を再編集して PDF を差し替え"
                     >
                       <Edit3 className="h-2.5 w-2.5" />

@@ -142,11 +142,11 @@ export function DataQualityCenter() {
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
           <p className="retro-tag mb-1.5">DQ · CENTER</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <ShieldAlert className="h-5 w-5" />
             Data Quality Center
           </h2>
-          <p className="text-xs font-mono text-muted-foreground mt-1.5">
+          <p className="text-xs text-muted-foreground mt-1.5">
             データ完全性の不足 Issue を俯瞰し、担当・期限の割当、例外(waive)、修正導線を提供する。
           </p>
         </div>
@@ -193,18 +193,18 @@ export function DataQualityCenter() {
 
       {/* 一覧 */}
       {loading ? (
-        <div className="py-12 text-center text-xs font-mono text-muted-foreground">読み込み中…</div>
+        <div className="py-12 text-center text-xs text-muted-foreground">読み込み中…</div>
       ) : issues === null ? (
         <div className="rounded-md border border-dashed border-border p-10 text-center">
           <ShieldAlert className="mx-auto mb-3 h-7 w-7 text-muted-foreground" />
-          <p className="text-xs font-mono text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Data Quality API が利用できません（worker 未デプロイ / 未評価）。
             <br />デプロイ後に「全件 再評価」で Issue が生成されます。
           </p>
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-md border border-dashed border-border p-10 text-center">
-          <p className="text-xs font-mono text-muted-foreground">該当する Issue はありません。</p>
+          <p className="text-xs text-muted-foreground">該当する Issue はありません。</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-border">
@@ -299,13 +299,13 @@ export function DataQualityCenter() {
                   <tr className="bg-muted/20">
                     <td colSpan={6} className="px-3 py-2">
                       {eventsLoading ? (
-                        <span className="text-[11px] font-mono text-muted-foreground">読み込み中…</span>
+                        <span className="text-[11px] text-muted-foreground">読み込み中…</span>
                       ) : !eventsData || eventsData.length === 0 ? (
-                        <span className="text-[11px] font-mono text-muted-foreground">操作履歴はありません（未評価/未デプロイの可能性）。</span>
+                        <span className="text-[11px] text-muted-foreground">操作履歴はありません（未評価/未デプロイの可能性）。</span>
                       ) : (
                         <ul className="space-y-0.5">
                           {eventsData.map((ev) => (
-                            <li key={ev.id} className="text-[11px] font-mono text-muted-foreground">
+                            <li key={ev.id} className="text-[11px] text-muted-foreground">
                               <span className="text-foreground">{new Date(ev.created_at).toLocaleString("ja-JP")}</span>
                               {" · "}{ev.event_type}
                               {ev.actor ? ` · ${ev.actor}` : " · (不明)"}
