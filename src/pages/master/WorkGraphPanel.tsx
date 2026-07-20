@@ -208,7 +208,10 @@ function EdgeRow({
   )
 }
 
-export function WorkGraphPanel() {
+export function WorkGraphPanel({ embedded = false }: { embedded?: boolean } = {}) {
+  // 8タブ移行 Phase 2: WorkDetailTabs の①概要タブに埋め込む際は embedded=true。
+  //   内部ヘッダ(WorksDetailPage と重複)と、⑤⑦⑧タブへ移設した 3 パネル
+  //   (RightsTree/Attributions/Completeness)を非表示にして重複を避ける。
   // 作品統合 増分④: /works/:id から作品IDを受け取り初期選択する。
   //   :id 無し(旧 /master/work-graph 直叩き等)のときは先頭作品にフォールバック。
   const { id: routeId } = useParams<{ id?: string }>()
@@ -864,7 +867,8 @@ export function WorkGraphPanel() {
     .map((w: any) => toWorkPickerItem(w))
 
   return (
-    <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-5">
+    <div className={embedded ? "space-y-5" : "px-6 py-6 max-w-[1500px] mx-auto space-y-5"}>
+      {!embedded && (
       <header className="border-b border-border pb-5">
         <p className="retro-tag mb-1.5">WORK · GRAPH</p>
         <h2 className="text-2xl font-semibold tracking-tight">権利フロー（3カード）</h2>
@@ -905,9 +909,10 @@ export function WorkGraphPanel() {
           />
         </div>
       </header>
+      )}
 
-      {/* DQ-04: データ完全性(スコア + 未解消 Issue + 修正導線)。worker 未デプロイ / 未評価なら非表示。 */}
-      {workId ? (
+      {/* DQ-04: データ完全性。8タブ移行では⑧監査・完全性タブへ移設(embedded 時は非表示)。 */}
+      {!embedded && workId ? (
         <CompletenessPanel
           entityType="work"
           entityId={workId}
@@ -916,8 +921,8 @@ export function WorkGraphPanel() {
         />
       ) : null}
 
-      {/* 契約・権利ツリー（金銭イン/アウト・買い切り・許諾地域サマリー）。 */}
-      {workId ? <RightsTreePanel workId={workId} /> : null}
+      {/* 契約・権利ツリー。8タブ移行では⑤契約・条件タブへ移設(embedded 時は非表示)。 */}
+      {!embedded && workId ? <RightsTreePanel workId={workId} /> : null}
 
       {loading ? (
         <div className="text-xs text-muted-foreground py-8 text-center">読み込み中…</div>
@@ -925,8 +930,8 @@ export function WorkGraphPanel() {
         <div className="text-xs text-muted-foreground py-8 text-center">作品を選択してください。</div>
       ) : (
         <>
-        {/* PLW-D: 作品1:文書N:明細N — この作品に明細単位で帰属する文書/明細/条件を集約。 */}
-        <WorkAttributionsPanel workId={workId} />
+        {/* PLW-D: 作品1:文書N:明細N。8タブ移行では⑦文書・証憑タブへ移設(embedded 時は非表示)。 */}
+        {!embedded && <WorkAttributionsPanel workId={workId} />}
         {/* 関係の明確化: 作品(own)が「どの原作のどのマテリアルを利用し、何を履行するか」をマテリアル単位でまとめて先頭に表示。
             これがこの作品の利用許諾条件書に載る条件（=支払う利用料）の実体であることを明示する。 */}
         {!isSource && consumedGroups.length > 0 && (
