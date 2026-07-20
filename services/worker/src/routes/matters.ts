@@ -633,6 +633,39 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
     }
   });
 
+  // 案件フォルダの実ファイルを「文書」として登録する(documents へ取り込み案件へ紐付け)。
+  //   人が Drive に直接入れたファイル(相手方原案 / 参考資料 / テンプレ 等)を、文書番号を
+  //   持たない外部文書(template_type='external_file')として documents に登録し、「文書」
+  //   件数に反映させる。冪等: 同一案件で同じ drive_link が既にあれば再利用。
+  app.post("/api/matters/:id/documents/from-drive", json, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const b = req.body || {};
+      const link = s(b.link);
+      const name = s(b.name) || "(無題ファイル)";
+      if (!link) return res.status(400).json({ ok: false, error: "link は必須です" });
+      const mm = await query(`SELECT id FROM matters WHERE id = $1`, [id]);
+      if (!mm.rows[0]) return res.status(404).json({ ok: false, error: "案件が見つかりません" });
+      const ex = await query(
+        `SELECT id, document_number, contract_title, drive_link
+           FROM documents WHERE matter_id = $1 AND drive_link = $2 LIMIT 1`,
+        [id, link]
+      );
+      if (ex.rows[0]) return res.json({ ok: true, document: ex.rows[0], created: false });
+      const ins = await query(
+        `INSERT INTO documents (matter_id, template_type, contract_title, drive_link)
+         VALUES ($1, 'external_file', $2, $3)
+         RETURNING id, document_number, contract_title, drive_link`,
+        [id, name, link]
+      );
+      await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [id]);
+      res.json({ ok: true, document: ins.rows[0], created: true });
+    } catch (e: any) {
+      console.error("[matters] register drive doc failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // ── 送信履歴 ────────────────────────────────────────────────────────────────
   app.get("/api/matters/:id/sends", async (req, res) => {
     try {
