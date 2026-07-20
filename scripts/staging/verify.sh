@@ -32,14 +32,18 @@ VA="$(get '/api/master/vendors?limit=5' admin)"
 if echo "$VV" | grep -qiE 'account_number|antisocial_check_result'; then ng "viewer に口座/反社が返っている(§12 未実装 or 未除外)"; else ok "viewer に口座/反社が返らない"; fi
 if echo "$VA" | grep -qiE 'account_number|antisocial_check_result'; then ok "admin には口座/反社が返る(想定どおり)"; else echo "  INFO: admin でも口座/反社が見当たらない(エンドポイント/データ次第)"; fi
 
-echo "== SSR read-only(書込みフォームの有無) =="
+echo "== SSR read-only(HTML書込みフォームの有無) =="
+# 注: SSR ポータルの検索は GET フォーム(<form method=get> + type=submit ボタン)であり
+#   read-only ページに残って当然。ここで検出したいのは「データ変更を伴う HTML POST
+#   フォーム(<form method=post>)」のみ。マスタ編集の書込みは JS fetch → JSON API 経由で、
+#   その JSON write は requireAppRole({allowedRoles:["admin"]}) 済み(viewer は 403)。
 for path in "/search/work" "/search/vendor" "/master/vendors"; do
   H="$(get "$path" viewer)"
-  c="$(echo "$H" | head -c1)"
   if [[ -z "$H" ]]; then echo "  INFO: $path 応答なし(ルート無し?)"; continue; fi
-  if echo "$H" | grep -qiE '<form[^>]*method=["'"'"']?post|type=["'"'"']?submit'; then
-    ng "$path に書込みフォーム/submit が残存(SSR read-only 未達)"
-  else ok "$path に書込みフォームなし(read-only)"; fi
+  # <form ...> 開始タグだけ抽出し method=post を持つものがあるか判定(GET 検索は除外)。
+  if echo "$H" | grep -oiE '<form[^>]*>' | grep -qiE 'method=["'"'"']?post'; then
+    ng "$path に HTML POST 書込みフォームが残存(SSR read-only 未達)"
+  else ok "$path に HTML POST 書込みフォームなし(read-only)"; fi
 done
 
 echo "== 基本疎通 =="

@@ -30,6 +30,14 @@
 
 ## 3. 本セッションで実施済み（安全・検証済み）
 - **§13 作品検索の統合化**: `GET /api/v3/works/search` の `kind='own'` 限定を撤去（`?kind=` 後方互換・`kind` 列追加）。SSR 作品ポータル・admin-ui 作品検索が統合 works を横断。api tsc=0。
+- **§12 機密フィルタ（JSON/CSV 経路・vendor）**: `GET /api/master/vendors`(一覧/詳細) と CSV エクスポートで viewer に口座/反社/与信(rating)を返さない。`redactVendor`/`redactVendors`/`VENDOR_SENSITIVE_FIELDS` を追加し `resolveAppRole` で role 判定。admin(portal_secret) は全開示のため admin-ui 編集は不変。staging で viewer/admin を検証（`x-staging-role`）。
+- **staging 検証環境**: 本番クローン DB(`legalbridge-db-staging`) + `STAGING_DEV_AUTH=1`(IAP 二重防御) の `legalbridge-search-api-staging` を用意。`scripts/staging/verify.sh` で role 別に curl 検証。
+
+### 重要な構造的発見（§3 SSR read-only の実体）
+- **SSR ポータルに HTML の `<form method=post>` 書込みフォームは存在しない**（全 views で `<form>` は検索用 `method="get"` の1件のみ）。マスタの登録/編集/削除は全て **ブラウザ JS の `fetch()` → JSON write API** 経由。
+- その JSON write API は既に `requireAppRole({allowedRoles:["admin"]})` で保護済み（**viewer は 403**）。
+- 従って §3「SSR 書込みフォーム撤去」は HTML フォーム観点では**既に達成**。残るのは「viewer に編集アフォーダンス（保存/削除ボタン等）を描画しない」UX 整理のみで、これは API 層 403＋§12 read フィルタでバックストップ済み。
+- `verify.sh` の SSR チェックは当初 `type=submit`（GET 検索ボタン）を誤検知していたため、`<form method=post>` のみを検出するよう精緻化した。
 
 ## 4. 未実施（理由・影響・次作業）
 - 1〜6 は上記の移行順序が必要。**ルート単純削除は admin-ui(取引先/担当者/条件/別名の編集)を破壊**するため、worker 移設＋切替ソーク＋SSR 実機確認を伴う段階作業として別 PR で行う。実機 SSR / E2E 環境が前提。
