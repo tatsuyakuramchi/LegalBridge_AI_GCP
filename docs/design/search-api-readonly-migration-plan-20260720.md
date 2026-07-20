@@ -39,5 +39,26 @@
 - 従って §3「SSR 書込みフォーム撤去」は HTML フォーム観点では**既に達成**。残るのは「viewer に編集アフォーダンス（保存/削除ボタン等）を描画しない」UX 整理のみで、これは API 層 403＋§12 read フィルタでバックストップ済み。
 - `verify.sh` の SSR チェックは当初 `type=submit`（GET 検索ボタン）を誤検知していたため、`<form method=post>` のみを検出するよう精緻化した。
 
+## 3.5 ステップ1 完了: master 書込みの worker 移設（staging 検証済み）
+admin-ui が参照する master 書込みを worker へ移設し、`apiRoutingRules` を flip 済み。
+staging worker(`legalbridge-document-worker-staging`, LB_PORTAL_SECRET 未設定で curl 検証)
+＋ `scripts/staging/verify-worker.sh` で各ルートを実機検証(全 PASS)。
+
+| ルート | worker 実装 | staging 検証 | flip |
+|---|---|---|---|
+| `PATCH /api/master/staff/:email/role` | 追加(app_role 更新+監査ログ) | 400/404/無変更200 | 済 |
+| `POST /api/master/vendors` | 既存に住所/口座 1:N 追加(search-api パリティ) | upsert200+primary ミラー永続化 | 済 |
+| `PUT /api/conditions/:id/links` | 追加(旧+新台帳二重UPDATE) | 不正400/存在せず200無変更 | 済 |
+| `POST /api/works/:id/aliases` ・ `DELETE /api/work-aliases/:id` | 追加 | 欠落400/INSERT→DELETE round-trip | 済 |
+
+- 認可: 全て `requirePortalSecret`(admin-ui BFF 経由の証明)。GET(閲覧)は search-api(read)維持。
+- 反映条件: **admin-ui(BFF ホスト)の再ビルド・再デプロイ**で flip が有効化(本番は本ブランチ merge 後)。
+- 据え置き: `sublicense/*`(admin-ui 参照0・SSR専用)、`v3/*`(作品モデル特殊)は search-api 維持。
+
 ## 4. 未実施（理由・影響・次作業）
-- 1〜6 は上記の移行順序が必要。**ルート単純削除は admin-ui(取引先/担当者/条件/別名の編集)を破壊**するため、worker 移設＋切替ソーク＋SSR 実機確認を伴う段階作業として別 PR で行う。実機 SSR / E2E 環境が前提。
+- **ステップ2(search-api から write 撤去)**: ステップ1 の flip が本番 admin-ui に反映され、
+  正常動作を **prod soak** で確認した後に、search-api 側の当該 write ルート
+  (staff role / vendors / conditions links / aliases)を撤去する。soak 前の撤去は
+  ロールバック余地を失うため不可。
+- **sublicense/v3 の write**: SSR 専用/作品モデル特殊。read-only 化の要否を別途評価。
+- 残りの 5〜6(統合検索/Projection・§12 Projection 経路)は実機検証を伴う段階作業として別途。
