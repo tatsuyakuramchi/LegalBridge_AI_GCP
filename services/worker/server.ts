@@ -5945,6 +5945,62 @@ ${details}
     }
   );
 
+  // 全UIリニューアル A(ステップ1): スタッフ役割変更を worker へ移設。
+  //   search-api の PATCH /api/master/staff/:email/role と同仕様(app_role 更新 +
+  //   監査ログ)。admin-ui は apiRoutingRules の flip で本ルート(worker)へ切替える。
+  //   認可: requirePortalSecret(admin-ui BFF 経由の証明)。actor は IAP 由来の
+  //   x-user-email / x-lb-user-email ヘッダ(無ければ '?')。
+  app.patch(
+    "/api/master/staff/:email/role",
+    requirePortalSecret,
+    express.json({ limit: "10kb" }),
+    async (req, res) => {
+      try {
+        const targetEmail = String(req.params.email || "").trim().toLowerCase();
+        const newRole = String(req.body?.app_role || "").trim().toLowerCase();
+        if (!targetEmail) {
+          return res.status(400).json({ ok: false, error: "email is required" });
+        }
+        if (!["admin", "viewer"].includes(newRole)) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "app_role must be 'admin' or 'viewer'" });
+        }
+        const result = await query(
+          `UPDATE staff
+              SET app_role = $1
+            WHERE LOWER(email) = $2
+            RETURNING id, email, staff_name, app_role`,
+          [newRole, targetEmail]
+        );
+        if (result.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ ok: false, error: `staff not found: ${targetEmail}` });
+        }
+        const actor =
+          (req.headers["x-user-email"] as string) ||
+          (req.headers["x-lb-user-email"] as string) ||
+          "?";
+        console.log(
+          JSON.stringify({
+            evt: "staff_role_change",
+            actor,
+            target_email: targetEmail,
+            new_role: newRole,
+            ts: new Date().toISOString(),
+          })
+        );
+        res.json({ ok: true, staff: result.rows[0] });
+      } catch (error: any) {
+        console.error("PATCH /api/master/staff/:email/role failed:", error);
+        res
+          .status(500)
+          .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
   app.post("/api/master/staff", express.json(), async (req, res) => {
     // Phase 22.21.120: 編集時は body.id を尊重して UPDATE。新規時は slack_user_id
     //   での upsert。slack_user_id が空のまま新規登録すると UNIQUE/NOT NULL で
