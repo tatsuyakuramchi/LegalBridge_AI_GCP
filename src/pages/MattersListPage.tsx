@@ -192,7 +192,7 @@ export function MattersListPage() {
         <CardContent className="p-0">
           {/* LB-06 (§5.2): 作業中心の列構成。
               案件/相手方 | 現在工程(+ブロッカー) | 次アクション | 担当 | 期限 | 文書等 | 更新 */}
-          <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-2 px-3 py-2.5 border-b border-border text-[11px] font-semibold text-muted-foreground">
+          <div className="hidden md:grid grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_auto] gap-2 px-3 py-2.5 border-b border-border text-[11px] font-semibold text-muted-foreground">
             <span>案件 / 相手方</span>
             <span>工程</span>
             <span>次アクション</span>
@@ -200,7 +200,7 @@ export function MattersListPage() {
             <span className="text-center">期限</span>
             <span className="text-center">課題/文書/条件</span>
             <span className="text-center">更新</span>
-            <span />
+            <span className="text-right pr-1">詳細</span>
           </div>
           {loading ? (
             <div className="px-3 py-8 text-center text-[12px] text-muted-foreground">
@@ -218,7 +218,7 @@ export function MattersListPage() {
               //   [&>*]:pointer-events-none で行内テキストのクリックを overlay へ透過させる。
               <div
                 key={m.id}
-                className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_20px] gap-y-1.5 md:gap-2 px-3 py-2.5 border-border/60 md:border-b max-md:mb-2 max-md:rounded-lg max-md:border max-md:bg-card items-start md:items-center text-left hover:bg-muted/40 transition-colors w-full [&>*]:pointer-events-none"
+                className="relative grid grid-cols-1 md:grid-cols-[minmax(0,1.3fr)_92px_minmax(0,1fr)_72px_64px_90px_56px_auto] gap-y-1.5 md:gap-2 px-3 py-2.5 border-border/60 md:border-b max-md:mb-2 max-md:rounded-lg max-md:border max-md:bg-card items-start md:items-center text-left hover:bg-muted/40 transition-colors w-full [&>*]:pointer-events-none"
               >
                 {/* 行全体を案件詳細へ(単一のインタラクティブ要素)。 */}
                 <button
@@ -328,7 +328,9 @@ export function MattersListPage() {
                     <GitMerge className="h-3.5 w-3.5" />
                   </button>
                 </span>
-                <ChevronRight className="h-4 w-4 text-muted-foreground hidden md:block" />
+                <span className="justify-self-start md:justify-self-end inline-flex items-center gap-0.5 rounded-md border border-primary/30 bg-primary/5 px-2 py-1 text-[11px] font-semibold text-primary">
+                  開く <ChevronRight className="h-3.5 w-3.5" />
+                </span>
               </div>
             ))
           )}
