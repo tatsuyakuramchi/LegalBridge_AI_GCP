@@ -31,9 +31,9 @@ export function DataMaintenanceLayout() {
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
       <header className="border-b border-border pb-5">
-        <p className="retro-tag mb-1.5">DM · INDEX</p>
-        <h2 className="text-2xl font-mono font-bold tracking-tight">Data Maintenance</h2>
-        <p className="text-xs font-mono text-muted-foreground mt-1.5">
+        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Data Maintenance</p>
+        <h2 className="text-2xl font-semibold tracking-tight">Data Maintenance</h2>
+        <p className="text-xs text-muted-foreground mt-1.5">
           一括インポート、ID統合(マージ)、未リンクCL 棚卸し、下書きの掃除。
         </p>
       </header>
@@ -47,9 +47,9 @@ export function DataMaintenanceLayout() {
               to={t.to}
               className={({ isActive }) =>
                 cn(
-                  "inline-flex items-center gap-2 px-4 py-2.5 text-[11px] font-mono font-bold uppercase tracking-[0.16em] border-b-2 -mb-px transition-colors",
+                  "inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold border-b-2 -mb-px transition-colors",
                   isActive
-                    ? "border-foreground text-foreground"
+                    ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )
               }

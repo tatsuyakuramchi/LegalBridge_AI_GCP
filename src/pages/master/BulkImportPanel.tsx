@@ -768,7 +768,7 @@ export function BulkImportPanel() {
           <h1 className="text-lg font-bold flex items-center gap-2">
             <Upload className="w-5 h-5" /> 一括インポート（原作・原作マテリアル）
           </h1>
-          <p className="text-[11px] font-mono text-muted-foreground mt-1">
+          <p className="text-[11px] text-muted-foreground mt-1">
             既存文書からの抽出、または表(CSV/TSV)の貼り付けで、原作とその原作マテリアルをまとめてDB登録します。
             既存(原作コード/タイトル一致・原作内の同名マテリアル)は更新(upsert)します。
           </p>
@@ -788,7 +788,7 @@ export function BulkImportPanel() {
             type="button"
             onClick={loadStateIntoPreview}
             disabled={exporting}
-            className="text-[10px] font-mono px-2.5 py-1.5 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 inline-flex items-center gap-1.5"
+            className="text-[10px] font-mono px-2.5 py-1.5 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50 inline-flex items-center gap-1.5"
             title="現状(原作・マテリアル・CL)をプレビューに読み込み、その場で修正して再登録(upsert)。CL-ID付き行は既存CLを更新します。"
           >
             現状を読み込んで修正
@@ -812,13 +812,13 @@ export function BulkImportPanel() {
             onClick={copyHeader}
             className="text-[10px] font-mono px-2 py-1 rounded border border-border hover:bg-muted inline-flex items-center gap-1"
           >
-            {copied ? <Check className="w-3 h-3 text-emerald-600" /> : null}
+            {copied ? <Check className="w-3 h-3 text-success" /> : null}
             {copied ? "コピーしました" : "ヘッダ行をコピー"}
           </button>
         </div>
         {showGuide && (
           <div className="border-t border-border px-3 py-2 space-y-1">
-            <p className="text-[10px] font-mono text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               1行目にヘッダ（下の「列」を左から順に）を置き、2行目以降にデータを入れます。空欄は既存値を保持（新規は未設定）。
               固定語彙の列は下記の値のいずれか（日本語/コードとも可）。コードキー（原作/作品/マテリアル/CL-ID/取引先/契約種類）が
               揃っていれば重複なく更新されます。
@@ -832,7 +832,7 @@ export function BulkImportPanel() {
                       className={cn(
                         "text-[8px] px-1 py-0.5 rounded-sm border",
                         g.req.includes("必須")
-                          ? "text-amber-700 border-amber-300 bg-amber-50"
+                          ? "text-warning border-warning/40 bg-warning/10"
                           : "text-muted-foreground border-border"
                       )}
                     >
@@ -843,7 +843,7 @@ export function BulkImportPanel() {
                     <div className="text-foreground/90">{g.desc}</div>
                     <div className="text-muted-foreground">
                       入力値: <span className="text-foreground/80">{g.values}</span>
-                      {g.example ? <span className="ml-2">例: <span className="text-indigo-700">{g.example}</span></span> : null}
+                      {g.example ? <span className="ml-2">例: <span className="text-primary">{g.example}</span></span> : null}
                     </div>
                   </div>
                 </div>
@@ -876,9 +876,9 @@ export function BulkImportPanel() {
       </div>
 
       {tab === "doc" ? (
-        <div className="rounded-md border border-violet-200 bg-violet-50/40 p-3 space-y-3">
+        <div className="rounded-md border border-info/40 bg-info/10 p-3 space-y-3">
           <div className="space-y-1">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-violet-700">
+            <label className="text-[10px] font-bold uppercase tracking-[0.12em] text-info">
               取込先の原作（未指定の行に一括適用）
             </label>
             <div className="flex items-center gap-2">
@@ -892,7 +892,7 @@ export function BulkImportPanel() {
                 type="button"
                 onClick={applySharedLedger}
                 disabled={!sharedLedger.trim() || rows.length === 0}
-                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-violet-400 text-violet-700 hover:bg-violet-100 disabled:opacity-50"
+                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-info text-info hover:bg-info/10 disabled:opacity-50"
               >
                 空欄に適用
               </button>
@@ -906,24 +906,24 @@ export function BulkImportPanel() {
             label="発注書 / 利用許諾条件書 / 契約書を検索して取り込む"
           />
           {docNumber && (
-            <div className="text-[10px] font-mono text-violet-900/80">
+            <div className="text-[10px] font-mono text-info">
               直近の対象文書: <span className="font-bold">{docNumber}</span>
             </div>
           )}
           {loadingDoc && (
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> 構成要素を取得中…
             </div>
           )}
-          {docError && <div className="text-[10px] font-mono text-red-600">{docError}</div>}
-          <p className="text-[10px] font-mono text-violet-800/70">
+          {docError && <div className="text-[10px] font-mono text-destructive">{docError}</div>}
+          <p className="text-[10px] font-mono text-info">
             文書を選ぶと、その構成要素（利用許諾条件・発注書成果物・素材未リンクCL）が下のプレビューに追加されます。
             素材未リンクCLは取込時に該当マテリアルへ後付けリンクされます。
           </p>
         </div>
       ) : (
-        <div className="rounded-md border border-sky-200 bg-sky-50/40 p-3 space-y-3">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-sky-700">
+        <div className="rounded-md border border-primary/40 bg-primary/10 p-3 space-y-3">
+          <label className="text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
             表を貼り付け（1行目にヘッダ / タブ区切り・カンマ区切り対応）
           </label>
           <textarea
@@ -937,7 +937,7 @@ export function BulkImportPanel() {
             <button
               type="button"
               onClick={parsePaste}
-              className="text-[11px] font-mono px-3 py-1.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-100 inline-flex items-center gap-1.5"
+              className="text-[11px] font-mono px-3 py-1.5 rounded border border-primary text-primary hover:bg-primary/10 inline-flex items-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" /> 解析してプレビューに追加
             </button>
@@ -960,13 +960,13 @@ export function BulkImportPanel() {
             <a
               href={`data:text/csv;charset=utf-8,${encodeURIComponent("﻿" + CSV_TEMPLATE)}`}
               download="bulk_import_template.csv"
-              className="text-[10px] font-mono underline text-sky-700 hover:text-sky-900"
+              className="text-[10px] font-mono underline text-primary hover:text-primary"
             >
               テンプレCSVをダウンロード
             </a>
           </div>
-          {parseError && <div className="text-[10px] font-mono text-red-600">{parseError}</div>}
-          <p className="text-[10px] font-mono text-sky-800/70">
+          {parseError && <div className="text-[10px] font-mono text-destructive">{parseError}</div>}
+          <p className="text-[10px] font-mono text-primary">
             列: 原作コード / 原作タイトル / マテリアルコード / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 /
             根拠文書番号(任意) / 備考 / 取引形態 / 料率 / MG / AG / 通貨 / CL-ID。原作は<b>原作コード（LO-…）で既存を指定</b>、
             作品（自社作品）は<b>作品コード（W-…）で既存を指定</b>、作品名のみなら新規作成しCLの対象作品に紐づけます、
@@ -992,7 +992,7 @@ export function BulkImportPanel() {
           <div className="text-[11px] font-mono font-bold">
             プレビュー（{rows.length} 行）
             {missingLedger > 0 && (
-              <span className="ml-2 text-amber-600">
+              <span className="ml-2 text-warning">
                 <AlertCircle className="inline w-3.5 h-3.5 -mt-0.5" /> 原作(コード/タイトル)未入力 {missingLedger} 行
               </span>
             )}
@@ -1009,7 +1009,7 @@ export function BulkImportPanel() {
               type="button"
               onClick={clearAll}
               disabled={rows.length === 0}
-              className="text-[10px] font-mono px-2 py-1 rounded border border-border text-red-600 hover:bg-red-50 disabled:opacity-50"
+              className="text-[10px] font-mono px-2 py-1 rounded border border-border text-destructive hover:bg-destructive/10 disabled:opacity-50"
             >
               全消去
             </button>
@@ -1017,7 +1017,7 @@ export function BulkImportPanel() {
         </div>
 
         {rows.length === 0 ? (
-          <div className="text-[11px] font-mono text-muted-foreground border border-dashed border-border rounded-md py-8 text-center">
+          <div className="text-[11px] text-muted-foreground border border-dashed border-border rounded-md py-8 text-center">
             上のいずれかの方法で行を追加してください。
           </div>
         ) : (
@@ -1027,8 +1027,8 @@ export function BulkImportPanel() {
                 <tr>
                   <th className={th}>原作コード*</th>
                   <th className={th}>原作タイトル</th>
-                  <th className={cn(th, "bg-emerald-50/60")}>作品コード</th>
-                  <th className={cn(th, "bg-emerald-50/60")}>作品名</th>
+                  <th className={cn(th, "bg-success/10")}>作品コード</th>
+                  <th className={cn(th, "bg-success/10")}>作品名</th>
                   <th className={th}>マテリアルコード</th>
                   <th className={th}>マテリアル名</th>
                   <th className={th}>種別</th>
@@ -1036,13 +1036,13 @@ export function BulkImportPanel() {
                   <th className={th}>許諾地域</th>
                   <th className={th}>許諾言語</th>
                   <th className={th}>根拠文書</th>
-                  <th className={cn(th, "bg-indigo-50/60")}>取引形態</th>
-                  <th className={cn(th, "bg-indigo-50/60")}>料率%</th>
-                  <th className={cn(th, "bg-indigo-50/60")}>MG</th>
-                  <th className={cn(th, "bg-indigo-50/60")}>AG</th>
-                  <th className={cn(th, "bg-indigo-50/60")}>通貨</th>
-                  <th className={cn(th, "bg-indigo-50/60")}>請求の向き</th>
-                  <th className={cn(th, "bg-indigo-50/60")}>権利帰属</th>
+                  <th className={cn(th, "bg-primary/10")}>取引形態</th>
+                  <th className={cn(th, "bg-primary/10")}>料率%</th>
+                  <th className={cn(th, "bg-primary/10")}>MG</th>
+                  <th className={cn(th, "bg-primary/10")}>AG</th>
+                  <th className={cn(th, "bg-primary/10")}>通貨</th>
+                  <th className={cn(th, "bg-primary/10")}>請求の向き</th>
+                  <th className={cn(th, "bg-primary/10")}>権利帰属</th>
                   <th className={cn(th, "bg-slate-100/70")}>スコープ</th>
                   <th className={cn(th, "bg-slate-100/70")}>契約種類</th>
                   <th className={cn(th, "bg-slate-100/70")}>契約タイトル</th>
@@ -1059,13 +1059,13 @@ export function BulkImportPanel() {
                 {rows.map((r, i) => {
                   const rr = results?.find((x) => x.index === i)
                   return (
-                    <tr key={i} className={rr ? (rr.ok ? "bg-emerald-50/50" : "bg-red-50/50") : ""}>
+                    <tr key={i} className={rr ? (rr.ok ? "bg-success/10" : "bg-destructive/10") : ""}>
                       <td className={td}>
                         <input className={inputCls} value={r.ledger_code} onChange={(e) => patch(i, "ledger_code", e.target.value)} placeholder="LO-… (既存)" />
                       </td>
                       <td className={td}><input className={inputCls} value={r.ledger_title} onChange={(e) => patch(i, "ledger_title", e.target.value)} placeholder="新規作成時に必須" /></td>
-                      <td className={cn(td, "bg-emerald-50/30")}><input className={inputCls} value={r.work_code} onChange={(e) => patch(i, "work_code", e.target.value)} placeholder="W-… (既存)" /></td>
-                      <td className={cn(td, "bg-emerald-50/30")}><input className={inputCls} value={r.work_name} onChange={(e) => patch(i, "work_name", e.target.value)} placeholder="作品名(新規作成)" /></td>
+                      <td className={cn(td, "bg-success/10")}><input className={inputCls} value={r.work_code} onChange={(e) => patch(i, "work_code", e.target.value)} placeholder="W-… (既存)" /></td>
+                      <td className={cn(td, "bg-success/10")}><input className={inputCls} value={r.work_name} onChange={(e) => patch(i, "work_name", e.target.value)} placeholder="作品名(新規作成)" /></td>
                       <td className={td}><input className={inputCls} value={r.material_code} onChange={(e) => patch(i, "material_code", e.target.value)} placeholder="LO-…-NNN (既存)" /></td>
                       <td className={td}><input className={inputCls} value={r.material_name} onChange={(e) => patch(i, "material_name", e.target.value)} placeholder="任意" /></td>
                       <td className={td}>
@@ -1080,7 +1080,7 @@ export function BulkImportPanel() {
                       <td className={td}><input className={inputCls} value={r.territory} onChange={(e) => patch(i, "territory", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.language} onChange={(e) => patch(i, "language", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.source_doc} onChange={(e) => patch(i, "source_doc", e.target.value)} /></td>
-                      <td className={cn(td, "bg-indigo-50/30")}>
+                      <td className={cn(td, "bg-primary/10")}>
                         <select className={inputCls} value={r.cl_calc_type} onChange={(e) => patch(i, "cl_calc_type", e.target.value)}>
                           <option value="">—</option>
                           {CALC_TYPE_OPTIONS.map((o) => (
@@ -1088,11 +1088,11 @@ export function BulkImportPanel() {
                           ))}
                         </select>
                       </td>
-                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_rate} onChange={(e) => patch(i, "cl_rate", e.target.value)} placeholder="料率で発番" /></td>
-                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_mg} onChange={(e) => patch(i, "cl_mg", e.target.value)} /></td>
-                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_ag} onChange={(e) => patch(i, "cl_ag", e.target.value)} /></td>
-                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_currency} onChange={(e) => patch(i, "cl_currency", e.target.value)} placeholder="JPY" /></td>
-                      <td className={cn(td, "bg-indigo-50/30")}>
+                      <td className={cn(td, "bg-primary/10")}><input className={inputCls} value={r.cl_rate} onChange={(e) => patch(i, "cl_rate", e.target.value)} placeholder="料率で発番" /></td>
+                      <td className={cn(td, "bg-primary/10")}><input className={inputCls} value={r.cl_mg} onChange={(e) => patch(i, "cl_mg", e.target.value)} /></td>
+                      <td className={cn(td, "bg-primary/10")}><input className={inputCls} value={r.cl_ag} onChange={(e) => patch(i, "cl_ag", e.target.value)} /></td>
+                      <td className={cn(td, "bg-primary/10")}><input className={inputCls} value={r.cl_currency} onChange={(e) => patch(i, "cl_currency", e.target.value)} placeholder="JPY" /></td>
+                      <td className={cn(td, "bg-primary/10")}>
                         <select className={inputCls} value={r.cl_direction} onChange={(e) => patch(i, "cl_direction", e.target.value)}>
                           <option value="">—</option>
                           {DIRECTION_OPTIONS.map((o) => (
@@ -1100,7 +1100,7 @@ export function BulkImportPanel() {
                           ))}
                         </select>
                       </td>
-                      <td className={cn(td, "bg-indigo-50/30")}>
+                      <td className={cn(td, "bg-primary/10")}>
                         <select className={inputCls} value={r.cl_ownership} onChange={(e) => patch(i, "cl_ownership", e.target.value)}>
                           <option value="">—</option>
                           {OWNERSHIP_OPTIONS.map((o) => (
@@ -1145,10 +1145,10 @@ export function BulkImportPanel() {
                       </td>
                       <td className={cn(td, "text-center")}>
                         {rr && !rr.ok ? (
-                          <span className="text-[9px] font-mono text-red-600" title={rr.error}>失敗</span>
+                          <span className="text-[9px] font-mono text-destructive" title={rr.error}>失敗</span>
                         ) : rr && rr.ok ? (
                           <span
-                            className={cn("text-[9px] font-mono", rr.warning ? "text-amber-600" : "text-emerald-700")}
+                            className={cn("text-[9px] font-mono", rr.warning ? "text-warning" : "text-success")}
                             title={rr.warning || clResults[i] || undefined}
                           >
                             {rr.material_action === "created" ? "新規" : rr.material_action === "updated" ? "更新" : rr.ledger_action === "created" ? "原作新規" : "原作更新"}
@@ -1158,7 +1158,7 @@ export function BulkImportPanel() {
                             {rr.warning ? " ⚠取引先未解決" : ""}
                           </span>
                         ) : (
-                          <button type="button" onClick={() => removeRow(i)} className="text-muted-foreground hover:text-red-600">
+                          <button type="button" onClick={() => removeRow(i)} className="text-muted-foreground hover:text-destructive">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
@@ -1177,13 +1177,13 @@ export function BulkImportPanel() {
         <div
           className={cn(
             "px-3 py-2 rounded-md border text-[11px] font-mono",
-            summary.failed === 0 ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-amber-50 border-amber-200 text-amber-800"
+            summary.failed === 0 ? "bg-success/10 border-success/40 text-success" : "bg-warning/10 border-warning/40 text-warning"
           )}
         >
           取込結果: 成功 {summary.succeeded} / 失敗 {summary.failed}（全 {summary.total} 行）
           {metaCount > 0 ? ` ／ 文書メタ更新 ${metaCount} 件` : ""}
           {results && results.filter((r) => !r.ok).slice(0, 5).map((r) => (
-            <div key={r.index} className="text-[10px] text-red-600 mt-0.5">
+            <div key={r.index} className="text-[10px] text-destructive mt-0.5">
               #{r.index + 1}: {r.error}
             </div>
           ))}
