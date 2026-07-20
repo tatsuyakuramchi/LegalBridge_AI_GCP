@@ -109,6 +109,11 @@ export const matterClient = {
     return apiSend("DELETE", `/api/matters/${matterId}/documents/${docId}`);
   },
 
+  // Drive の実ファイルを「文書」として登録する(external_file として documents へ取り込み)。
+  registerDriveFile(matterId: number | string, body: Record<string, unknown>) {
+    return apiSend("POST", `/api/matters/${matterId}/documents/from-drive`, body);
+  },
+
   /** 契約書等のファイル格納。FormData(file/docKind/title)を multipart で送る。 */
   uploadAttachment(matterId: number | string, form: FormData) {
     return apiSend("POST", `/api/matters/${matterId}/attachments`, form);

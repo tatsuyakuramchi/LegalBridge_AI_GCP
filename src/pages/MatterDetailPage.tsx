@@ -255,6 +255,24 @@ export function MatterDetailPage() {
     loadDriveFiles()
   }, [loadDriveFiles])
 
+  const [registeringLink, setRegisteringLink] = React.useState<string | null>(null)
+  // Drive の実ファイルを「文書」として登録(documents へ external_file 取り込み)。
+  const registerDriveDoc = async (f: any) => {
+    if (!f?.link) return
+    setRegisteringLink(f.link)
+    try {
+      await run(
+        matterClient.registerDriveFile(matterId, { link: f.link, name: f.name, folder: f.folder }),
+        "文書として登録しました"
+      )
+      await load()
+    } catch (e: any) {
+      push(String(e?.message || e), "error")
+    } finally {
+      setRegisteringLink(null)
+    }
+  }
+
   // matterClient を呼び、成功時に okMsg をトーストする薄いラッパ。
   //   (旧 call(path, opts, okMsg) の okMsg 表示挙動を踏襲する。)
   async function run<T>(p: Promise<T>, okMsg?: string): Promise<T> {
@@ -715,6 +733,10 @@ export function MatterDetailPage() {
   }
 
   const m = data.matter
+  // 既に「文書」として登録済みの Drive リンク(drive_link 一致で判定)。
+  const registeredDriveLinks = new Set<string>(
+    (data.documents || []).map((d: any) => d.drive_link).filter(Boolean)
+  )
   // LB-05: タスク(次アクション)。API は primary優先 → 未完了 → 期限昇順で返す。
   const tasks: any[] = data.tasks || []
   const primaryTask =
@@ -1461,25 +1483,46 @@ export function MatterDetailPage() {
                       <div key={folder}>
                         <p className="text-[10px] font-mono font-bold text-muted-foreground/80 mb-0.5">{folder}</p>
                         <div className="space-y-0.5">
-                          {(files as any[]).map((f: any) => (
-                            <a
-                              key={f.id}
-                              href={f.link}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="flex items-center gap-2 text-[11.5px] hover:bg-muted rounded px-1.5 py-1 group"
-                              title={f.name}
-                            >
-                              <FileText className="h-3.5 w-3.5 text-muted-foreground flex-none" />
-                              <span className="truncate flex-1">{f.name}</span>
-                              {f.modifiedTime && (
-                                <span className="text-[10px] text-muted-foreground/70 font-mono flex-none">
-                                  {String(f.modifiedTime).slice(0, 10)}
-                                </span>
-                              )}
-                              <ExternalLink className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground flex-none" />
-                            </a>
-                          ))}
+                          {(files as any[]).map((f: any) => {
+                            const isReg = registeredDriveLinks.has(f.link)
+                            return (
+                              <div
+                                key={f.id}
+                                className="flex items-center gap-2 text-[11.5px] hover:bg-muted rounded px-1.5 py-1 group"
+                              >
+                                <FileText className="h-3.5 w-3.5 text-muted-foreground flex-none" />
+                                <a
+                                  href={f.link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="truncate flex-1 hover:underline"
+                                  title={f.name}
+                                >
+                                  {f.name}
+                                </a>
+                                {f.modifiedTime && (
+                                  <span className="text-[10px] text-muted-foreground/70 font-mono flex-none">
+                                    {String(f.modifiedTime).slice(0, 10)}
+                                  </span>
+                                )}
+                                {isReg ? (
+                                  <span className="flex-none inline-flex items-center gap-0.5 text-[10px] text-success" title="文書として登録済み">
+                                    <CheckCircle2 className="h-3 w-3" /> 文書済
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => registerDriveDoc(f)}
+                                    disabled={registeringLink === f.link}
+                                    className="flex-none inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded border border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-50"
+                                    title="このファイルを文書として登録"
+                                  >
+                                    {registeringLink === f.link ? <Loader2 className="h-3 w-3 animate-spin" /> : "文書化"}
+                                  </button>
+                                )}
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
                     ))}
