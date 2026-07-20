@@ -45,10 +45,10 @@ export function SettingsPage() {
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
       <header className="border-b border-border pb-5">
         <p className="retro-tag mb-1.5">SYS · CONFIG</p>
-        <h2 className="text-2xl font-mono font-bold tracking-tight">
+        <h2 className="text-2xl font-semibold tracking-tight">
           System Settings
         </h2>
-        <p className="text-xs font-mono text-muted-foreground mt-1.5">
+        <p className="text-xs text-muted-foreground mt-1.5">
           Environment variables, integrations, and notification templates.
         </p>
       </header>
@@ -67,7 +67,7 @@ export function SettingsPage() {
           <Card>
             <CardContent className="px-5 space-y-4">
               <div className="flex items-center gap-2 border-b border-border pb-2.5">
-                <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                <ShieldCheck className="h-4 w-4 text-success" />
                 <p className="retro-tag">Company Identity</p>
               </div>
               <div className="space-y-3">
@@ -110,7 +110,7 @@ export function SettingsPage() {
           <Card>
             <CardContent className="px-5 space-y-4">
               <div className="flex items-center gap-2 border-b border-border pb-2.5">
-                <GitBranch className="h-4 w-4 text-cyan-700 dark:text-cyan-300" />
+                <GitBranch className="h-4 w-4 text-info dark:text-info" />
                 <p className="retro-tag">Backlog</p>
                 <div className="flex-1" />
                 <StatusPill ok={!!appSettings.BACKLOG_API_KEY} />
@@ -150,7 +150,7 @@ export function SettingsPage() {
           <Card>
             <CardContent className="px-5 space-y-4">
               <div className="flex items-center gap-2 border-b border-border pb-2.5">
-                <UsersIcon className="h-4 w-4 text-cyan-700 dark:text-cyan-300" />
+                <UsersIcon className="h-4 w-4 text-info dark:text-info" />
                 <p className="retro-tag">Slack Bot</p>
                 <div className="flex-1" />
                 <StatusPill ok={!!appSettings.SLACK_BOT_TOKEN} />
@@ -185,7 +185,7 @@ export function SettingsPage() {
           <Card>
             <CardContent className="px-5 space-y-4">
               <div className="flex items-center gap-2 border-b border-border pb-2.5">
-                <ShieldCheck className="h-4 w-4 text-cyan-700 dark:text-cyan-300" />
+                <ShieldCheck className="h-4 w-4 text-info dark:text-info" />
                 <p className="retro-tag">クラウドサイン</p>
                 <div className="flex-1" />
                 <StatusPill
@@ -218,7 +218,7 @@ export function SettingsPage() {
                     placeholder="社内宛のみ: a@example.co.jp, b@example.co.jp"
                   />
                 </Field>
-                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                <p className="text-[11px] text-muted-foreground -mt-1">
                   ※ 許可宛先を設定している間は、その宛先以外への送信は拒否されます（社内宛で締結まで検証する用）。空にすると本番宛先へ送信できます。
                 </p>
                 <Field label="API ベースURL（任意）">
@@ -235,7 +235,7 @@ export function SettingsPage() {
                     placeholder="https://app.cloudsign.jp"
                   />
                 </Field>
-                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                <p className="text-[11px] text-muted-foreground -mt-1">
                   ※ 下書き保存後に表示する「書類を開く」リンクのドメイン。空欄なら自動判定（本番 app.cloudsign.jp / 検証 sandbox.cloudsign.jp）。
                 </p>
                 <Button onClick={() => persist("CloudSign")}>
@@ -245,7 +245,7 @@ export function SettingsPage() {
                 <div className="pt-1">
                   <CloudSignHealthButton />
                 </div>
-                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                <p className="text-[11px] text-muted-foreground -mt-1">
                   ※ 接続テストは保存済みの設定で実行します。Client ID を変えたら先に Apply してください（書類は送信されません）。
                 </p>
               </div>
@@ -299,7 +299,7 @@ export function SettingsPage() {
           <Card>
             <CardContent className="px-5 space-y-4">
               <div className="flex items-center gap-2 border-b border-border pb-2.5">
-                <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-300" />
+                <ShieldCheck className="h-4 w-4 text-success dark:text-success" />
                 <p className="retro-tag">メール送信（Gmail API）</p>
                 <div className="flex-1" />
                 <StatusPill
@@ -331,7 +331,7 @@ export function SettingsPage() {
                     placeholder="社内宛のみ: a@example.co.jp, b@example.co.jp"
                   />
                 </Field>
-                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                <p className="text-[11px] text-muted-foreground -mt-1">
                   ※ 許可宛先を設定している間は、その宛先以外への送信は拒否されます（社内宛で検証する用）。空にすると本番宛先へ送信できます。
                 </p>
                 <Field label="CC 送信先（複数可・カンマ区切り）">
@@ -341,7 +341,7 @@ export function SettingsPage() {
                     placeholder="cc1@example.co.jp, cc2@example.co.jp"
                   />
                 </Field>
-                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                <p className="text-[11px] text-muted-foreground -mt-1">
                   ※ メール送信時に常にこの宛先を CC します（複数可）。許可宛先を設定中は CC も許可宛先内である必要があります。
                 </p>
               </div>
@@ -395,7 +395,7 @@ export function SettingsPage() {
                     placeholder="{{vendorName}} 御中…"
                   />
                 </Field>
-                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                <p className="text-[11px] text-muted-foreground -mt-1">
                   使用可能トークン: {"{{vendorName}}"} {"{{documentNumber}}"} {"{{amount}}"} {"{{date}}"} {"{{link}}"}（空欄なら既定テンプレを使用）
                 </p>
               </div>
@@ -407,7 +407,7 @@ export function SettingsPage() {
               <div className="pt-1">
                 <EmailHealthButton />
               </div>
-              <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+              <p className="text-[11px] text-muted-foreground -mt-1">
                 ※ 接続テストは保存済みの設定で実行します（メールは送信されません）。送信には gws サービスアカウントへの gmail.send ドメイン全体委任が必要です。
               </p>
             </CardContent>
@@ -419,10 +419,10 @@ export function SettingsPage() {
           <Card>
             <CardContent className="px-5 space-y-3">
               <div className="flex items-center gap-2 border-b border-border pb-2.5">
-                <Database className="h-4 w-4 text-amber-700" />
+                <Database className="h-4 w-4 text-warning" />
                 <p className="retro-tag">Database hygiene</p>
               </div>
-              <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
+              <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground italic">
                 Warning · manual overrides can break relational invariants.
               </p>
               <div className="grid grid-cols-2 gap-3">
@@ -478,7 +478,7 @@ function SlackField({
         className="text-[11px]"
       />
       {hint && (
-        <p className="text-[11px] font-mono text-muted-foreground italic">
+        <p className="text-[11px] text-muted-foreground italic">
           {hint}
         </p>
       )}
@@ -511,7 +511,7 @@ function EmailHealthButton() {
       {result && (
         <div className="mt-2 w-full text-[11px] font-mono rounded-md border border-border p-2.5 space-y-0.5">
           <div>有効化: {String(result.enabled)}</div>
-          <div className={result.ok ? "text-emerald-600" : "text-red-600"}>
+          <div className={result.ok ? "text-success" : "text-destructive"}>
             認証: {result.ok ? `OK ✓ (送信元: ${result.sender || "—"})` : `NG — ${result.error || "失敗"}`}
           </div>
         </div>
@@ -546,7 +546,7 @@ function CloudSignHealthButton() {
           <div>base: {result.base || "—"}</div>
           <div>client_id: {result.client_id_masked || "未設定"}</div>
           <div>有効化: {String(result.enabled)} / 許可宛先: {result.allow_count ?? 0} 件</div>
-          <div className={tokenOk ? "text-emerald-600" : "text-red-600"}>
+          <div className={tokenOk ? "text-success" : "text-destructive"}>
             token取得: {tokenOk ? "OK ✓" : `NG — ${result?.token?.error || result?.error || "失敗"}`}
             {result?.token?.status ? ` (HTTP ${result.token.status})` : ""}
           </div>

@@ -78,10 +78,10 @@ export function TemplatesPage() {
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
           <p className="retro-tag mb-1.5">TPL · STUDIO</p>
-          <h2 className="text-2xl font-mono font-bold tracking-tight">
+          <h2 className="text-2xl font-semibold tracking-tight">
             Blueprint Studio
           </h2>
-          <p className="text-xs font-mono text-muted-foreground mt-1.5">
+          <p className="text-xs text-muted-foreground mt-1.5">
             HTML / Handlebars templates with dynamic variable mapping.
           </p>
         </div>
@@ -136,10 +136,10 @@ export function TemplatesPage() {
                       <FileCode2 className="h-4 w-4 text-muted-foreground" />
                       <Badge variant="outline">{varCount} vars</Badge>
                     </div>
-                    <p className="text-sm font-mono font-bold uppercase line-clamp-2">
+                    <p className="text-sm font-bold uppercase line-clamp-2">
                       {meta.label || t.replace(/_/g, " ")}
                     </p>
-                    <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                       {meta.category || "General"} · {t}.html
                     </p>
                   </CardContent>
@@ -191,7 +191,7 @@ function MatrixView({
         <tbody className="divide-y divide-border">
           {fields.map((field) => (
             <tr key={field} className="hover:bg-muted/30">
-              <td className="p-2.5 font-bold text-cyan-700 dark:text-cyan-300 sticky left-0 bg-card z-10 border-r border-border">
+              <td className="p-2.5 font-bold text-info dark:text-info sticky left-0 bg-card z-10 border-r border-border">
                 {field}
               </td>
               {templateList.map((t) => {
@@ -203,7 +203,7 @@ function MatrixView({
                   >
                     {m ? (
                       <div className="flex flex-col items-center gap-1">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
                         <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
                           {m.label}
                         </span>
@@ -309,7 +309,7 @@ export function TemplateEditorPage() {
           </Button>
           <div>
             <p className="retro-tag mb-1">TPL · {id}</p>
-            <h2 className="text-xl font-mono font-bold tracking-tight">
+            <h2 className="text-xl font-semibold tracking-tight">
               {meta.label || id.replace(/_/g, " ")}
             </h2>
           </div>
@@ -375,7 +375,7 @@ export function TemplateEditorPage() {
         <CardContent className="px-5 space-y-3">
           <div className="flex items-center justify-between">
             <p className="retro-tag">Dynamic Variable Logic</p>
-            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
               {fields.length} fields
             </span>
           </div>
@@ -387,7 +387,7 @@ export function TemplateEditorPage() {
                   key={field}
                   className="grid grid-cols-12 gap-2 items-center px-2 py-1.5 border border-border rounded-sm bg-card hover:bg-muted/30 transition-colors"
                 >
-                  <span className="col-span-2 font-mono text-[10px] font-bold text-cyan-700 dark:text-cyan-300 truncate">
+                  <span className="col-span-2 font-mono text-[10px] font-bold text-info dark:text-info truncate">
                     {field}
                   </span>
                   <Input
@@ -427,7 +427,7 @@ export function TemplateEditorPage() {
               )
             })}
             {fields.length === 0 && (
-              <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground py-6 text-center">
+              <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground py-6 text-center">
                 No fields detected. Save the HTML first.
               </p>
             )}
@@ -460,7 +460,7 @@ export function TemplateEditorPage() {
             <p className="retro-tag">
               <Wand2 className="h-3 w-3" /> Insert Variable
             </p>
-            <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               Click to inject placeholder at cursor.
             </p>
             <div className="space-y-0.5 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">
