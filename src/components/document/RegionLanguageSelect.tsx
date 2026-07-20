@@ -69,7 +69,7 @@ export function RegionLanguageSelect({
             key={v.code}
             className={`inline-flex items-center gap-1 text-[10.5px] font-mono px-1.5 py-0.5 rounded ${
               special && v.code === special.code
-                ? "bg-violet-100 text-violet-700 dark:bg-violet-950/50 dark:text-violet-300"
+                ? "bg-info/10 text-info dark:bg-info dark:text-info"
                 : "bg-muted text-foreground"
             }`}
           >
@@ -87,7 +87,7 @@ export function RegionLanguageSelect({
             onChange={(e) => { setQ(e.target.value); setOpen(true) }}
             onFocus={() => setOpen(true)}
             placeholder={value.length ? "" : placeholder || "選択…"}
-            className="flex-1 min-w-[70px] bg-transparent text-[11px] font-mono py-0.5 px-1 focus:outline-none placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+            className="flex-1 min-w-[70px] bg-transparent text-[11px] py-0.5 px-1 focus:outline-none placeholder:text-muted-foreground/40 placeholder:text-[10px]"
           />
         )}
       </div>
@@ -101,7 +101,7 @@ export function RegionLanguageSelect({
                 <button
                   type="button"
                   onClick={addSpecial}
-                  className={`text-[10.5px] px-2 py-0.5 rounded border ${isSpecial ? "bg-violet-600 text-white border-violet-600" : "border-violet-300 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40"}`}
+                  className={`text-[10.5px] px-2 py-0.5 rounded border ${isSpecial ? "bg-info text-white border-info" : "border-info/40 text-info dark:text-info hover:bg-info/10 dark:hover:bg-info"}`}
                 >
                   {special.name}
                 </button>
@@ -130,7 +130,7 @@ export function RegionLanguageSelect({
                   onClick={() => { add([o]); setQ("") }}
                   className="block w-full text-left text-[11.5px] px-2 py-1 rounded hover:bg-muted"
                 >
-                  {o.name} <span className="text-[9px] font-mono text-muted-foreground/60">{o.code}</span>
+                  {o.name} <span className="text-[9px] text-muted-foreground/60">{o.code}</span>
                 </button>
               ))
             )}

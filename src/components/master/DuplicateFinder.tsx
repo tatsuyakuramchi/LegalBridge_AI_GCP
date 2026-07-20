@@ -85,7 +85,7 @@ export const DuplicateFinder: React.FC = () => {
       <div className="flex items-center gap-2 flex-wrap">
         <Copy className="w-4 h-4 text-muted-foreground" />
         <span className="text-[12px] font-mono font-bold">重複候補の検出 → ID統合</span>
-        <span className="text-[10px] font-mono text-muted-foreground">同名の 原作 / 作品 / 案件 をまとめて統合カートへ</span>
+        <span className="text-[10px] text-muted-foreground">同名の 原作 / 作品 / 案件 をまとめて統合カートへ</span>
         <div className="flex-1" />
         <div className="flex gap-1">
           {KINDS.map((k) => (
@@ -112,23 +112,23 @@ export const DuplicateFinder: React.FC = () => {
         </button>
       </div>
 
-      {err && <p className="text-[11px] font-mono text-rose-600">検出に失敗: {err}</p>}
+      {err && <p className="text-[11px] font-mono text-destructive">検出に失敗: {err}</p>}
 
       {groups == null ? (
-        <p className="text-[11px] font-mono text-muted-foreground">種別を選ぶか「検出」で、同名の重複候補を洗い出します。</p>
+        <p className="text-[11px] text-muted-foreground">種別を選ぶか「検出」で、同名の重複候補を洗い出します。</p>
       ) : groups.length === 0 ? (
-        <p className="text-[11px] font-mono text-emerald-700">重複候補は見つかりませんでした。</p>
+        <p className="text-[11px] font-mono text-success">重複候補は見つかりませんでした。</p>
       ) : (
         <div className="space-y-2">
-          <p className="text-[10px] font-mono text-amber-700">{groups.length} グループの重複候補（同名）が見つかりました。</p>
+          <p className="text-[10px] font-mono text-warning">{groups.length} グループの重複候補（同名）が見つかりました。</p>
           {groups.map((g, i) => (
-            <div key={i} className="border border-amber-300 rounded-sm bg-amber-50/40 dark:bg-amber-950/20 p-2">
+            <div key={i} className="border border-warning/40 rounded-sm bg-warning/10 dark:bg-warning p-2">
               <div className="flex items-center justify-between gap-2 mb-1.5">
                 <span className="text-[11px] font-mono font-bold truncate">{g[0].label}<span className="text-muted-foreground font-normal">（{g.length}件）</span></span>
                 <button
                   type="button"
                   onClick={() => sendToCart(g)}
-                  className="shrink-0 text-[10px] font-mono border border-indigo-500 text-indigo-600 rounded-sm px-2 py-0.5 flex items-center gap-1 hover:bg-indigo-500/10"
+                  className="shrink-0 text-[10px] font-mono border border-primary text-primary rounded-sm px-2 py-0.5 flex items-center gap-1 hover:bg-primary"
                 >
                   <GitMerge className="w-3 h-3" /> 統合カートへ
                 </button>

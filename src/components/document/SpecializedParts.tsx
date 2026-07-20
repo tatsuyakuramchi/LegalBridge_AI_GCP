@@ -140,11 +140,11 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
       <header className="flex items-center justify-between px-5 py-3 border-b border-border bg-muted/40">
         <div className="flex items-center gap-2.5">
           <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-          <h3 className="text-[11px] font-mono font-bold uppercase tracking-[0.18em]">
+          <h3 className="text-[11px] font-bold uppercase tracking-[0.18em]">
             Entity Relations · サブライセンシー一覧
           </h3>
           {list.length > 0 && (
-            <span className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground bg-muted px-2 py-0.5 rounded-sm">
+            <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground bg-muted px-2 py-0.5 rounded-sm">
               {list.length}
             </span>
           )}
@@ -153,7 +153,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
 
       <div className="p-5 space-y-4">
         {list.length === 0 && (
-          <p className="text-center text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground py-6">
+          <p className="text-center text-[11px] uppercase tracking-[0.18em] text-muted-foreground py-6">
             No sub-licensee records.
           </p>
         )}
@@ -192,7 +192,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
                       </option>
                     ))}
                 </select>
-                <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">
+                <p className="text-[10px] text-muted-foreground/70 mt-1">
                   マスター &gt; Sublicensees で登録した取引先を選ぶと
                   区分 / 名称 / 地域 / 言語 が自動入力されます。手入力でも OK。
                 </p>
@@ -299,7 +299,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
           <button
             type="button"
             onClick={addItem}
-            className="inline-flex items-center gap-1.5 px-4 py-2 bg-foreground text-background text-[10px] font-mono font-bold uppercase tracking-[0.14em] rounded-sm hover:opacity-90 transition-all"
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-foreground text-background text-[10px] font-bold uppercase tracking-[0.14em] rounded-sm hover:opacity-90 transition-all"
           >
             <Plus className="h-3 w-3" /> Append entity
           </button>

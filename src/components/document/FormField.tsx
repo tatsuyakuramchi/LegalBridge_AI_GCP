@@ -283,14 +283,14 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
         (typeof meta.helpText === 'string' ? (
           <p
             id={`help-${id}`}
-            className="text-[10px] font-mono text-muted-foreground leading-relaxed mt-0.5 whitespace-pre-wrap"
+            className="text-[10px] text-muted-foreground leading-relaxed mt-0.5 whitespace-pre-wrap"
           >
             {meta.helpText}
           </p>
         ) : (
           <details
             id={`help-${id}`}
-            className="text-[10px] font-mono text-muted-foreground leading-relaxed mt-0.5"
+            className="text-[10px] text-muted-foreground leading-relaxed mt-0.5"
           >
             <summary className="cursor-pointer hover:text-foreground whitespace-pre-wrap">
               {meta.helpText.brief}

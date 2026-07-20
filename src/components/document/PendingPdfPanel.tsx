@@ -608,7 +608,7 @@ export const PendingPdfPanel: React.FC = () => {
             <FileText className="w-5 h-5" />
             PDF 未作成キュー
           </h2>
-          <p className="text-[10px] font-mono text-muted-foreground mt-1">
+          <p className="text-[10px] text-muted-foreground mt-1">
             CSV 一括インポートで「未作成」マーク付きで登録された文書を、
             内容を確認しながら 1 件ずつ PDF 化します。
           </p>
@@ -637,10 +637,10 @@ export const PendingPdfPanel: React.FC = () => {
           className={cn(
             "border rounded-sm px-4 py-2 text-[11px] font-mono flex flex-col gap-2",
             lastResult.action === "generated"
-              ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+              ? "bg-success/10 border-success/40 text-success"
               : lastResult.action === "completed"
-                ? "bg-emerald-100 border-emerald-300 text-emerald-900"
-                : "bg-amber-50 border-amber-200 text-amber-900"
+                ? "bg-success/10 border-success/40 text-success"
+                : "bg-warning/10 border-warning/40 text-warning"
           )}
         >
           <div className="flex items-center justify-between gap-3">
@@ -653,7 +653,7 @@ export const PendingPdfPanel: React.FC = () => {
                   : `✓ スキップ済: ${lastResult.document_number}`}
               {lastResult.action === "completed" &&
                 lastResult.delivery_child_issue_key && (
-                  <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-white/60 border border-emerald-300 rounded-sm">
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-white/60 border border-success/40 rounded-sm">
                     → 納品・検収 {lastResult.delivery_child_issue_key}
                   </span>
                 )}
@@ -688,7 +688,7 @@ export const PendingPdfPanel: React.FC = () => {
       )}
 
       {error && (
-        <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[11px] font-mono flex items-start gap-2">
+        <div className="border border-destructive/40 bg-destructive/10 text-destructive rounded-sm px-4 py-2 text-[11px] font-mono flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
           {error}
         </div>
@@ -729,14 +729,14 @@ export const PendingPdfPanel: React.FC = () => {
               />
               表示中をすべて選択
             </label>
-            <span className="text-[10px] font-mono text-muted-foreground">
+            <span className="text-[10px] text-muted-foreground">
               選択 {selected.size} 件
             </span>
             {selected.size > 0 && !bulkRunning && (
               <button
                 type="button"
                 onClick={() => setSelected(new Set())}
-                className="text-[10px] font-mono text-muted-foreground underline hover:text-foreground"
+                className="text-[10px] text-muted-foreground underline hover:text-foreground"
               >
                 選択解除
               </button>
@@ -744,12 +744,12 @@ export const PendingPdfPanel: React.FC = () => {
           </div>
           <div className="flex items-center gap-3 flex-wrap">
             {bulkProgress && (
-              <span className="text-[10px] font-mono text-muted-foreground">
+              <span className="text-[10px] text-muted-foreground">
                 {bulkRunning ? "生成中… " : "完了 "}
                 {bulkProgress.done}/{bulkProgress.total}
-                <span className="text-emerald-700"> ✓{bulkProgress.okCount}</span>
+                <span className="text-success"> ✓{bulkProgress.okCount}</span>
                 {bulkProgress.failCount > 0 && (
-                  <span className="text-red-700"> ✗{bulkProgress.failCount}</span>
+                  <span className="text-destructive"> ✗{bulkProgress.failCount}</span>
                 )}
               </span>
             )}
@@ -757,7 +757,7 @@ export const PendingPdfPanel: React.FC = () => {
               type="button"
               onClick={openBulkEdit}
               disabled={bulkRunning || merging || selected.size === 0}
-              className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
               title="選択した文書の 発注日 / 担当者 / 支払日 を一括修正し、備考を一律追記します"
             >
               <Pencil className="w-3 h-3" />
@@ -770,8 +770,8 @@ export const PendingPdfPanel: React.FC = () => {
               className={cn(
                 "text-[10px] font-mono uppercase tracking-wider rounded-sm px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed",
                 forceDelete
-                  ? "bg-red-600 text-white hover:bg-red-700 border border-red-600"
-                  : "border border-red-300 text-red-700 hover:bg-red-50"
+                  ? "bg-destructive text-white hover:bg-destructive border border-destructive"
+                  : "border border-destructive/40 text-destructive hover:bg-destructive/10"
               )}
               title={
                 forceDelete
@@ -787,7 +787,7 @@ export const PendingPdfPanel: React.FC = () => {
               🗑 選択を削除
             </button>
             <label
-              className="flex items-center gap-1 text-[10px] font-mono text-red-700 cursor-pointer select-none"
+              className="flex items-center gap-1 text-[10px] font-mono text-destructive cursor-pointer select-none"
               title="発行済(PDFあり)・検収/納品が紐付いたものも強制的に削除します"
             >
               <input
@@ -803,7 +803,7 @@ export const PendingPdfPanel: React.FC = () => {
               type="button"
               onClick={openMerge}
               disabled={bulkRunning || merging || !mergeEligible}
-              className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
               title={
                 mergeEligible
                   ? "選択した同一取引先の発注書を1枚(複数明細)に統合します"
@@ -817,7 +817,7 @@ export const PendingPdfPanel: React.FC = () => {
               type="button"
               onClick={bulkGenerate}
               disabled={bulkRunning || selected.size === 0}
-              className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
               title="チェックした文書の PDF を 1 件ずつまとめて生成 (Backlog ステータスは触りません)"
             >
               {bulkRunning ? (
@@ -835,10 +835,10 @@ export const PendingPdfPanel: React.FC = () => {
       {!data || data.total === 0 ? (
         <div className="text-center py-12 border border-dashed border-input rounded-sm bg-muted/10">
           <PackageOpen className="w-10 h-10 mx-auto text-muted-foreground/40 mb-2" />
-          <p className="text-[12px] font-mono text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             PDF 未作成のドキュメントはありません。
           </p>
-          <p className="text-[10px] font-mono text-muted-foreground/60 mt-1">
+          <p className="text-[10px] text-muted-foreground/60 mt-1">
             CSV インポートで <code>generate_pdf=未作成</code> を指定すると、
             ここに表示されます。
           </p>
@@ -854,7 +854,7 @@ export const PendingPdfPanel: React.FC = () => {
                 className={cn(
                   "border rounded-sm bg-card p-4",
                   rowError
-                    ? "border-red-300 bg-red-50/40"
+                    ? "border-destructive/40 bg-destructive/10"
                     : "border-border",
                   busy && "opacity-60"
                 )}
@@ -870,14 +870,14 @@ export const PendingPdfPanel: React.FC = () => {
                   />
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 bg-muted rounded-sm uppercase tracking-wider">
+                      <span className="text-[10px] px-1.5 py-0.5 bg-muted rounded-sm uppercase tracking-wider">
                         {TEMPLATE_LABELS[row.template_type] || row.template_type}
                       </span>
                       <span className="text-[11px] font-mono font-bold">
                         {row.document_number}
                       </span>
                       {row.summary.variant && (
-                        <span className="text-[11px] font-mono px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded-sm">
+                        <span className="text-[11px] font-mono px-1.5 py-0.5 bg-primary/10 text-primary rounded-sm">
                           {row.summary.variant}
                         </span>
                       )}
@@ -885,7 +885,7 @@ export const PendingPdfPanel: React.FC = () => {
                     <div className="text-[11px] text-foreground truncate">
                       {row.summary.title || "(タイトル未設定)"}
                     </div>
-                    <div className="text-[10px] font-mono text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
+                    <div className="text-[10px] text-muted-foreground flex flex-wrap gap-x-3 gap-y-1">
                       {row.summary.counterparty && (
                         <span>取引先: {row.summary.counterparty}</span>
                       )}
@@ -916,7 +916,7 @@ export const PendingPdfPanel: React.FC = () => {
                       className={cn(
                         "text-[10px] font-mono uppercase tracking-wider rounded-sm px-2.5 py-1.5 flex items-center gap-1.5 disabled:opacity-50",
                         rowError
-                          ? "bg-red-600 text-white hover:bg-red-700"
+                          ? "bg-destructive text-white hover:bg-destructive"
                           : "border border-foreground/30 hover:bg-muted"
                       )}
                       title={
@@ -932,7 +932,7 @@ export const PendingPdfPanel: React.FC = () => {
                       type="button"
                       onClick={() => generatePdf(row)}
                       disabled={!!busy}
-                      className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+                      className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
                       title="PDF だけ作る (Backlog ステータスは触らない)"
                     >
                       {busy === "generating" ? (
@@ -947,7 +947,7 @@ export const PendingPdfPanel: React.FC = () => {
                       type="button"
                       onClick={() => regenerateAndComplete(row)}
                       disabled={!!busy}
-                      className="text-[10px] font-mono uppercase tracking-wider bg-emerald-600 text-white rounded-sm px-3 py-1.5 hover:bg-emerald-700 flex items-center gap-1.5 disabled:opacity-50"
+                      className="text-[10px] uppercase tracking-wider bg-success text-white rounded-sm px-3 py-1.5 hover:bg-success flex items-center gap-1.5 disabled:opacity-50"
                       title="PDF 生成 + Backlog ステータスを 完了 に進めて納品・検収 子課題を自動作成"
                     >
                       {busy === "completing" ? (
@@ -961,7 +961,7 @@ export const PendingPdfPanel: React.FC = () => {
                       type="button"
                       onClick={() => skipRow(row)}
                       disabled={!!busy}
-                      className="text-[10px] font-mono uppercase tracking-wider border border-muted-foreground/30 text-muted-foreground rounded-sm px-2.5 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-50"
+                      className="text-[10px] uppercase tracking-wider border border-muted-foreground/30 text-muted-foreground rounded-sm px-2.5 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-50"
                       title="このドキュメントを「作成済」扱いにしてキューから外す"
                     >
                       <X className="w-3 h-3" />
@@ -972,14 +972,14 @@ export const PendingPdfPanel: React.FC = () => {
 
                 {/* Phase 16: 失敗時のエラー詳細を行内に永続表示 */}
                 {rowError && (
-                  <div className="mt-3 border border-red-200 bg-red-50 rounded-sm px-3 py-2 flex items-start gap-2 text-[10px] font-mono text-red-800">
+                  <div className="mt-3 border border-destructive/40 bg-destructive/10 rounded-sm px-3 py-2 flex items-start gap-2 text-[10px] font-mono text-destructive">
                     <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                     <div className="space-y-1 min-w-0 flex-1">
-                      <div className="font-bold uppercase tracking-wider text-red-700">
+                      <div className="font-bold uppercase tracking-wider text-destructive">
                         PDF 生成失敗
                       </div>
                       <div className="break-all">{rowError}</div>
-                      <div className="text-[11px] text-red-600/80 mt-1">
+                      <div className="text-[11px] text-destructive mt-1">
                         ✏️ 「修正して再試行」で項目を直してから再生成、または
                         「そのまま再試行」で時刻差で再実行できます。
                       </div>
@@ -1004,7 +1004,7 @@ export const PendingPdfPanel: React.FC = () => {
           >
             <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">
               <Pencil className="w-4 h-4" />
-              <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+              <span className="text-[11px] uppercase tracking-wider font-bold">
                 選択 {selectedRowObjs.length} 件を一括修正
               </span>
               <span className="text-[10px] font-mono px-1.5 py-0.5 bg-muted rounded-sm">
@@ -1017,17 +1017,17 @@ export const PendingPdfPanel: React.FC = () => {
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
               {editMixed ? (
-                <div className="border border-amber-300 bg-amber-50 text-amber-900 rounded-sm px-3 py-2 text-[11px] font-mono leading-relaxed">
+                <div className="border border-warning/40 bg-warning/10 text-warning rounded-sm px-3 py-2 text-[11px] font-mono leading-relaxed">
                   発注書と検収書が混在しています。種別ごとに選択して一括修正してください。
                 </div>
               ) : editAllInspection ? (
-                <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
                   空欄の項目は変更しません。検収書の
                   <b>検収日（検収完了日）</b>と<b>検収者</b>をまとめて修正できます。
                   発注日は親発注書から自動補完されます。
                 </p>
               ) : (
-                <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
                   空欄の項目は変更しません。納品後に遡って発行する場合などに、
                   発注日・担当者・支払日をまとめて修正し、遡及理由を備考(自由備考)へ
                   一律で追記できます。
@@ -1036,7 +1036,7 @@ export const PendingPdfPanel: React.FC = () => {
 
               {!editMixed && editAllInspection && (
                 <label className="block space-y-1">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                     検収日（検収完了日）
                   </span>
                   <input
@@ -1051,7 +1051,7 @@ export const PendingPdfPanel: React.FC = () => {
 
               {!editMixed && !editAllInspection && (
                 <label className="block space-y-1">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                     発注日
                   </span>
                   <input
@@ -1066,7 +1066,7 @@ export const PendingPdfPanel: React.FC = () => {
 
               {!editMixed && (
               <div className="block space-y-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   {editAllInspection ? "検収者" : "担当者"}
                 </span>
                 <div className="relative">
@@ -1096,7 +1096,7 @@ export const PendingPdfPanel: React.FC = () => {
                   {staffDropdownOpen && staffOptions.length > 0 && (
                     <div className="lb-overlay absolute z-10 mt-1 w-full max-h-56 overflow-y-auto border border-border rounded-sm bg-card shadow-lg">
                       {filteredStaff.length === 0 ? (
-                        <div className="px-2 py-2 text-[10px] font-mono text-muted-foreground">
+                        <div className="px-2 py-2 text-[10px] text-muted-foreground">
                           該当する担当者がいません
                         </div>
                       ) : (
@@ -1130,7 +1130,7 @@ export const PendingPdfPanel: React.FC = () => {
                   )}
                 </div>
                 {editStaffEmail && (
-                  <div className="text-[10px] font-mono text-emerald-700 flex items-center gap-2">
+                  <div className="text-[10px] font-mono text-success flex items-center gap-2">
                     選択中: {editStaffEmail}
                     <button
                       type="button"
@@ -1149,7 +1149,7 @@ export const PendingPdfPanel: React.FC = () => {
 
               {!editMixed && !editAllInspection && (
               <label className="block space-y-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   支払日（全明細に適用）
                 </span>
                 <input
@@ -1164,7 +1164,7 @@ export const PendingPdfPanel: React.FC = () => {
 
               {!editMixed && !editAllInspection && (
               <label className="block space-y-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   備考に追記（自由備考・遡及理由など）
                 </span>
                 <textarea
@@ -1175,7 +1175,7 @@ export const PendingPdfPanel: React.FC = () => {
                   disabled={savingEdit}
                   className="w-full text-xs font-mono bg-transparent border border-input rounded-sm py-1.5 px-2 focus:outline-none focus:border-foreground resize-y"
                 />
-                <span className="text-[10px] font-mono text-muted-foreground/70">
+                <span className="text-[10px] text-muted-foreground/70">
                   既存の自由備考がある場合は改行して末尾に追記されます。
                 </span>
               </label>
@@ -1186,7 +1186,7 @@ export const PendingPdfPanel: React.FC = () => {
                 type="button"
                 onClick={() => setBulkEditOpen(false)}
                 disabled={savingEdit}
-                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
+                className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
               >
                 キャンセル
               </button>
@@ -1194,7 +1194,7 @@ export const PendingPdfPanel: React.FC = () => {
                 type="button"
                 onClick={runBulkEdit}
                 disabled={savingEdit || editMixed}
-                className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+                className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {savingEdit ? (
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -1222,16 +1222,16 @@ export const PendingPdfPanel: React.FC = () => {
           >
             <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">
               <Link2 className="w-4 h-4" />
-              <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+              <span className="text-[11px] uppercase tracking-wider font-bold">
                 発注書を1枚に統合
               </span>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-3">
-              <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
                 選択した {selectedRowObjs.length} 件の発注書を
                 <span className="font-bold text-foreground">統合先</span>
                 1枚にまとめます(明細を寄せ集めます)。
-                <span className="font-bold text-red-700">
+                <span className="font-bold text-destructive">
                   統合先以外の発注書は削除されます。
                 </span>
                 取引先:{" "}
@@ -1239,7 +1239,7 @@ export const PendingPdfPanel: React.FC = () => {
                   {selectedRowObjs[0]?.summary.counterparty}
                 </span>
               </p>
-              <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">
+              <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
                 統合先(残す発注書)を選択
               </div>
               <div className="border border-input rounded-sm divide-y divide-border/50 max-h-[40vh] overflow-y-auto">
@@ -1260,7 +1260,7 @@ export const PendingPdfPanel: React.FC = () => {
                       <div className="text-[11px] font-mono font-bold flex items-center gap-2">
                         {r.document_number}
                         {mergeTargetId === r.id && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-sm">
+                          <span className="text-[10px] px-1.5 py-0.5 bg-success/10 text-success rounded-sm">
                             統合先 · 残す
                           </span>
                         )}
@@ -1282,7 +1282,7 @@ export const PendingPdfPanel: React.FC = () => {
                 type="button"
                 onClick={() => setMergeOpen(false)}
                 disabled={merging}
-                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
+                className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
               >
                 キャンセル
               </button>
@@ -1290,7 +1290,7 @@ export const PendingPdfPanel: React.FC = () => {
                 type="button"
                 onClick={runMerge}
                 disabled={merging || mergeTargetId == null}
-                className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+                className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {merging ? (
                   <Loader2 className="w-3 h-3 animate-spin" />

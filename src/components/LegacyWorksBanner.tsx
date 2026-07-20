@@ -11,14 +11,14 @@ import { Network } from "lucide-react"
 
 export function LegacyWorksBanner({ what }: { what: string }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-mono text-amber-800">
+    <div className="flex items-center justify-between gap-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-[11px] font-mono text-warning">
       <span>
         ⚠ この画面は<strong>「作品管理」</strong>に統合されました。{what}の編集は
         作品管理（原作・自社作品・派生を3カードで一元管理）をご利用ください。
       </span>
       <Link
         to="/works"
-        className="shrink-0 inline-flex items-center gap-1 rounded border border-amber-400 px-2 py-1 font-bold hover:bg-amber-100"
+        className="shrink-0 inline-flex items-center gap-1 rounded border border-warning px-2 py-1 font-bold hover:bg-warning/10"
       >
         <Network className="h-3.5 w-3.5" />
         作品管理を開く

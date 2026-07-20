@@ -309,10 +309,10 @@ export const BulkImportDialog: React.FC<Props> = ({
         <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <FileSpreadsheet className="w-4 h-4" />
-            <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+            <span className="text-[11px] uppercase tracking-wider font-bold">
               CSV 一括インポート
             </span>
-            <span className="text-[10px] font-mono text-muted-foreground">
+            <span className="text-[10px] text-muted-foreground">
               · {label}
             </span>
           </div>
@@ -352,7 +352,7 @@ export const BulkImportDialog: React.FC<Props> = ({
             <button
               type="button"
               onClick={downloadTemplate}
-              className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
+              className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
             >
               <Download className="w-3 h-3" />
               テンプレ.csv
@@ -369,7 +369,7 @@ export const BulkImportDialog: React.FC<Props> = ({
               onDrop={onDrop}
               className="border-2 border-dashed border-input rounded-sm p-5 text-center bg-muted/10"
             >
-              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground font-bold mb-1">
+              <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">
                 Step 2. CSV を選択
               </div>
               <Upload className="w-8 h-8 mx-auto text-muted-foreground/40 my-2" />
@@ -383,18 +383,18 @@ export const BulkImportDialog: React.FC<Props> = ({
               />
               <label
                 htmlFor={`bulk-import-file-${kind}`}
-                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted cursor-pointer inline-flex items-center gap-1.5"
+                className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted cursor-pointer inline-flex items-center gap-1.5"
               >
                 <Upload className="w-3 h-3" />
                 ファイル選択 or ドロップ
               </label>
               {fileName && (
-                <div className="text-[10px] font-mono text-muted-foreground mt-2">
+                <div className="text-[10px] text-muted-foreground mt-2">
                   選択中: <span className="font-bold">{fileName}</span>
                 </div>
               )}
               {parseError && (
-                <div className="text-[10px] font-mono text-red-700 bg-red-50 border border-red-200 rounded-sm p-2 mt-3 flex items-start gap-1.5 text-left">
+                <div className="text-[10px] font-mono text-destructive bg-destructive/10 border border-destructive/40 rounded-sm p-2 mt-3 flex items-start gap-1.5 text-left">
                   <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                   {parseError}
                 </div>
@@ -405,7 +405,7 @@ export const BulkImportDialog: React.FC<Props> = ({
           {/* Step 3: Preview */}
           {csvRows && !result && (
             <div className="space-y-2">
-              <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">
+              <div className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">
                 Step 3. プレビュー — {csvRows.length} 行 / {groups.length} 件の文書
               </div>
               <div className="border border-input rounded-sm max-h-[280px] overflow-y-auto">
@@ -441,7 +441,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                                       ? `稟議 ${g.first_row.ringi_number || "-"} · ${g.first_row.title || ""}`
                                       : `${g.first_row.contract_title || g.first_row.vendor_name || ""}`}
                           {g.first_row.generate_pdf === "未作成" && (
-                            <span className="ml-2 text-[11px] px-1 py-0.5 bg-amber-100 text-amber-800 rounded-sm">
+                            <span className="ml-2 text-[11px] px-1 py-0.5 bg-warning/10 text-warning rounded-sm">
                               📄 PDF 生成
                             </span>
                           )}
@@ -478,8 +478,8 @@ export const BulkImportDialog: React.FC<Props> = ({
                       isEmpty
                         ? "bg-slate-50 border-slate-300 text-slate-700"
                         : isAllOk
-                        ? "bg-emerald-50 border-emerald-300 text-emerald-900"
-                        : "bg-amber-50 border-amber-300 text-amber-900"
+                        ? "bg-success/10 border-success/40 text-success"
+                        : "bg-warning/10 border-warning/40 text-warning"
                     )}
                   >
                     <div className="flex items-center gap-3 mb-3">
@@ -511,8 +511,8 @@ export const BulkImportDialog: React.FC<Props> = ({
                           isEmpty
                             ? "bg-slate-400"
                             : isAllOk
-                            ? "bg-emerald-500"
-                            : "bg-amber-500"
+                            ? "bg-success"
+                            : "bg-warning"
                         )}
                         style={{ width: `${successPct}%` }}
                       />
@@ -535,7 +535,7 @@ export const BulkImportDialog: React.FC<Props> = ({
 
               {result.succeeded.length > 0 && (
                 <div className="border border-input rounded-sm max-h-[200px] overflow-y-auto">
-                  <div className="bg-emerald-50 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-emerald-700 sticky top-0 flex items-center gap-1">
+                  <div className="bg-success/10 px-2 py-1 text-[11px] uppercase tracking-wider text-success sticky top-0 flex items-center gap-1">
                     <CheckCircle2 className="w-2.5 h-2.5" />
                     成功 ({result.succeeded.length})
                   </div>
@@ -555,7 +555,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             {/* Phase 22.21.27/28: bulk import の Backlog 自動化結果 */}
                             {(s as any).issue_key_created && (
                               <span
-                                className="ml-1 px-1 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-sm"
+                                className="ml-1 px-1 py-0.5 text-[10px] uppercase tracking-wider bg-primary/10 text-primary border border-primary/40 rounded-sm"
                                 title={`Backlog 課題を新規作成しました (種別: ${(s as any).backlog_issue_type || "—"})`}
                               >
                                 NEW · {(s as any).backlog_issue_type || "?"}
@@ -563,7 +563,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             )}
                             {(s as any).pdf_pending && (
                               <span
-                                className="ml-1 px-1 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 rounded-sm"
+                                className="ml-1 px-1 py-0.5 text-[10px] uppercase tracking-wider bg-warning/10 text-warning border border-warning/40 rounded-sm"
                                 title="PDF 未作成。Document Editor で PDF を生成してから完了に進めると 納品・検収 子課題が自動作成されます"
                               >
                                 PDF 未作成
@@ -571,7 +571,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             )}
                             {(s as any).auto_completed && (
                               <span
-                                className="ml-1 px-1 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-sm"
+                                className="ml-1 px-1 py-0.5 text-[10px] uppercase tracking-wider bg-success/10 text-success border border-success/40 rounded-sm"
                                 title="完了に自動進行 + 納品・検収 子課題自動作成"
                               >
                                 ✓完了
@@ -579,7 +579,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             )}
                             {(s as any).delivery_child_issue_key && (
                               <span
-                                className="ml-1 text-[11px] text-emerald-700"
+                                className="ml-1 text-[11px] text-success"
                                 title="納品・検収 子課題"
                               >
                                 → {(s as any).delivery_child_issue_key}
@@ -595,7 +595,7 @@ export const BulkImportDialog: React.FC<Props> = ({
 
               {result.failed.length > 0 && (
                 <div className="border border-input rounded-sm max-h-[200px] overflow-y-auto">
-                  <div className="bg-red-50 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-red-700 sticky top-0 flex items-center justify-between">
+                  <div className="bg-destructive/10 px-2 py-1 text-[11px] uppercase tracking-wider text-destructive sticky top-0 flex items-center justify-between">
                     <span className="flex items-center gap-1">
                       <AlertTriangle className="w-2.5 h-2.5" />
                       失敗 ({result.failed.length})
@@ -603,7 +603,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                     <button
                       type="button"
                       onClick={downloadFailedRows}
-                      className="text-[11px] font-mono uppercase tracking-wider border border-red-700/30 rounded-sm px-1.5 py-0.5 hover:bg-red-100 flex items-center gap-1"
+                      className="text-[11px] uppercase tracking-wider border border-destructive rounded-sm px-1.5 py-0.5 hover:bg-destructive/10 flex items-center gap-1"
                     >
                       <Download className="w-2.5 h-2.5" />
                       失敗行 .csv
@@ -617,7 +617,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             {idx + 1}
                           </td>
                           <td className="p-1.5 font-bold">{f.import_key}</td>
-                          <td className="p-1.5 text-red-700 break-all">
+                          <td className="p-1.5 text-destructive break-all">
                             {f.error}
                           </td>
                         </tr>
@@ -635,7 +635,7 @@ export const BulkImportDialog: React.FC<Props> = ({
           <button
             type="button"
             onClick={closeAll}
-            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted"
+            className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted"
           >
             閉じる
           </button>

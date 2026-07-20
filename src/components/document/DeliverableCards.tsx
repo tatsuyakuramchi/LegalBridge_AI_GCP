@@ -154,7 +154,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
   return (
     <div className="col-span-full space-y-3">
       {list.length === 0 && (
-        <p className="text-center text-[11px] font-mono text-muted-foreground py-6">
+        <p className="text-center text-[11px] text-muted-foreground py-6">
           成果物がありません。「＋成果物を追加」から入力してください。
         </p>
       )}
@@ -184,7 +184,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
             key={idx}
             className={cn(
               "relative rounded-lg border p-3 space-y-3 group",
-              isContractor ? "border-amber-300 bg-amber-50/40 dark:bg-amber-950/10" : "border-border bg-card"
+              isContractor ? "border-warning/40 bg-warning/10 dark:bg-warning" : "border-border bg-card"
             )}
           >
             <button
@@ -198,9 +198,9 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
 
             <div className="flex items-center gap-2">
               <Package className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[10px] font-mono font-bold text-muted-foreground">成果物 #{idx + 1}</span>
+              <span className="text-[10px] font-bold text-muted-foreground">成果物 #{idx + 1}</span>
               {errs.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-[9.5px] font-mono px-1.5 py-0.5 rounded-sm bg-red-50 border border-red-300 text-red-700">
+                <span className="inline-flex items-center gap-1 text-[9.5px] font-mono px-1.5 py-0.5 rounded-sm bg-destructive/10 border border-destructive/40 text-destructive">
                   <AlertTriangle className="h-3 w-3" /> 未入力: {errs.join("・")}
                 </span>
               )}
@@ -221,13 +221,13 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
               {feeMode === "subscription" ? (
                 <div className="space-y-1">
                   <label className={labelCls}>役務提供期間（下の「継続」で入力）</label>
-                  <div className="text-[11px] font-mono text-muted-foreground py-1.5">
+                  <div className="text-[11px] text-muted-foreground py-1.5">
                     継続課金のため、納期の代わりに役務提供期間を使用します。
                   </div>
                 </div>
               ) : (
                 <div className="space-y-1">
-                  <label className={cn(labelCls, !it.delivery_date && "text-red-600")}>納期 *（成果物には納期が必要）</label>
+                  <label className={cn(labelCls, !it.delivery_date && "text-destructive")}>納期 *（成果物には納期が必要）</label>
                   <input
                     type="date"
                     value={it.delivery_date || ""}
@@ -292,7 +292,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                   onClick={() => setOwnership(idx, "受注者")}
                   className={cn(
                     "inline-flex items-center gap-1.5 px-3 py-1 text-[10px] font-mono font-bold rounded-sm transition-all",
-                    isContractor ? "bg-card text-amber-800 shadow-xs border border-amber-300" : "text-muted-foreground hover:text-foreground"
+                    isContractor ? "bg-card text-warning shadow-xs border border-warning/40" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
                   <Coins className="h-3 w-3" /> 受注者帰属（利用許諾型）
@@ -302,7 +302,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
 
             {/* 帰属駆動: 報酬 */}
             {isContractor ? (
-              <div className="rounded-sm border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2 space-y-2">
+              <div className="rounded-sm border border-warning/40 bg-warning/10 dark:bg-warning px-3 py-2 space-y-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className={labelCls}>固定報酬（税抜・任意）</label>
@@ -336,7 +336,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                     />
                   </div>
                 )}
-                <p className="text-[10px] font-mono text-amber-800/80 leading-snug">
+                <p className="text-[10px] font-mono text-warning leading-snug">
                   {amount > 0 ? (
                     <>PDF表記：「<b>{yen(amount)} {rewardLabel}（{royaltyLabel}は別途）</b>」。この固定報酬は確定額に算入されます。</>
                   ) : (
@@ -418,15 +418,15 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className={cn(labelCls, !it.term_start && "text-red-600")}>期間 開始 *</label>
+                        <label className={cn(labelCls, !it.term_start && "text-destructive")}>期間 開始 *</label>
                         <input type="date" value={it.term_start || ""} onChange={(e) => patchSub(idx, { term_start: e.target.value })} className={inputCls} />
                       </div>
                       <div className="space-y-1">
-                        <label className={cn(labelCls, !it.term_end && "text-amber-600")}>期間 終了 *（総額算出に必要）</label>
+                        <label className={cn(labelCls, !it.term_end && "text-warning")}>期間 終了 *（総額算出に必要）</label>
                         <input type="date" value={it.term_end || ""} onChange={(e) => patchSub(idx, { term_end: e.target.value })} className={inputCls} />
                       </div>
                       <div className="space-y-1">
-                        <label className={cn(labelCls, (Number(it.unit_price) || 0) <= 0 && "text-red-600")}>
+                        <label className={cn(labelCls, (Number(it.unit_price) || 0) <= 0 && "text-destructive")}>
                           {it.subscription_cycle === "ANNUAL" ? "年額(税抜)" : "月額(税抜)"} *
                         </label>
                         <input
@@ -455,7 +455,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                               const unitLabel = it.subscription_cycle === "ANNUAL" ? "年" : "ヶ月"
                               if (!cnt)
                                 return (
-                                  <span className="text-amber-700">
+                                  <span className="text-warning">
                                     {yen(amount)}{" "}
                                     <span className="text-[10px] text-muted-foreground/70">（期間終了を入れると総額を自動計算）</span>
                                   </span>
@@ -470,7 +470,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                           </div>
                         </div>
                       </div>
-                      <p className="text-[10px] font-mono text-muted-foreground/70 leading-snug">
+                      <p className="text-[10px] text-muted-foreground/70 leading-snug">
                         サブスク型は履行期間の課金単位総額を確定額 小計に計上します。支払期日は
                         {it.subscription_cycle === "ANNUAL" ? "各年分を年末日を含む月の翌月末" : "各月分を翌月末"}
                         に支払う想定です。
@@ -509,7 +509,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                     <>
                       {/* 確定額: 単価 × 個数。金額はその積(検収は 単価×個数×歩留率 で消化)。 */}
                       <div className="space-y-1">
-                        <label className={cn(labelCls, amount <= 0 && "text-red-600")}>単価(税抜) *</label>
+                        <label className={cn(labelCls, amount <= 0 && "text-destructive")}>単価(税抜) *</label>
                         <input
                           type="number"
                           value={(Number(it.unit_price) || amount) || ""}
@@ -533,7 +533,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                     </>
                   ) : (
                     <div className="space-y-1">
-                      <label className={cn(labelCls, amount <= 0 && "text-red-600")}>
+                      <label className={cn(labelCls, amount <= 0 && "text-destructive")}>
                         {feeMode === "calc" ? `${rewardLabel}の金額(税抜) *` : "金額(税抜) *"}
                       </label>
                       <input
@@ -557,12 +557,12 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                 </div>
                 )}
                 {feeMode === "fixed" && (Number(it.quantity) || 1) !== 1 && (
-                  <p className="text-[10px] font-mono text-muted-foreground/70">
+                  <p className="text-[10px] text-muted-foreground/70">
                     金額(税抜) = 単価 {yen(Number(it.unit_price) || 0)} × 個数 {Number(it.quantity) || 1} = <b>{yen(amount)}</b>
                   </p>
                 )}
                 {feeMode === "calc" && (
-                  <p className="text-[10px] font-mono text-muted-foreground/70">
+                  <p className="text-[10px] text-muted-foreground/70">
                     PDF表記：「{yen(amount)} {rewardLabel}（{royaltyLabel}は別途）」。{royaltyLabel}（料率）の算定条件は下の<b>「利用許諾条件（共通）」</b>に記載されます。
                   </p>
                 )}
@@ -576,7 +576,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
         <button
           type="button"
           onClick={add}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-foreground text-background text-[10px] font-mono font-bold uppercase tracking-[0.14em] rounded-sm hover:opacity-90 transition-all"
+          className="inline-flex items-center gap-1.5 px-4 py-2 bg-foreground text-background text-[10px] font-bold uppercase tracking-[0.14em] rounded-sm hover:opacity-90 transition-all"
         >
           <Plus className="h-3 w-3" /> 成果物を追加
         </button>

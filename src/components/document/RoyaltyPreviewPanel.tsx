@@ -219,7 +219,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
 
   return (
     <div className="border border-border rounded-sm bg-card/60 p-4 space-y-3 sticky top-4">
-      <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wider text-muted-foreground">
         <Calculator className="w-3.5 h-3.5" />
         <span>ライブ計算 (サーバ算出)</span>
         {loading && (
@@ -228,21 +228,21 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
           </span>
         )}
         {isStale && !loading && (
-          <span className="ml-auto text-[11px] text-amber-700">
+          <span className="ml-auto text-[11px] text-warning">
             stale (recalc...)
           </span>
         )}
       </div>
 
       {!ready ? (
-        <div className="text-[10px] font-mono text-muted-foreground bg-muted/30 rounded-sm p-3 border border-dashed border-input">
+        <div className="text-[10px] text-muted-foreground bg-muted/30 rounded-sm p-3 border border-dashed border-input">
           以下が揃うと自動計算されます:
           <ul className="mt-1 space-y-0.5">
             <li
               className={cn(
                 args.license_financial_condition_id > 0 ||
                   args.capability_financial_condition_id > 0
-                  ? "text-emerald-700"
+                  ? "text-success"
                   : "text-muted-foreground"
               )}
             >
@@ -260,7 +260,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
             <li
               className={cn(
                 args.unit_price > 0
-                  ? "text-emerald-700"
+                  ? "text-success"
                   : "text-muted-foreground"
               )}
             >
@@ -271,7 +271,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
               <li
                 className={cn(
                   args.quantity > 0
-                    ? "text-emerald-700"
+                    ? "text-success"
                     : "text-muted-foreground"
                 )}
               >
@@ -281,7 +281,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
           </ul>
         </div>
       ) : error ? (
-        <div className="text-[10px] font-mono text-red-700 bg-red-50 border border-red-200 rounded-sm p-3 flex items-start gap-2">
+        <div className="text-[10px] font-mono text-destructive bg-destructive/10 border border-destructive/40 rounded-sm p-3 flex items-start gap-2">
           <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
           <div>
             <div className="font-bold">計算サーバエラー</div>
@@ -349,7 +349,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
                 <Coins className="w-2.5 h-2.5" />
                 ② MG (最低保証 floor)
                 {preview.mg_floor_applied && (
-                  <span className="ml-auto text-[11px] font-bold text-amber-700">
+                  <span className="ml-auto text-[11px] font-bold text-warning">
                     FLOOR 適用
                   </span>
                 )}
@@ -382,7 +382,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
                 <Coins className="w-2.5 h-2.5" />
                 ③ AG (前払い保証 消化)
                 {preview.ag_fully_consumed && (
-                  <span className="ml-auto text-[11px] font-bold text-amber-700">
+                  <span className="ml-auto text-[11px] font-bold text-warning">
                     消化完了
                   </span>
                 )}
@@ -404,7 +404,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
                 <div
                   className={cn(
                     "text-right",
-                    preview.ag_remaining === 0 && "text-emerald-700 font-bold"
+                    preview.ag_remaining === 0 && "text-success font-bold"
                   )}
                 >
                   {yen(preview.ag_remaining, preview.currency)}
@@ -433,11 +433,11 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
           </div>
 
           {/* ---- Total ---- */}
-          <div className="flex items-center justify-between pt-2 border-t-2 border-foreground/30 bg-emerald-50 -mx-2 px-2 py-1.5 rounded-sm">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-900">
+          <div className="flex items-center justify-between pt-2 border-t-2 border-foreground/30 bg-success/10 -mx-2 px-2 py-1.5 rounded-sm">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-success">
               ⑥ 総支払額 (税込)
             </div>
-            <div className="text-[14px] font-bold text-emerald-900">
+            <div className="text-[14px] font-bold text-success">
               {yen(preview.total_payment_inc_tax, preview.currency)}
             </div>
           </div>

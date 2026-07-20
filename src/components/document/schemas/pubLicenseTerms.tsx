@@ -172,7 +172,7 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         {/* 対象作品(own): 保存経路(work-linkage(pub))が formData.linked_work_id を読み、
             原作マテリアルを対象作品の構成・条件明細へ連動させる。ここが唯一の入力点。 */}
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             作品設定 — 対象作品（自社作品）
           </label>
           <WorkPicker
@@ -182,7 +182,7 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             placeholder="この契約の対象作品を検索 (コード / タイトル / 別名)"
           />
           <div className="flex items-center gap-1.5 pt-1">
-            <span className="text-[10px] font-mono text-muted-foreground shrink-0">または新規:</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">または新規:</span>
             <input
               value={pubNewWorkTitle}
               onChange={(e) => setPubNewWorkTitle(e.target.value)}
@@ -199,18 +199,18 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               type="button"
               onClick={() => void createPubOwnWork()}
               disabled={pubCreatingWork || !pubNewWorkTitle.trim()}
-              className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
             >
               {pubCreatingWork ? "作成中…" : "＋作成"}
             </button>
           </div>
-          <p className="text-[10px] font-mono text-muted-foreground/70">
+          <p className="text-[10px] text-muted-foreground/70">
             「どの作品のための契約か」を指定します。一覧に無ければ作品タイトルを入力して作成。保存時に原作マテリアルを対象作品の構成・条件明細へ連動させます。
           </p>
         </div>
 
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             原作 (Ledger) — 選択で「原著作物名」を自動入力（なければ新規作成）
           </label>
           <WorkPicker
@@ -243,7 +243,7 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             placeholder="原作マスタを検索 (LO-コード / タイトル / 別名)"
           />
           <div className="flex items-center gap-1.5 pt-1">
-            <span className="text-[10px] font-mono text-muted-foreground shrink-0">または新規:</span>
+            <span className="text-[10px] text-muted-foreground shrink-0">または新規:</span>
             <input
               value={pubNewSourceTitle}
               onChange={(e) => setPubNewSourceTitle(e.target.value)}
@@ -260,12 +260,12 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               type="button"
               onClick={() => void createPubSourceIp()}
               disabled={pubCreatingSource || !pubNewSourceTitle.trim()}
-              className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
             >
               {pubCreatingSource ? "作成中…" : "＋原作を新規作成"}
             </button>
           </div>
-          <p className="text-[10px] font-mono text-muted-foreground/70">
+          <p className="text-[10px] text-muted-foreground/70">
             マスター &gt; 原作 (Ledgers) で登録した原作から選択。「原著作物名」は正式名称で自動入力されます（手入力不可）。未登録の原作はタイトル入力で作成でき、原作本体素材 -001 も同時生成されます。
           </p>
         </div>
@@ -273,7 +273,7 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         {/* Phase 26.9: 基本契約番号を DB (出版基本契約マスタ) から検索して反映。
             許諾者名で初期検索し、ヒットした出版基本契約の番号と締結日を流し込む。 */}
         <div className="col-span-full space-y-1 mt-3">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             基本契約番号 — DB (出版基本契約) から検索して反映
           </label>
           <DocumentNumberLookup
@@ -291,7 +291,7 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             }}
           />
           {formData["基本契約番号"] && (
-            <p className="text-[10px] font-mono text-emerald-700">
+            <p className="text-[10px] font-mono text-success">
               選択中の基本契約番号: {formData["基本契約番号"]}
             </p>
           )}
@@ -299,7 +299,7 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
         {/* 統一検索モジュール: 許諾者(取引先)を検索して名称/住所/代表者/コードを充填。 */}
         <div className="col-span-full space-y-1 mt-3">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             許諾者(取引先)を検索して充填（DB検索補完）
           </label>
           <EntitySearchSelect
@@ -341,7 +341,7 @@ const PubLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                 title={PUB_SECTIONS[groupName]?.label || groupName}
                 variant="default"
                 headerActions={
-                  <span className="text-[11px] font-mono text-muted-foreground italic">
+                  <span className="text-[11px] text-muted-foreground italic">
                     条件 1=紙書籍 / 2=電子書籍 (許諾有無は「許諾内容」で制御・翻訳は二次的著作物として対象外)
                   </span>
                 }

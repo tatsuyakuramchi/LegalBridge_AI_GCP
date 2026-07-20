@@ -183,9 +183,9 @@ export const VendorSearchSelect: React.FC<Props> = ({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="検索 (コード / 名称 / 屋号)"
-          className="flex-1 text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
+          className="flex-1 text-[11px] bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
         />
-        <span className="text-[11px] font-mono text-muted-foreground/60">
+        <span className="text-[11px] text-muted-foreground/60">
           {filtered.length}/{vendors.length}
         </span>
       </div>
@@ -196,7 +196,7 @@ export const VendorSearchSelect: React.FC<Props> = ({
         style={{ backgroundColor: "#ffffff" }}
       >
         {filtered.length === 0 ? (
-          <div className="p-3 text-center text-[10px] font-mono text-muted-foreground italic">
+          <div className="p-3 text-center text-[10px] text-muted-foreground italic">
             該当する取引先が見つかりません
           </div>
         ) : (
@@ -209,7 +209,7 @@ export const VendorSearchSelect: React.FC<Props> = ({
                 onClick={() => handleSelect(v)}
                 className={cn(
                   "w-full text-left px-2 py-1.5 hover:bg-muted text-[11px] font-mono flex items-center gap-2 border-b border-border/30 last:border-b-0",
-                  isSelected && "bg-emerald-50"
+                  isSelected && "bg-success/10"
                 )}
                 style={
                   isSelected ? undefined : { backgroundColor: "#ffffff" }
@@ -235,7 +235,7 @@ export const VendorSearchSelect: React.FC<Props> = ({
                   </span>
                 )}
                 {isSelected && (
-                  <Check className="w-3 h-3 text-emerald-700 flex-shrink-0" />
+                  <Check className="w-3 h-3 text-success flex-shrink-0" />
                 )}
               </button>
             )

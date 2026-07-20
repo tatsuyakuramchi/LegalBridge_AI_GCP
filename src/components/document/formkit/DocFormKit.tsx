@@ -44,12 +44,12 @@ const ACCENT_TOP: Record<FkAccent, string> = {
   rose: "border-t-rose-500",
 };
 const ACCENT_TEXT: Record<FkAccent, string> = {
-  sky: "text-sky-600",
-  violet: "text-violet-600",
-  emerald: "text-emerald-600",
-  indigo: "text-indigo-600",
-  amber: "text-amber-600",
-  rose: "text-rose-600",
+  sky: "text-primary",
+  violet: "text-info",
+  emerald: "text-success",
+  indigo: "text-primary",
+  amber: "text-warning",
+  rose: "text-destructive",
 };
 
 /** 色付き上ボーダーのセクションカード。 */
@@ -73,7 +73,7 @@ export const FkSection: React.FC<FkSectionProps> = (props) => {
         <div>
           <h4 className={`font-mono text-[13px] font-bold ${ACCENT_TEXT[accent]}`}>{props.title}</h4>
           {props.subtitle && (
-            <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">{props.subtitle}</p>
+            <p className="text-[9.5px] text-muted-foreground leading-snug mt-1">{props.subtitle}</p>
           )}
         </div>
         {props.actions}
@@ -137,7 +137,7 @@ export function DbFillBar(props: {
       onClick={onClick}
       disabled={disabled}
       title={disabled ? "上部バーで対象 (取引先 / 担当者) を選択してください" : `${label} マスタから一括補完`}
-      className="text-[10px] font-mono border border-border px-2 py-0.5 uppercase rounded disabled:opacity-40 hover:bg-muted"
+      className="text-[10px] border border-border px-2 py-0.5 uppercase rounded disabled:opacity-40 hover:bg-muted"
     >
       {label}
     </button>
@@ -148,13 +148,13 @@ export function DbFillBar(props: {
   if (!hasVendor && !hasCompany && !hasStaff) return null;
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-      <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">DB 補完</span>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground">DB 補完</span>
       {hasVendor && btn("取引先", () => fillByPrefix("vendor."), !props.activeVendor)}
       {hasCompany && btn("自社", () => fillByPrefix("company."), !props.companyProfile)}
       {hasStaff && btn("Sync Staff", () => fillByPrefix("staff."), !props.selectedStaff)}
       {/* LB-F07 (§5.5.5): 取引先の主入力点は上部バー1箇所。ここでは反映状態のみ表示。 */}
       {props.activeVendor?.vendor_name && (
-        <span className="text-[10px] font-mono text-muted-foreground ml-auto">
+        <span className="text-[10px] text-muted-foreground ml-auto">
           取引先反映済み: {props.activeVendor.vendor_name}（変更は上部バーの「変更」から）
         </span>
       )}
@@ -224,9 +224,9 @@ export const FkSearchRow: React.FC<{
     <div className="space-y-1">
       <div className="flex items-baseline gap-2 flex-wrap">
         <label className="font-mono text-[11px] font-bold">{search.label || `${ENTITY_LABEL[search.entity]}を検索`}</label>
-        <span className="font-mono text-[8.5px] text-muted-foreground border border-border rounded px-1 bg-muted/40">DB検索補完</span>
+        <span className="text-[8.5px] text-muted-foreground border border-border rounded px-1 bg-muted/40">DB検索補完</span>
       </div>
-      {search.help && <p className="font-mono text-[9.5px] text-muted-foreground leading-snug">{search.help}</p>}
+      {search.help && <p className="text-[9.5px] text-muted-foreground leading-snug">{search.help}</p>}
       <EntitySearchSelect
         entity={search.entity}
         parentId={parentId}

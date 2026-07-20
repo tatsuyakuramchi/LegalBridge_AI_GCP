@@ -395,7 +395,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
     <div className="space-y-1.5 rounded-sm border border-input bg-muted/20 p-2.5">
       <div className="flex items-center gap-1.5">
         <Search className="w-3 h-3 text-muted-foreground" />
-        <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+        <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
           {label}
         </label>
       </div>
@@ -464,7 +464,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
           スクロール可能な固定高さで、長い候補もはみ出さないように。 */}
       {hasSearched && !error && (
         <>
-          <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-muted-foreground px-1">
+          <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-muted-foreground px-1">
             <span>
               {results.length === 0
                 ? "該当なし"
@@ -504,22 +504,22 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                     type="button"
                     onClick={() => onApply(doc)}
                     className={cn(
-                      "w-full text-left px-2.5 py-2 hover:bg-emerald-50/60 transition-colors",
-                      "group focus:outline-none focus:bg-emerald-50/60 border-b border-input last:border-b-0"
+                      "w-full text-left px-2.5 py-2 hover:bg-success/10 transition-colors",
+                      "group focus:outline-none focus:bg-success/10 border-b border-input last:border-b-0"
                     )}
                     title="クリックでフォームに適用"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0 space-y-0.5">
                         <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <CheckCircle2 className="h-3 w-3 text-success opacity-0 group-hover:opacity-100 transition-opacity" />
                           <span
                             className={cn(
                               "text-[10px] font-mono px-1 py-px rounded uppercase tracking-wider border",
                               doc.source === "master"
-                                ? "bg-sky-50 border-sky-300 text-sky-800"
+                                ? "bg-primary/10 border-primary/40 text-primary"
                                 : doc.source === "draft"
-                                  ? "bg-amber-50 border-amber-300 text-amber-800"
+                                  ? "bg-warning/10 border-warning/40 text-warning"
                                   : "bg-muted/60 border-input text-muted-foreground"
                             )}
                             title={
@@ -548,7 +548,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                         <div className="text-[10px] font-mono text-foreground/80 truncate pl-4">
                           {doc.derived_title}
                         </div>
-                        <div className="text-[11px] font-mono text-muted-foreground pl-4 truncate">
+                        <div className="text-[11px] text-muted-foreground pl-4 truncate">
                           {doc.source === "master" ? (
                             <>
                               {doc.master_meta?.contract_category &&
@@ -577,7 +577,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="text-muted-foreground hover:text-foreground text-[11px] font-mono uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0"
+                          className="text-muted-foreground hover:text-foreground text-[11px] uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0"
                           title={
                             doc.source === "master"
                               ? "Master 登録のリンクを開く"
@@ -602,7 +602,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                               onDeleteDraft(doc)
                             }
                           }}
-                          className="text-muted-foreground hover:text-destructive text-[11px] font-mono uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0 cursor-pointer"
+                          className="text-muted-foreground hover:text-destructive text-[11px] uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0 cursor-pointer"
                           title="この下書きを削除"
                         >
                           <X className="h-3 w-3" />
@@ -616,7 +616,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                   <>
                     {masterRows.length > 0 && (
                       <>
-                        <div className="sticky top-0 z-10 bg-sky-50 border-b border-sky-300 px-2.5 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-sky-900">
+                        <div className="sticky top-0 z-10 bg-primary/10 border-b border-primary/40 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary">
                           ▼ MASTER (契約マスタ) — {masterRows.length} 件
                         </div>
                         {masterRows.map(renderRow)}
@@ -624,7 +624,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                     )}
                     {archiveRows.length > 0 && (
                       <>
-                        <div className="sticky top-0 z-10 bg-muted/80 border-y border-input px-2.5 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground mt-2">
+                        <div className="sticky top-0 z-10 bg-muted/80 border-y border-input px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mt-2">
                           ▼ ARCHIVE (PDF アーカイブ) — {archiveRows.length} 件
                         </div>
                         {archiveRows.map(renderRow)}

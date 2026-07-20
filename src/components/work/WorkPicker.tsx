@@ -76,7 +76,7 @@ export const WorkPicker: React.FC<Props> = ({
     // 選択済み表示(一覧未ロードで item 未解決でも id は出す)。X で解除。
     return (
       <div className={cn("flex items-center gap-2 min-h-8 px-2.5 py-1 border border-border rounded-md text-[12px]", className)}>
-        {selected?.code && <span className="font-mono text-sky-700 shrink-0">[{selected.code}]</span>}
+        {selected?.code && <span className="font-mono text-primary shrink-0">[{selected.code}]</span>}
         <span className="truncate font-mono">{selected?.title ?? `#${value}`}</span>
         {selected?.sub && <span className="text-[10px] text-muted-foreground truncate shrink-0">{selected.sub}</span>}
         <button
@@ -122,7 +122,7 @@ export const WorkPicker: React.FC<Props> = ({
         // bg-popover はこのテーマで透過になるため hsl() を明示。
         <div className="absolute z-50 mt-1 w-full max-h-64 overflow-auto rounded-md border border-border bg-[hsl(var(--popover))] shadow-md">
           {filtered.length === 0 ? (
-            <div className="px-2.5 py-2 text-[11px] font-mono text-muted-foreground">該当なし</div>
+            <div className="px-2.5 py-2 text-[11px] text-muted-foreground">該当なし</div>
           ) : (
             filtered.map(({ item, via }) => (
               <button
@@ -135,10 +135,10 @@ export const WorkPicker: React.FC<Props> = ({
                 }}
                 className="flex w-full items-baseline gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-muted/60"
               >
-                {item.code && <span className="font-mono text-sky-700 shrink-0">[{item.code}]</span>}
+                {item.code && <span className="font-mono text-primary shrink-0">[{item.code}]</span>}
                 <span className="truncate">{item.title}</span>
                 {item.sub && <span className="text-[10px] text-muted-foreground truncate shrink-0">{item.sub}</span>}
-                {via && <span className="ml-auto text-[10px] text-amber-700 shrink-0">別名: {via}</span>}
+                {via && <span className="ml-auto text-[10px] text-warning shrink-0">別名: {via}</span>}
               </button>
             ))
           )}

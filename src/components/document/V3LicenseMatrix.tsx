@@ -154,20 +154,20 @@ export function V3LicenseMatrix({
 
   return (
     <div className="col-span-full space-y-4">
-      <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-indigo-700">
+      <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-primary">
         v3 マトリクス入力（取引形態 × 構成要素）— テンプレ 1-3 / 2-1 の3表構成
       </div>
 
       {/* ── 1-3(A) 基準価格表: 取引形態(行)の定義。列を他表(1-3B/2-1)へ供給する。 ── */}
       <div className="space-y-1.5">
-        <div className="text-[10px] font-mono font-bold text-muted-foreground">
+        <div className="text-[10px] font-bold text-muted-foreground">
           1-3(A) 基準価格表 — 取引形態の定義
           <span className="ml-2 font-normal text-muted-foreground/70">
             製造者・販売者の組合せが基準価格を決める。地域・言語は最大スコープ
           </span>
         </div>
         {conds.length === 0 ? (
-          <p className="text-[10px] font-mono text-muted-foreground">取引形態(固定3種)を初期化中…</p>
+          <p className="text-[10px] text-muted-foreground">取引形態(固定3種)を初期化中…</p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-[11px] font-mono border-collapse">
@@ -212,25 +212,25 @@ export function V3LicenseMatrix({
             </table>
           </div>
         )}
-        <p className="text-[9px] font-mono text-muted-foreground/70">
+        <p className="text-[9px] text-muted-foreground/70">
           取引形態は固定3種（① 自社製造・自社販売 / ② 権利許諾 / ③ 自社製造・他社販売）。計算モデルは各取引形態に紐づき、加算型は構成要素の料率を合算します。
         </p>
       </div>
 
       {/* ── 1-3(B) 料率表: 構成要素(行) × 取引条件(列) のグリッド。 ── */}
       <div className="space-y-1.5">
-        <div className="text-[10px] font-mono font-bold text-muted-foreground">
+        <div className="text-[10px] font-bold text-muted-foreground">
           1-3(B) 料率表（構成要素 × 取引条件）
           <span className="ml-2 font-normal text-muted-foreground/70">
             — マテリアルは「2. 許諾の内容」で選択。加算型列のみ料率入力（非加算型は「—」）
           </span>
         </div>
         {lcs.length === 0 ? (
-          <p className="text-[10px] font-mono text-muted-foreground">
+          <p className="text-[10px] text-muted-foreground">
             「2. 許諾の内容」で原作マテリアルを選択すると、ここに構成要素(行)として表示されます。
           </p>
         ) : conds.length === 0 ? (
-          <p className="text-[10px] font-mono text-muted-foreground">先に 1-3(A) で取引形態(列)を追加してください。</p>
+          <p className="text-[10px] text-muted-foreground">先に 1-3(A) で取引形態(列)を追加してください。</p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-[11px] font-mono border-collapse">
@@ -251,7 +251,7 @@ export function V3LicenseMatrix({
                 {lcs.map((l, i) => (
                   <tr key={i}>
                     <td className={`${tdCls} font-mono`}>
-                      <div className="font-bold text-indigo-700">{l.source_doc || 'この条件書(新規)'}</div>
+                      <div className="font-bold text-primary">{l.source_doc || 'この条件書(新規)'}</div>
                       <div className="text-[9px] text-muted-foreground/70">{l.material_code || '(未設定)'}</div>
                     </td>
                     <td className={`${tdCls} font-bold`}>{l.name || '(構成要素)'}</td>
@@ -278,21 +278,21 @@ export function V3LicenseMatrix({
             </table>
           </div>
         )}
-        <p className="text-[9px] font-mono text-muted-foreground/70">
+        <p className="text-[9px] text-muted-foreground/70">
           【加算型】対象製品に含まれる構成要素の料率を合算して 2-1 の適用料率を算出。【非加算型】実効料率は 2-1 に直接入力。
         </p>
       </div>
 
       {/* ── 2-1 金銭条件マスタ: 取引形態(行)の4パラメータ＋通貨。適用料率は 1-3(B) から自動。 ── */}
       <div className="space-y-1.5">
-        <div className="text-[10px] font-mono font-bold text-muted-foreground">
+        <div className="text-[10px] font-bold text-muted-foreground">
           2-1 金銭条件マスタ（取引形態の定義）
           <span className="ml-2 font-normal text-muted-foreground/70">
             地域・言語は 1-1／1-3(A) の範囲内。適用料率は加算型＝1-3(B)合算・非加算型＝実効料率入力
           </span>
         </div>
         {conds.length === 0 ? (
-          <p className="text-[10px] font-mono text-muted-foreground">1-3(A) で取引形態を追加すると表示されます。</p>
+          <p className="text-[10px] text-muted-foreground">1-3(A) で取引形態を追加すると表示されます。</p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-[11px] font-mono border-collapse">
@@ -315,13 +315,13 @@ export function V3LicenseMatrix({
                     <td className={`${tdCls} text-center font-bold`}>条件{i + 1}</td>
                     <td className={`${tdCls} text-center`}>
                       <span className="text-[9px] font-bold">{c.addon ? '加算型' : '非加算型'}</span>
-                      <div className="text-[8px] text-emerald-700">{calcModelShort(c.calc_type)}</div>
+                      <div className="text-[8px] text-success">{calcModelShort(c.calc_type)}</div>
                     </td>
                     <td className={tdCls}><input className={cellInput} value={c.reg || ''} onChange={(e) => updCond(c.id, 'reg', e.target.value)} placeholder="全世界" /></td>
                     <td className={tdCls}><input className={cellInput} value={c.lang || ''} onChange={(e) => updCond(c.id, 'lang', e.target.value)} placeholder="全言語" /></td>
                     <td className={`${tdCls} text-center`}>
                       {c.addon ? (
-                        <span className="text-indigo-700 font-bold">{appliedRate(c, lcs)}</span>
+                        <span className="text-primary font-bold">{appliedRate(c, lcs)}</span>
                       ) : (
                         <div className="flex items-center justify-center gap-0.5">
                           <input type="number" step="0.01" className="w-14 text-[11px] font-mono bg-transparent border-b border-input py-0.5 text-right focus:outline-none focus:border-foreground" value={c.fixedRate ?? ''} onChange={(e) => updCond(c.id, 'fixedRate', e.target.value)} placeholder="50" />
@@ -368,7 +368,7 @@ export function V3CalcBaseEditor({
 
   return (
     <div className="col-span-full space-y-2">
-      <div className="text-[10px] font-mono font-bold text-muted-foreground">
+      <div className="text-[10px] font-bold text-muted-foreground">
         2-3(A) 計算基準日（支払期日の起点）
         <span className="ml-2 font-normal text-muted-foreground/70">
           — 支払期日は個人=翌月20日 / 法人=翌月末日（固定文）
@@ -388,14 +388,14 @@ export function V3CalcBaseEditor({
               type="button"
               onClick={() => delRow(i)}
               disabled={effective.length <= 1}
-              className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:hover:bg-transparent"
+              className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-destructive hover:bg-destructive/10 disabled:opacity-40 disabled:hover:bg-transparent"
             >
               削除
             </button>
           </React.Fragment>
         ))}
       </div>
-      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-primary/40 text-primary hover:bg-primary/10">
         ＋ 版の行を追加（版・取引形態で事由を分ける場合）
       </button>
     </div>
@@ -421,25 +421,25 @@ export function SublicenseeEditor({
 
   return (
     <div className="col-span-full space-y-2">
-      <div className="text-[10px] font-mono font-bold text-muted-foreground">
+      <div className="text-[10px] font-bold text-muted-foreground">
         1-4 再許諾台帳（Sub-license）
         <span className="ml-2 font-normal text-muted-foreground/70">
           — Licensor の事前書面承認を得た再許諾先を登録
         </span>
       </div>
       {rows.length === 0 && (
-        <p className="text-[10px] font-mono text-muted-foreground">
+        <p className="text-[10px] text-muted-foreground">
           再許諾先がある場合は「＋再許諾先を追加」。未登録ならテンプレには「（現時点で登録なし）」と表示されます。
         </p>
       )}
       {rows.map((r, i) => (
         <div key={i} className="rounded-md border border-border bg-card px-3 py-2 space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-mono font-bold text-muted-foreground">#{i + 1}</span>
+            <span className="text-[10px] font-bold text-muted-foreground">#{i + 1}</span>
             <button
               type="button"
               onClick={() => delRow(i)}
-              className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50"
+              className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-destructive hover:bg-destructive/10"
             >
               削除
             </button>
@@ -455,7 +455,7 @@ export function SublicenseeEditor({
           <label className="block space-y-0.5"><span className="text-[10px] text-muted-foreground">備考</span><input className={inputCls} value={r.slNote || ''} onChange={(e) => upd(i, 'slNote', e.target.value)} placeholder="" /></label>
         </div>
       ))}
-      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-primary/40 text-primary hover:bg-primary/10">
         ＋ 再許諾先を追加
       </button>
     </div>
@@ -481,14 +481,14 @@ export function SpecialExtrasEditor({
 
   return (
     <div className="col-span-full space-y-2">
-      <div className="text-[10px] font-mono font-bold text-muted-foreground">
+      <div className="text-[10px] font-bold text-muted-foreground">
         追加特約（4-3 以降）
         <span className="ml-2 font-normal text-muted-foreground/70">
           — 4-1（一体効力）・4-2（複数対象作品の料率）はテンプレ固定文
         </span>
       </div>
       {rows.length === 0 && (
-        <p className="text-[10px] font-mono text-muted-foreground">
+        <p className="text-[10px] text-muted-foreground">
           追加の特約がある場合は「＋特約を追加」。無ければ固定文（4-1 / 4-2）のみ出力されます。
         </p>
       )}
@@ -504,7 +504,7 @@ export function SpecialExtrasEditor({
             <button
               type="button"
               onClick={() => delRow(i)}
-              className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50"
+              className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-destructive hover:bg-destructive/10"
             >
               削除
             </button>
@@ -518,7 +518,7 @@ export function SpecialExtrasEditor({
           />
         </div>
       ))}
-      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-primary/40 text-primary hover:bg-primary/10">
         ＋ 特約を追加
       </button>
     </div>

@@ -154,12 +154,12 @@ const RECORD_TYPE_LABEL: Record<RecordType, string> = {
 };
 
 const RECORD_TYPE_BADGE_CLASS: Record<RecordType, string> = {
-  purchase_order: "bg-sky-100 text-sky-800 border-sky-200",
-  individual_contract: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  standalone_contract: "bg-violet-100 text-violet-800 border-violet-200",
-  master_contract: "bg-amber-100 text-amber-800 border-amber-200",
+  purchase_order: "bg-primary/10 text-primary border-primary/40",
+  individual_contract: "bg-success/10 text-success border-success/40",
+  standalone_contract: "bg-info/10 text-info border-info/40",
+  master_contract: "bg-warning/10 text-warning border-warning/40",
   license_condition: "bg-teal-100 text-teal-800 border-teal-200",
-  publication_condition: "bg-rose-100 text-rose-800 border-rose-200",
+  publication_condition: "bg-destructive/10 text-destructive border-destructive/40",
 };
 
 export const UnifiedContractPicker: React.FC<Props> = ({
@@ -331,7 +331,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
           className={cn(
             "inline-flex items-center gap-2 rounded-sm border px-3 py-1.5 text-sm",
             hasParent
-              ? "bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+              ? "bg-success/10 border-success/40 text-success hover:bg-success/10"
               : "bg-white border-slate-300 hover:bg-slate-50"
           )}
         >
@@ -391,7 +391,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
             </div>
 
             {error && (
-              <div className="flex items-start gap-2 rounded-sm border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+              <div className="flex items-start gap-2 rounded-sm border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
                 <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                 {error}
               </div>
@@ -439,8 +439,8 @@ export const UnifiedContractPicker: React.FC<Props> = ({
                           aria-disabled={picking === it.id || undefined}
                           className={cn(
                             "hover:bg-slate-50 cursor-pointer transition",
-                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
-                            currentContractId === it.id && "bg-emerald-50",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
+                            currentContractId === it.id && "bg-success/10",
                             picking === it.id && "opacity-50"
                           )}
                           onClick={() => loadDetail(it.id)}
@@ -464,7 +464,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
                               {it.contract_category}
                             </div>
                             {it.is_imported && (
-                              <span className="inline-block mt-1 text-[11px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">
+                              <span className="inline-block mt-1 text-[11px] bg-warning/10 text-warning px-1 py-0.5 rounded">
                                 IMPORT
                               </span>
                             )}
@@ -519,9 +519,9 @@ export const UnifiedContractPicker: React.FC<Props> = ({
                                       className={cn(
                                         "h-full transition-all",
                                         pct >= 100
-                                          ? "bg-emerald-500"
+                                          ? "bg-success"
                                           : pct > 0
-                                          ? "bg-sky-400"
+                                          ? "bg-primary/15"
                                           : "bg-slate-300"
                                       )}
                                       style={{ width: `${Math.min(pct, 100)}%` }}
@@ -546,7 +546,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
                                 className="animate-spin inline-block text-slate-400"
                               />
                             ) : (
-                              <span className="text-[10px] text-emerald-700 font-medium">
+                              <span className="text-[10px] text-success font-medium">
                                 選択
                               </span>
                             )}

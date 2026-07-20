@@ -211,7 +211,7 @@ export function MergeCartPanel() {
         <ShoppingCart className="h-4 w-4" />
         統合カート
         {cart.items.length > 0 && (
-          <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+          <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-success text-white text-[10px] font-bold">
             {cart.items.length}
           </span>
         )}
@@ -221,15 +221,15 @@ export function MergeCartPanel() {
         <div className="fixed bottom-[4.5rem] right-5 z-50 w-[420px] max-w-[calc(100vw-2.5rem)] max-h-[72vh] flex flex-col rounded-md border border-border bg-[hsl(var(--card))] shadow-2xl">
           {/* ヘッダ */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
-            <GitMerge className="h-4 w-4 text-indigo-700" />
+            <GitMerge className="h-4 w-4 text-primary" />
             <span className="text-[12px] font-mono font-bold">統合カート</span>
-            <span className="text-[10px] font-mono text-muted-foreground">{cart.items.length} 件</span>
+            <span className="text-[10px] text-muted-foreground">{cart.items.length} 件</span>
             <div className="flex-1" />
             {cart.items.length > 0 && (
               <button
                 type="button"
                 onClick={() => cart.clear()}
-                className="text-[10px] font-mono text-muted-foreground hover:text-destructive flex items-center gap-1"
+                className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-1"
                 title="カートを空にする"
               >
                 <Trash2 className="h-3 w-3" />
@@ -274,14 +274,14 @@ export function MergeCartPanel() {
               })}
             </div>
 
-            <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
               {panelMode === "merge" ? (
                 <>
-                  重複/誤起票の課題を籠に集め、<Crown className="inline h-3 w-3 text-amber-600" /> で「残す課題(統合先)」を選ぶと、他の課題がそこへ統合されます。
+                  重複/誤起票の課題を籠に集め、<Crown className="inline h-3 w-3 text-warning" /> で「残す課題(統合先)」を選ぶと、他の課題がそこへ統合されます。
                 </>
               ) : (
                 <>
-                  籠に集めた課題を1つの案件に束ねます。<Crown className="inline h-3 w-3 text-amber-600" /> は新規作成時の「主要課題」になります（既存案件へはすべて関連課題として紐づきます）。
+                  籠に集めた課題を1つの案件に束ねます。<Crown className="inline h-3 w-3 text-warning" /> は新規作成時の「主要課題」になります（既存案件へはすべて関連課題として紐づきます）。
                 </>
               )}
             </p>
@@ -297,7 +297,7 @@ export function MergeCartPanel() {
 
             {/* カートの中身 */}
             {enriched.length === 0 ? (
-              <div className="text-center text-[11px] font-mono text-muted-foreground border border-dashed border-border rounded-sm py-6">
+              <div className="text-center text-[11px] text-muted-foreground border border-dashed border-border rounded-sm py-6">
                 カートは空です。課題一覧・課題詳細の「カートに入れる」か、上の検索から追加してください。
               </div>
             ) : (
@@ -309,7 +309,7 @@ export function MergeCartPanel() {
                       key={item.issueKey}
                       className={cn(
                         "flex items-start gap-2 rounded-sm border px-2 py-1.5",
-                        isTarget ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/30" : "border-border"
+                        isTarget ? "border-warning bg-warning/10 dark:bg-warning" : "border-border"
                       )}
                     >
                       <label
@@ -323,14 +323,14 @@ export function MergeCartPanel() {
                           checked={isTarget}
                           onChange={() => cart.setTarget(item.issueKey)}
                         />
-                        <Crown className={cn("h-3.5 w-3.5", isTarget ? "text-amber-600" : "text-muted-foreground/40")} />
+                        <Crown className={cn("h-3.5 w-3.5", isTarget ? "text-warning" : "text-muted-foreground/40")} />
                       </label>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <button
                             type="button"
                             onClick={() => navigate(`/issues/${encodeURIComponent(item.issueKey)}`)}
-                            className="font-mono text-[11px] font-bold text-sky-700 hover:underline inline-flex items-center gap-0.5"
+                            className="font-mono text-[11px] font-bold text-primary hover:underline inline-flex items-center gap-0.5"
                             title="課題詳細を開いて中身を確認"
                           >
                             {item.issueKey}
@@ -343,14 +343,14 @@ export function MergeCartPanel() {
                           )}
                           {panelMode === "matter" ? (
                             isTarget ? (
-                              <span className="text-[9px] font-mono text-amber-700 font-bold">主要課題</span>
+                              <span className="text-[9px] font-mono text-warning font-bold">主要課題</span>
                             ) : (
-                              <span className="text-[9px] font-mono text-muted-foreground">関連課題として紐づけ</span>
+                              <span className="text-[9px] text-muted-foreground">関連課題として紐づけ</span>
                             )
                           ) : isTarget ? (
-                            <span className="text-[9px] font-mono text-amber-700 font-bold">残す(統合先)</span>
+                            <span className="text-[9px] font-mono text-warning font-bold">残す(統合先)</span>
                           ) : (
-                            <span className="text-[9px] font-mono text-muted-foreground">統合されて{mode === "delete" ? "削除" : "終結"}</span>
+                            <span className="text-[9px] text-muted-foreground">統合されて{mode === "delete" ? "削除" : "終結"}</span>
                           )}
                         </div>
                         <div className="text-[11px] text-muted-foreground truncate">{item.summary || "(件名未取得)"}</div>
@@ -370,7 +370,7 @@ export function MergeCartPanel() {
             )}
 
             {panelMode === "merge" && enriched.length === 1 && (
-              <p className="text-[10px] font-mono text-amber-700">
+              <p className="text-[10px] font-mono text-warning">
                 統合にはもう1件以上必要です。統合相手の課題を追加してください。
               </p>
             )}
@@ -406,7 +406,7 @@ export function MergeCartPanel() {
               <div className="space-y-2 border-t border-dashed border-border pt-3">
                 <div className="space-y-1">
                   <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold">
-                    <Link2 className="h-3.5 w-3.5 text-sky-600" />
+                    <Link2 className="h-3.5 w-3.5 text-primary" />
                     既存案件へ紐づけ
                   </div>
                   <EntitySearchSelect
@@ -429,8 +429,8 @@ export function MergeCartPanel() {
             {panelMode === "merge" ? (
               <>
                 {canMerge && (
-                  <p className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed">
-                    {sources.map((s) => s.issueKey).join(", ")} → <span className="font-bold text-amber-700">{target}</span> へ統合
+                  <p className="text-[10px] text-muted-foreground break-all leading-relaxed">
+                    {sources.map((s) => s.issueKey).join(", ")} → <span className="font-bold text-warning">{target}</span> へ統合
                   </p>
                 )}
                 <Button size="sm" className="w-full gap-1.5" disabled={!canMerge} onClick={doMerge}>

@@ -89,10 +89,10 @@ export const OtherFeesTable: React.FC<Props> = ({
   return (
     <div className="col-span-full">
       <div className="mb-2 flex items-baseline justify-between">
-        <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+        <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
           その他手数料（税抜・合計に加算）
         </div>
-        <div className="text-[10px] font-mono text-muted-foreground italic">
+        <div className="text-[10px] text-muted-foreground italic">
           ※ コーディネート費・振込手数料 等。経費 (税込・別精算) とは区別します
         </div>
       </div>
@@ -184,12 +184,12 @@ export const OtherFeesTable: React.FC<Props> = ({
           <button
             type="button"
             onClick={addRow}
-            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-colors"
+            className="text-[10px] uppercase tracking-wider border border-foreground/30 hover:bg-muted px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-colors"
           >
             <Plus className="w-3 h-3" />
             行追加
           </button>
-          <div className="text-[10px] font-mono text-muted-foreground italic">
+          <div className="text-[10px] text-muted-foreground italic">
             業務委託報酬とは別の追加報酬。発注合計 (税抜) に加算されます。
           </div>
         </div>

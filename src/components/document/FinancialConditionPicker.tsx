@@ -157,7 +157,7 @@ export const FinancialConditionPicker: React.FC<Props> = ({
           <button
             type="button"
             onClick={onClear}
-            className="text-[10px] font-mono text-muted-foreground hover:text-destructive border border-input rounded-sm px-2 py-1"
+            className="text-[10px] text-muted-foreground hover:text-destructive border border-input rounded-sm px-2 py-1"
           >
             解除
           </button>
@@ -189,7 +189,7 @@ export const FinancialConditionPicker: React.FC<Props> = ({
                   placeholder="条件名称 / 契約番号 / 件名 / 取引先 で検索"
                   className="flex-1 text-xs font-mono bg-transparent py-2 focus:outline-none"
                 />
-                <span className="text-[10px] font-mono text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground">
                   {list.length} 件
                 </span>
               </div>
@@ -201,11 +201,11 @@ export const FinancialConditionPicker: React.FC<Props> = ({
             </div>
             <div className="max-h-[60vh] overflow-auto divide-y divide-border">
               {loading && list.length === 0 ? (
-                <div className="p-6 text-center text-[11px] font-mono text-muted-foreground">
+                <div className="p-6 text-center text-[11px] text-muted-foreground">
                   読み込み中…
                 </div>
               ) : list.length === 0 ? (
-                <div className="p-6 text-center text-[11px] font-mono text-muted-foreground">
+                <div className="p-6 text-center text-[11px] text-muted-foreground">
                   条件が見つかりません。発注書の受注者帰属(利用許諾)や、ライセンス契約／出版条件に
                   金銭条件を登録してください。
                 </div>
@@ -219,7 +219,7 @@ export const FinancialConditionPicker: React.FC<Props> = ({
                       onClick={() => pick(c)}
                       disabled={picking != null}
                       className={`w-full text-left px-4 py-2.5 hover:bg-muted/40 flex items-center gap-3 ${
-                        selected ? "bg-emerald-50" : ""
+                        selected ? "bg-success/10" : ""
                       }`}
                     >
                       <div className="flex-1 min-w-0">
@@ -231,12 +231,12 @@ export const FinancialConditionPicker: React.FC<Props> = ({
                             {c.condition_name || `条件 ${c.condition_no}`}
                           </span>
                           {c.region_language_label && (
-                            <span className="text-[10px] font-mono text-muted-foreground truncate">
+                            <span className="text-[10px] text-muted-foreground truncate">
                               （{c.region_language_label}）
                             </span>
                           )}
                         </div>
-                        <div className="text-[10px] font-mono text-muted-foreground truncate">
+                        <div className="text-[10px] text-muted-foreground truncate">
                           {c.document_number}
                           {c.contract_title ? ` ｜ ${c.contract_title}` : ""}
                           {c.vendor_name ? ` ｜ ${c.vendor_name}` : ""}
@@ -255,7 +255,7 @@ export const FinancialConditionPicker: React.FC<Props> = ({
                         </div>
                       </div>
                       {picking === c.id && (
-                        <span className="text-[10px] font-mono text-muted-foreground">
+                        <span className="text-[10px] text-muted-foreground">
                           選択中…
                         </span>
                       )}

@@ -85,31 +85,31 @@ export const WorkAttributionsPanel: React.FC<{ workId: string | number }> = ({
     docs?.reduce((s, d) => s + d.line_items.length + d.conditions.length, 0) ?? 0;
 
   return (
-    <div className="border border-sky-200 rounded-md bg-sky-50/30 px-3 py-2.5 space-y-2">
+    <div className="border border-primary/40 rounded-md bg-primary/10 px-3 py-2.5 space-y-2">
       <div className="flex items-center gap-1.5">
-        <FileText className="h-3.5 w-3.5 text-sky-700" />
-        <span className="text-[11px] font-mono font-bold text-sky-800">
+        <FileText className="h-3.5 w-3.5 text-primary" />
+        <span className="text-[11px] font-mono font-bold text-primary">
           この作品に紐づく文書・明細（作品 1 : 文書 N : 明細 N）
         </span>
         {!loading && docs && (
-          <span className="text-[10px] font-mono text-sky-700/70">
+          <span className="text-[10px] font-mono text-primary">
             文書 {totalDocs} / 明細・条件 {totalLines}
           </span>
         )}
       </div>
 
       {loading && (
-        <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground py-1">
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground py-1">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> 取得中…
         </div>
       )}
       {error && (
-        <div className="text-[10px] font-mono text-red-600 py-1">
+        <div className="text-[10px] font-mono text-destructive py-1">
           取得に失敗しました: {error}
         </div>
       )}
       {!loading && docs && docs.length === 0 && (
-        <div className="text-[10px] font-mono text-muted-foreground py-1">
+        <div className="text-[10px] text-muted-foreground py-1">
           この作品に明細単位で帰属する文書はまだありません（明細の作品割当が未設定か、文書単位帰属のみ）。
         </div>
       )}
@@ -119,19 +119,19 @@ export const WorkAttributionsPanel: React.FC<{ workId: string | number }> = ({
           {docs.map((d) => (
             <div
               key={d.capability_id}
-              className="rounded-sm bg-white/70 border border-sky-100 px-2 py-1.5"
+              className="rounded-sm bg-white/70 border border-primary/40 px-2 py-1.5"
             >
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-[11px] font-mono font-bold">
                   {d.document_number || `capability#${d.capability_id}`}
                 </span>
                 {d.record_type && (
-                  <span className="text-[8px] font-mono px-1 py-0.5 rounded-sm bg-muted text-muted-foreground">
+                  <span className="text-[8px] px-1 py-0.5 rounded-sm bg-muted text-muted-foreground">
                     {d.record_type}
                   </span>
                 )}
                 {d.contract_title && (
-                  <span className="text-[9px] font-mono text-muted-foreground truncate">
+                  <span className="text-[9px] text-muted-foreground truncate">
                     {d.contract_title}
                   </span>
                 )}
@@ -144,7 +144,7 @@ export const WorkAttributionsPanel: React.FC<{ workId: string | number }> = ({
                       key={`li-${i}`}
                       className="flex items-center gap-1.5 text-[10px] font-mono"
                     >
-                      <Package className="h-3 w-3 text-emerald-600 shrink-0" />
+                      <Package className="h-3 w-3 text-success shrink-0" />
                       <span className="text-muted-foreground">#{li.line_no}</span>
                       <span className="truncate flex-1">{li.item_name || "—"}</span>
                       {li.deliverable_ownership && (
@@ -165,13 +165,13 @@ export const WorkAttributionsPanel: React.FC<{ workId: string | number }> = ({
                       key={`c-${i}`}
                       className="flex items-center gap-1.5 text-[10px] font-mono"
                     >
-                      <Scale className="h-3 w-3 text-indigo-600 shrink-0" />
+                      <Scale className="h-3 w-3 text-primary shrink-0" />
                       <span className="text-muted-foreground">
                         条件{c.condition_no ?? c.line_no}
                       </span>
                       <span className="truncate flex-1">{c.label || "—"}</span>
                       {c.payment_scheme && (
-                        <span className="text-[8px] px-1 rounded-sm bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        <span className="text-[8px] px-1 rounded-sm bg-primary/10 text-primary border border-primary/40">
                           {c.payment_scheme}
                         </span>
                       )}

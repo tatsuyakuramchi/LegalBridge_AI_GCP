@@ -116,7 +116,7 @@ export function MatterMergeCartPanel() {
         <FolderKanban className="h-4 w-4" />
         案件統合
         {cart.items.length > 0 && (
-          <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-bold">
+          <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-primary text-white text-[10px] font-bold">
             {cart.items.length}
           </span>
         )}
@@ -126,15 +126,15 @@ export function MatterMergeCartPanel() {
         <div className="fixed bottom-[4.5rem] right-[12.5rem] z-50 w-[420px] max-w-[calc(100vw-2.5rem)] max-h-[72vh] flex flex-col rounded-md border border-border bg-[hsl(var(--card))] shadow-2xl">
           {/* ヘッダ */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
-            <GitMerge className="h-4 w-4 text-indigo-700" />
+            <GitMerge className="h-4 w-4 text-primary" />
             <span className="text-[12px] font-mono font-bold">案件統合カート</span>
-            <span className="text-[10px] font-mono text-muted-foreground">{cart.items.length} 件</span>
+            <span className="text-[10px] text-muted-foreground">{cart.items.length} 件</span>
             <div className="flex-1" />
             {cart.items.length > 0 && (
               <button
                 type="button"
                 onClick={() => cart.clear()}
-                className="text-[10px] font-mono text-muted-foreground hover:text-destructive flex items-center gap-1"
+                className="text-[10px] text-muted-foreground hover:text-destructive flex items-center gap-1"
                 title="カートを空にする"
               >
                 <Trash2 className="h-3 w-3" />
@@ -152,14 +152,14 @@ export function MatterMergeCartPanel() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
-            <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
-              重複案件を籠に集め、<Crown className="inline h-3 w-3 text-amber-600" /> で「残す案件(統合先)」を選ぶと、
+            <p className="text-[10px] text-muted-foreground leading-relaxed">
+              重複案件を籠に集め、<Crown className="inline h-3 w-3 text-warning" /> で「残す案件(統合先)」を選ぶと、
               他の案件の 課題・タスク・文書・ファイル・送信履歴・Drive フォルダ がそこへ移り、統合元は削除されます。
             </p>
 
             {/* カートの中身 */}
             {cart.items.length === 0 ? (
-              <div className="text-center text-[11px] font-mono text-muted-foreground border border-dashed border-border rounded-sm py-6">
+              <div className="text-center text-[11px] text-muted-foreground border border-dashed border-border rounded-sm py-6">
                 カートは空です。案件一覧・案件詳細の「統合カートに追加」から入れてください。
               </div>
             ) : (
@@ -171,7 +171,7 @@ export function MatterMergeCartPanel() {
                       key={item.id}
                       className={cn(
                         "flex items-start gap-2 rounded-sm border px-2 py-1.5",
-                        isTarget ? "border-amber-400 bg-amber-50/60 dark:bg-amber-950/30" : "border-border"
+                        isTarget ? "border-warning bg-warning/10 dark:bg-warning" : "border-border"
                       )}
                     >
                       <label
@@ -185,7 +185,7 @@ export function MatterMergeCartPanel() {
                           checked={isTarget}
                           onChange={() => cart.setTarget(item.id)}
                         />
-                        {isTarget && <Crown className="h-3 w-3 text-amber-600" />}
+                        {isTarget && <Crown className="h-3 w-3 text-warning" />}
                       </label>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
@@ -193,7 +193,7 @@ export function MatterMergeCartPanel() {
                             {item.matter_code || `#${item.id}`}
                           </span>
                           {isTarget && (
-                            <span className="text-[9px] font-mono text-amber-700 shrink-0">統合先(残す)</span>
+                            <span className="text-[9px] font-mono text-warning shrink-0">統合先(残す)</span>
                           )}
                         </div>
                         <div className="text-[11px] truncate">{item.title || "(無題)"}</div>
@@ -218,7 +218,7 @@ export function MatterMergeCartPanel() {
 
           {/* フッタ: 実行 */}
           <div className="border-t border-border px-3 py-2.5 space-y-2">
-            <div className="text-[10px] font-mono text-muted-foreground">
+            <div className="text-[10px] text-muted-foreground">
               統合元 {sources.length} 件 → 統合先{" "}
               {target != null ? (
                 <span className="text-foreground font-bold">

@@ -204,8 +204,8 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2 rounded-sm border",
           missingRequired.length === 0
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         )}
       >
         <div className="text-[11px] font-mono">
@@ -248,7 +248,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       >
         {/* 統一検索モジュール: 取引先を検索して発注先を一括充填([取引先]ボタンと同一)。 */}
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             取引先を検索して発注先を充填（DB検索補完）
           </label>
           <EntitySearchSelect
@@ -259,7 +259,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         </div>
         {renderGroup("II. 発注先 (取引先)")}
         <div className="col-span-full mt-4 pt-3 border-t border-dashed border-input">
-          <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
+          <p className="text-[10px] text-muted-foreground leading-relaxed mb-2 border-l-2 border-success pl-2">
             基本契約の紐づけ — この発注書を紐づけたい基本契約があれば選択してください。
             選択すると PDF テンプレに「基本契約: …」として反映されます。
             通常は取引先を選ぶと自動補完されます。
@@ -309,17 +309,17 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           </>
         }
       >
-        <div className="col-span-full text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="col-span-full text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
           発注元（当社）
         </div>
         {renderField("PARTY_A_NAME")}
         {renderField("PARTY_A_ADDRESS")}
         {renderField("PARTY_A_REP")}
-        <div className="col-span-full mt-3 pt-3 border-t border-dashed border-input text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="col-span-full mt-3 pt-3 border-t border-dashed border-input text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
           担当スタッフ
         </div>
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             担当者を検索して充填（サイドバー選択なしでも可）
           </label>
           <EntitySearchSelect
@@ -387,7 +387,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             variant="amber"
             icon={<Coins className="w-4 h-4" />}
           >
-            <div className="mb-2 text-[11px] font-mono text-amber-800 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2 leading-relaxed">
+            <div className="mb-2 text-[11px] font-mono text-warning bg-warning/10 border border-warning/40 rounded-sm px-3 py-2 leading-relaxed">
               利用許諾料（ROYALTY）にした成果物:{" "}
               <strong>
                 {formData.items
@@ -523,12 +523,12 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                 .map((it: any) => it.condition_name || it.item_name)
                 .filter(Boolean)
               return (
-                <div className="col-span-full mt-4 pt-3 border-t border-amber-200/60 space-y-3">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-amber-800">
+                <div className="col-span-full mt-4 pt-3 border-t border-warning/40 space-y-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-warning">
                     原作マテリアル登録 — 成果物を原作素材として登録し、条件を紐付け（後で利用許諾条件書のコピー候補に出ます）
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                       登録先の原作（台帳）— 既存を選択 or 新規作成
                     </label>
                     <select
@@ -547,7 +547,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     </select>
                     {/* 完全に新しいIP(イラスト等)は原作ごと新規作成。 */}
                     <div className="flex items-center gap-1.5 pt-1">
-                      <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                      <span className="text-[10px] text-muted-foreground shrink-0">
                         または新規:
                       </span>
                       <input
@@ -566,12 +566,12 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                         type="button"
                         onClick={() => void createSourceIp()}
                         disabled={poCreatingSource || !poNewSourceTitle.trim()}
-                        className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                        className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-warning text-warning hover:bg-warning/10 disabled:opacity-50"
                       >
                         {poCreatingSource ? "作成中…" : "＋原作を新規作成"}
                       </button>
                     </div>
-                    <p className="text-[10px] font-mono text-muted-foreground/70">
+                    <p className="text-[10px] text-muted-foreground/70">
                       この原作は<strong>新規素材を作成するときの登録先</strong>です（完全に新しいIPは「＋原作を新規作成」、原作本体素材 -001 も同時生成）。<strong>既存素材は下の検索で全原作から選べる</strong>ため、1発注書で複数の別原作にまたがる成果物も割り当てられます。
                     </p>
                   </div>
@@ -583,13 +583,13 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     )
                     if (unassigned.length === 0) {
                       return (
-                        <p className="text-[10px] font-mono px-2.5 py-1.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-800">
+                        <p className="text-[10px] font-mono px-2.5 py-1.5 rounded-sm bg-success/10 border border-success/40 text-success">
                           ✓ すべての利用許諾条件に原作素材が割当済み（作成時に素材リンクされます）。
                         </p>
                       )
                     }
                     return (
-                      <div className="text-[10px] font-mono px-2.5 py-1.5 rounded-sm bg-red-50 border border-red-300 text-red-800 leading-relaxed">
+                      <div className="text-[10px] font-mono px-2.5 py-1.5 rounded-sm bg-destructive/10 border border-destructive/40 text-destructive leading-relaxed">
                         ⚠ <strong>{unassigned.length} 件</strong>の利用許諾条件に原作素材が未割当です
                         （{unassigned
                           .map((c: any, i: number) => c.condition_name || `条件${c.condition_no ?? i + 1}`)
@@ -601,7 +601,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     )
                   })()}
                   {conds.length === 0 ? (
-                    <p className="text-[10px] font-mono text-muted-foreground">
+                    <p className="text-[10px] text-muted-foreground">
                       上の表に利用許諾条件を追加すると、各条件に原作マテリアルを割り当てられます（成果物ごとに条件を1本ずつ作ると 成果物:素材=1:1 になります）。
                     </p>
                   ) : (
@@ -624,12 +624,12 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                               {c.condition_name || ""}
                             </span>
                             {cur ? (
-                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-800">
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-success/10 border border-success/40 text-success">
                                 [{cur}] {curMat?.material_name || ""}
                                 <button
                                   type="button"
                                   onClick={() => setCmCode(key, undefined)}
-                                  className="ml-1.5 text-[9px] underline text-muted-foreground hover:text-red-600"
+                                  className="ml-1.5 text-[9px] underline text-muted-foreground hover:text-destructive"
                                 >
                                   解除
                                 </button>
@@ -651,7 +651,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                                       ? "新規素材の登録には上で「登録先の原作」を選択/作成してください"
                                       : undefined
                                   }
-                                  className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                                  className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-warning text-warning hover:bg-warning/10 disabled:opacity-50"
                                 >
                                   {poMaterialBusy === key ? "登録中…" : "＋登録先原作に新規素材"}
                                 </button>
@@ -660,7 +660,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                           </div>
                         )
                       })}
-                      <p className="text-[10px] font-mono text-muted-foreground/70">
+                      <p className="text-[10px] text-muted-foreground/70">
                         「＋新規登録」で成果物を選択中の原作に新しいマテリアルとして登録し、この条件を紐付けます。既存素材は検索で選択。保存時に condition_lines へ反映されます。
                       </p>
                     </div>
@@ -776,7 +776,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
       {/* 10. その他の設定 — 特約・備考／契約・署名 を1つに統合(旧「7」重複を解消)。 */}
       <details className="group rounded-sm border border-input">
-        <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+        <summary className="cursor-pointer px-4 py-2 text-[11px] uppercase tracking-wider hover:bg-muted/50 select-none">
           ▶ 9. その他の設定 — 特約・備考／契約・署名 (任意)
         </summary>
         <div className="p-4 border-t border-input space-y-4">
@@ -790,11 +790,11 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       {/* 11. 単一明細フォールバック (上級者向け・レガシー) — 末尾の折り畳みへ移動。
           通常は成果物(明細)を使うため、明細表が空のときだけ PDF に反映される。 */}
       <details className="group rounded-sm border border-input">
-        <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+        <summary className="cursor-pointer px-4 py-2 text-[11px] uppercase tracking-wider hover:bg-muted/50 select-none">
           ▶ 10. 単一明細フォールバック (上級者向け・明細が空のときだけ参照)
         </summary>
         <div className="p-4 border-t border-input space-y-3">
-          <p className="text-[10px] font-mono text-muted-foreground italic">
+          <p className="text-[10px] text-muted-foreground italic">
             通常は <strong>5. 成果物（明細）</strong> を使ってください。以下は
             旧テンプレートとの後方互換のための入力で、成果物が空の場合のみ PDF に反映されます。
             成果物を使う場合は <code>合計金額</code> は自動集計されるのでここを触る必要はありません。
