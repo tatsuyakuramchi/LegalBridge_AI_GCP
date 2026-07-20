@@ -351,7 +351,7 @@
   --severity-error: 24 82% 46%;
   --severity-warning: 33 90% 44%;
 
-  --radius: 0.625rem;                /* 丸み(≈10px) */
+  --radius: 0.5rem;                  /* 丸み(8px 基準・設計 §6.1) */
 
   --font-heading: var(--font-sans);  /* 見出しも sans。等幅/大文字をやめる */
 }
