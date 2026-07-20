@@ -15,7 +15,7 @@ import { AppFormShell } from "@/src/components/form"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { WorkGraphPanel } from "../master/WorkGraphPanel"
+import { WorkDetailTabs } from "./WorkDetailTabs"
 
 import "./works-detail-page.css"
 
@@ -169,7 +169,8 @@ export function WorksDetailPage() {
         }
       >
         <section className="works-detail-canvas" aria-label="作品・権利構造の編集領域">
-          <WorkGraphPanel />
+          {/* 8タブ移行 Phase 2: 作品詳細を8タブ構成へ。①概要に WorkGraphPanel を内包。 */}
+          <WorkDetailTabs workId={id} />
         </section>
       </AppFormShell>
     </div>

@@ -26,3 +26,19 @@ export type { DangerZoneProps } from "./DangerZone";
 
 export { CompactFormGrid, CompactFormActions } from "./CompactFormGrid";
 export type { CompactFormGridProps, CompactFormActionsProps } from "./CompactFormGrid";
+
+// 作品詳細8タブ移行(§10.4)向け共通部品（Phase 1: 追加型）。
+export { EntityCombobox } from "./EntityCombobox";
+export type { EntityComboboxProps, EntityKind, EntityOption } from "./EntityCombobox";
+
+export { LineEditor } from "./LineEditor";
+export type { LineEditorProps, LineEditorColumn } from "./LineEditor";
+
+export { DataTableShell } from "./DataTableShell";
+export type { DataTableShellProps, DataTableColumn } from "./DataTableShell";
+
+export { AuditTrail } from "./AuditTrail";
+export type { AuditTrailProps, AuditItem, AuditTone } from "./AuditTrail";
+
+export { SearchToolbar } from "./SearchToolbar";
+export type { SearchToolbarProps } from "./SearchToolbar";

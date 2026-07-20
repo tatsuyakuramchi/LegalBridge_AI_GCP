@@ -18,6 +18,9 @@ import { Globe } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { EntityCombobox, AppFormField, CompactFormGrid } from "@/src/components/form"
 import { useDocumentSession } from "@/src/context/AppDataContext"
 import { conditionClient } from "@/src/lib/api/conditionClient"
 import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
@@ -178,20 +181,16 @@ function EdgeRow({
         </div>
       ) : (
         <div className="space-y-1">
-          {/* 増分⑦: 受取エッジを受取先(取引先)へ参照リンク */}
-          <select
-            value={e.counterparty_vendor_id ?? ""}
-            onChange={(ev) => onLink(e.id, { counterparty_vendor_id: ev.target.value ? Number(ev.target.value) : null })}
-            className="w-full text-[10px] font-mono border-b border-input bg-transparent py-0.5"
-            title="この受取を受取先(取引先)に紐付け"
-          >
-            <option value="">— 受取先に紐付け —</option>
-            {vendors.map((vd) => (
-              <option key={vd.id} value={vd.id}>
-                {vd.vendor_code || "—"} {vd.vendor_name}
-              </option>
-            ))}
-          </select>
+          {/* 増分⑦: 受取エッジを受取先(取引先)へ参照リンク。
+              8タブ移行 Phase 1: 生 select → 共通 EntityCombobox(entity="vendor")。 */}
+          <EntityCombobox
+            entity="vendor"
+            value={e.counterparty_vendor_id != null ? String(e.counterparty_vendor_id) : null}
+            onSelect={(opt) =>
+              onLink(e.id, { counterparty_vendor_id: opt ? Number(opt.id) : null })
+            }
+            placeholder="受取先(取引先)に紐付け"
+          />
           <select
             value={e.product_id ?? ""}
             onChange={(ev) => onLink(e.id, { product_id: ev.target.value ? Number(ev.target.value) : null })}
@@ -211,7 +210,10 @@ function EdgeRow({
   )
 }
 
-export function WorkGraphPanel() {
+export function WorkGraphPanel({ embedded = false }: { embedded?: boolean } = {}) {
+  // 8タブ移行 Phase 2: WorkDetailTabs の①概要タブに埋め込む際は embedded=true。
+  //   内部ヘッダ(WorksDetailPage と重複)と、⑤⑦⑧タブへ移設した 3 パネル
+  //   (RightsTree/Attributions/Completeness)を非表示にして重複を避ける。
   // 作品統合 増分④: /works/:id から作品IDを受け取り初期選択する。
   //   :id 無し(旧 /master/work-graph 直叩き等)のときは先頭作品にフォールバック。
   const { id: routeId } = useParams<{ id?: string }>()
@@ -867,7 +869,8 @@ export function WorkGraphPanel() {
     .map((w: any) => toWorkPickerItem(w))
 
   return (
-    <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-5">
+    <div className={embedded ? "space-y-5" : "px-6 py-6 max-w-[1500px] mx-auto space-y-5"}>
+      {!embedded && (
       <header className="border-b border-border pb-5">
         <p className="retro-tag mb-1.5">WORK · GRAPH</p>
         <h2 className="text-2xl font-semibold tracking-tight">権利フロー（3カード）</h2>
@@ -908,9 +911,10 @@ export function WorkGraphPanel() {
           />
         </div>
       </header>
+      )}
 
-      {/* DQ-04: データ完全性(スコア + 未解消 Issue + 修正導線)。worker 未デプロイ / 未評価なら非表示。 */}
-      {workId ? (
+      {/* DQ-04: データ完全性。8タブ移行では⑧監査・完全性タブへ移設(embedded 時は非表示)。 */}
+      {!embedded && workId ? (
         <CompletenessPanel
           entityType="work"
           entityId={workId}
@@ -919,8 +923,8 @@ export function WorkGraphPanel() {
         />
       ) : null}
 
-      {/* 契約・権利ツリー（金銭イン/アウト・買い切り・許諾地域サマリー）。 */}
-      {workId ? <RightsTreePanel workId={workId} /> : null}
+      {/* 契約・権利ツリー。8タブ移行では⑤契約・条件タブへ移設(embedded 時は非表示)。 */}
+      {!embedded && workId ? <RightsTreePanel workId={workId} /> : null}
 
       {loading ? (
         <div className="text-xs text-muted-foreground py-8 text-center">読み込み中…</div>
@@ -928,8 +932,8 @@ export function WorkGraphPanel() {
         <div className="text-xs text-muted-foreground py-8 text-center">作品を選択してください。</div>
       ) : (
         <>
-        {/* PLW-D: 作品1:文書N:明細N — この作品に明細単位で帰属する文書/明細/条件を集約。 */}
-        <WorkAttributionsPanel workId={workId} />
+        {/* PLW-D: 作品1:文書N:明細N。8タブ移行では⑦文書・証憑タブへ移設(embedded 時は非表示)。 */}
+        {!embedded && <WorkAttributionsPanel workId={workId} />}
         {/* 関係の明確化: 作品(own)が「どの原作のどのマテリアルを利用し、何を履行するか」をマテリアル単位でまとめて先頭に表示。
             これがこの作品の利用許諾条件書に載る条件（=支払う利用料）の実体であることを明示する。 */}
         {!isSource && consumedGroups.length > 0 && (
@@ -1225,75 +1229,117 @@ export function WorkGraphPanel() {
               </div>
               {editing ? (
                 /* 増分⑤: 基本情報インライン編集 */
-                <div className="space-y-1.5">
-                  <div className="text-[11px] font-mono font-bold">{work.work_code}</div>
-                  <input
-                    value={form.title}
-                    onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-                    placeholder="タイトル *"
-                    className={inputCls}
-                  />
-                  <input
-                    value={form.title_kana}
-                    onChange={(e) => setForm((f) => ({ ...f, title_kana: e.target.value }))}
-                    placeholder="タイトル(カナ)"
-                    className={inputCls}
-                  />
-                  <div className="flex items-center gap-1.5">
-                    <select
-                      value={form.work_type}
-                      onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value }))}
-                      className="flex-1 text-[11px] font-mono border-b border-input bg-transparent py-1"
-                    >
-                      <option value="">種別 —</option>
-                      {WORK_TYPES.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={form.status}
-                      onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                      className="flex-1 text-[11px] font-mono border-b border-input bg-transparent py-1"
-                    >
-                      <option value="">状態 —</option>
-                      {WORK_STATUS.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
+                <div className="space-y-2.5">
+                  {/* 8タブ移行 Phase 3: ①概要の基本情報を共通 AppFormField/NativeSelect へ。
+                      保存(saveEdit)の PUT ペイロードは一切変えない(§20)。 */}
+                  <div className="text-[11px] font-mono font-bold text-muted-foreground">
+                    {work.work_code}
                   </div>
-                  <input
-                    value={form.division}
-                    onChange={(e) => setForm((f) => ({ ...f, division: e.target.value }))}
-                    placeholder="区分(, 区切り) 例: BDG, PUB"
-                    className={inputCls}
-                  />
-                  {/* UIC-13(段階A): 系譜・派生設定(旧 WorkModelPanel から移植)。
-                      派生元を指定すると翻訳版・改題版などのチェーンになる。 */}
-                  <div className="pt-1 space-y-1.5 border-t border-dashed border-border">
-                    <div className="text-[9.5px] uppercase tracking-wider text-muted-foreground">系譜・派生</div>
-                    <WorkPicker
-                      items={parentCandidates}
-                      value={form.parent_work_id || undefined}
-                      onSelect={(w) => setForm((f) => ({ ...f, parent_work_id: w ? String(w.id) : "" }))}
-                      placeholder="派生元(親作品/原作)を検索 — 無ければ原版"
+                  <AppFormField label="タイトル" htmlFor="wg-title" required>
+                    <Input
+                      id="wg-title"
+                      value={form.title}
+                      onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                      placeholder="作品タイトル"
                     />
-                    <select
-                      value={form.derivation_type}
-                      onChange={(e) => setForm((f) => ({ ...f, derivation_type: e.target.value }))}
-                      className="w-full text-[11px] font-mono border-b border-input bg-transparent py-1"
+                  </AppFormField>
+                  <AppFormField label="タイトル(カナ)" htmlFor="wg-kana">
+                    <Input
+                      id="wg-kana"
+                      value={form.title_kana}
+                      onChange={(e) => setForm((f) => ({ ...f, title_kana: e.target.value }))}
+                      placeholder="タイトル(カナ)"
+                    />
+                  </AppFormField>
+                  <CompactFormGrid columns={2}>
+                    <AppFormField label="種別" htmlFor="wg-type" code="work_type">
+                      <NativeSelect
+                        id="wg-type"
+                        value={form.work_type}
+                        onChange={(e) => setForm((f) => ({ ...f, work_type: e.target.value }))}
+                      >
+                        <option value="">—</option>
+                        {WORK_TYPES.map((t) => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </NativeSelect>
+                    </AppFormField>
+                    <AppFormField label="状態" htmlFor="wg-status" code="status">
+                      <NativeSelect
+                        id="wg-status"
+                        value={form.status}
+                        onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
+                      >
+                        <option value="">—</option>
+                        {WORK_STATUS.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </NativeSelect>
+                    </AppFormField>
+                  </CompactFormGrid>
+                  <AppFormField
+                    label="区分"
+                    htmlFor="wg-division"
+                    code="division"
+                    description="カンマ区切り（例: BDG, PUB）"
+                  >
+                    <Input
+                      id="wg-division"
+                      value={form.division}
+                      onChange={(e) => setForm((f) => ({ ...f, division: e.target.value }))}
+                      placeholder="BDG, PUB"
+                    />
+                  </AppFormField>
+                  {/* UIC-13(段階A): 系譜・派生設定。8タブ移行 Phase 4: 共通 primitive へ(in place)。
+                      派生元を指定すると翻訳版・改題版などのチェーンになる。保存(saveEdit)は不変(§20)。
+                      ※物理的な②作品系譜タブへの移設は WorkGraphPanel の state 持ち上げ(container/
+                        section 分割)が前提のため別途。work_relations 複数関係の正本化は別PR。 */}
+                  <div className="pt-2 space-y-2.5 border-t border-dashed border-border">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground">系譜・派生</div>
+                    <AppFormField
+                      label="派生元(親作品/原作)"
+                      htmlFor="wg-parent"
+                      code="parent_work_id"
+                      description="指定すると翻訳版・改題版などのチェーンになる（無ければ原版）"
                     >
-                      {DERIV_CHOICES.map(([v, l]) => (
-                        <option key={v} value={v}>{l === "(なし・原版)" ? "派生種別 — (なし・原版)" : l}</option>
-                      ))}
-                    </select>
+                      <EntityCombobox
+                        items={parentCandidates.map((w) => ({
+                          id: w.id,
+                          code: w.code,
+                          label: w.title,
+                          sub: w.sub,
+                          raw: w,
+                        }))}
+                        value={form.parent_work_id || null}
+                        onSelect={(opt) =>
+                          setForm((f) => ({ ...f, parent_work_id: opt ? String(opt.id) : "" }))
+                        }
+                        placeholder="派生元を検索 — 無ければ原版"
+                      />
+                    </AppFormField>
+                    <AppFormField label="派生種別" htmlFor="wg-deriv" code="derivation_type">
+                      <NativeSelect
+                        id="wg-deriv"
+                        value={form.derivation_type}
+                        onChange={(e) => setForm((f) => ({ ...f, derivation_type: e.target.value }))}
+                      >
+                        {DERIV_CHOICES.map(([v, l]) => (
+                          <option key={v} value={v}>
+                            {l}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </AppFormField>
                   </div>
-                  <textarea
-                    value={form.remarks}
-                    onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
-                    placeholder="備考"
-                    rows={2}
-                    className="w-full text-[11px] font-mono border border-input rounded bg-transparent px-2 py-1 focus:outline-none focus:border-foreground"
-                  />
+                  <AppFormField label="備考" htmlFor="wg-remarks" code="remarks">
+                    <Textarea
+                      id="wg-remarks"
+                      value={form.remarks}
+                      onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))}
+                      placeholder="備考"
+                      rows={2}
+                    />
+                  </AppFormField>
                   {saveErr && <p role="alert" className="text-[10px] font-mono text-destructive">{saveErr}</p>}
                   <div className="flex items-center justify-end gap-1.5 pt-0.5">
                     <button
