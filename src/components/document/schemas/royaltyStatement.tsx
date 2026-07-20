@@ -390,8 +390,8 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2.5 rounded-sm border",
           stepsDone === totalSteps
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         )}
       >
         <div className="text-[11px] font-mono">
@@ -422,7 +422,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           {/* ① 契約マスタ (マスター検索) */}
           <div className="space-y-1.5">
             <Label className="text-[11px] font-mono">
-              ① ライセンス／出版の契約・条件を選ぶ <span className="text-red-600">*</span>
+              ① ライセンス／出版の契約・条件を選ぶ <span className="text-destructive">*</span>
             </Label>
             {/* Phase 23: UnifiedContractPicker に統合。license カテゴリの 個別契約 /
                 単独契約 / license_condition を検収書と同じ操作感で検索・選択。
@@ -453,7 +453,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               }}
             />
             {/* 条件一覧から直接選ぶ（発注書由来の印税も同じ土俵で選べる）。 */}
-            <div className="text-[10px] font-mono text-muted-foreground">
+            <div className="text-[10px] text-muted-foreground">
               — または —
             </div>
             <FinancialConditionPicker
@@ -474,14 +474,14 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               }}
             />
             {licenseMasters.length === 0 && (
-              <p className="text-[10px] font-mono text-amber-700">
+              <p className="text-[10px] font-mono text-warning">
                 ⚠ 候補となる契約・条件がありません。
                 ライセンス系の 単独契約 / 個別契約、または出版等利用許諾条件書を作成して、
                 金銭条件 (印税率など) を登録してください。
               </p>
             )}
             {selectedContract && (
-              <div className="text-[10px] font-mono text-muted-foreground space-y-0.5">
+              <div className="text-[10px] text-muted-foreground space-y-0.5">
                 <p>
                   選択中: <strong>{selectedContract.contract_title}</strong>
                   {selectedContract.document_number && (
@@ -496,8 +496,8 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                       className={cn(
                         "font-bold px-1.5 py-0.5 rounded-sm",
                         formData.linked_contract_number === selectedContract.document_number
-                          ? "bg-emerald-50 border border-emerald-300 text-emerald-900"
-                          : "bg-amber-50 border border-amber-300 text-amber-900"
+                          ? "bg-success/10 border border-success/40 text-success"
+                          : "bg-warning/10 border border-warning/40 text-warning"
                       )}
                     >
                       {formData.linked_contract_number || "(未設定 — 自動同期中)"}
@@ -527,7 +527,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     className={cn(
                       "font-bold px-1.5 py-0.5 rounded-sm",
                       formData.VENDOR_CODE
-                        ? "bg-sky-50 border border-sky-300 text-sky-900"
+                        ? "bg-primary/10 border border-primary/40 text-primary"
                         : "bg-muted border border-input text-muted-foreground"
                     )}
                   >
@@ -539,7 +539,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     className={cn(
                       "font-bold px-1.5 py-0.5 rounded-sm",
                       formData.VENDOR_WITHHOLDING_ENABLED
-                        ? "bg-amber-50 border border-amber-300 text-amber-900"
+                        ? "bg-warning/10 border border-warning/40 text-warning"
                         : "bg-muted border border-input text-muted-foreground"
                     )}
                   >
@@ -569,7 +569,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             selectedContract.financial_conditions.length > 0 && (
               <div className="space-y-1">
                 <Label className="text-[11px] font-mono">
-                  ② 金銭条件 <span className="text-red-600">*</span>
+                  ② 金銭条件 <span className="text-destructive">*</span>
                 </Label>
                 <div className="space-y-1.5 border border-input rounded-sm p-2 bg-muted/20">
                   {selectedContract.financial_conditions.map((c: any) => {
@@ -665,7 +665,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     <option value="御中">御中 (法人)</option>
                   </select>
                 </div>
-                <p className="text-[10px] font-mono text-muted-foreground/70">
+                <p className="text-[10px] text-muted-foreground/70">
                   取引先マスタの 法人/個人 区分から自動判定 (上書き可)
                 </p>
                 <Input
@@ -695,10 +695,10 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           {selectedContract && (
             <div className="space-y-1">
               <Label className="text-[10px] font-mono opacity-70">
-                原著作物 (原作マスタから自動引用) <span className="text-red-600">*</span>
+                原著作物 (原作マスタから自動引用) <span className="text-destructive">*</span>
               </Label>
               {ledgerForContract ? (
-                <div className="flex items-center gap-2 text-xs font-mono px-3 py-2 border border-emerald-200 bg-emerald-50/50 rounded-sm">
+                <div className="flex items-center gap-2 text-xs font-mono px-3 py-2 border border-success/40 bg-success/10 rounded-sm">
                   <span className="font-bold">{ledgerForContract.title || "(無題)"}</span>
                   <span className="opacity-60 text-[10px]">
                     [{ledgerForContract.ledger_code}]
@@ -732,7 +732,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     className="text-xs"
                     placeholder="原著作物名 (手入力も可)"
                   />
-                  <p className="text-[10px] font-mono text-amber-700">
+                  <p className="text-[10px] font-mono text-warning">
                     ⚠ 契約マスタに ledger 未紐付。
                     上で原作を選択するか手入力してください。
                     (契約マスタ側で ledger を紐づけると次回から自動入力されます)
@@ -753,7 +753,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         {/* Phase 28: 計算方式 (計算書ごとに切替) */}
         <div className="col-span-full space-y-1.5 mb-1">
           <Label className="text-[11px] font-mono">
-            計算方式 <span className="text-red-600">*</span>
+            計算方式 <span className="text-destructive">*</span>
           </Label>
           <div className="flex flex-wrap gap-2">
             {[
@@ -787,7 +787,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               )
             })}
           </div>
-          <p className="text-[10px] font-mono text-muted-foreground">
+          <p className="text-[10px] text-muted-foreground">
             {isRevenueCalc
               ? "※ 売上報告ベースは「報告金額 × 料率」で計算します（数量・サンプル数は使いません）。"
               : "※ 製造/印刷契機は「基準価格 × 課金対象数量 × 料率」で計算します。"}
@@ -797,7 +797,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-[11px] font-mono">
-              製品名 <span className="text-red-600">*</span>
+              製品名 <span className="text-destructive">*</span>
             </Label>
             <Input
               value={formData.productName || ""}
@@ -828,7 +828,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                   ? "被許諾者受領額"
                   : "報告売上高 (税抜)"
                 : "上代 (MSRP)"}{" "}
-              <span className="text-red-600">*</span>
+              <span className="text-destructive">*</span>
             </Label>
             <Input
               type="number"
@@ -847,7 +847,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               placeholder={isRevenueCalc ? "例: 1000000" : "例: 3000"}
             />
             {isRevenueCalc && (
-              <p className="text-[10px] font-mono text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground">
                 この金額 × 料率 で計算します。
               </p>
             )}
@@ -857,7 +857,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             <>
               <div className="space-y-1">
                 <Label className="text-[11px] font-mono">
-                  製造数 <span className="text-red-600">*</span>
+                  製造数 <span className="text-destructive">*</span>
                 </Label>
                 <Input
                   type="number"
@@ -1004,7 +1004,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           </button>
         }
       >
-        <p className="text-[10px] font-mono text-muted-foreground mb-3 border-l-2 border-emerald-500 pl-2 leading-relaxed">
+        <p className="text-[10px] text-muted-foreground mb-3 border-l-2 border-success pl-2 leading-relaxed">
           PDF 右上のグレーボックス「発行元 (ライセンシー)」と
           備考の「※ 連絡先:」に出力されます。<br />
           左サイドバーの <strong>Master · Context → Staff</strong> で担当者を選び、
@@ -1069,13 +1069,13 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
       {/* ─── STEP 5 ─ 報告・支払・備考 (折りたたみ) ──── */}
       <details className="group rounded-sm border border-input" open>
-        <summary className="cursor-pointer px-4 py-2.5 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+        <summary className="cursor-pointer px-4 py-2.5 text-[11px] uppercase tracking-wider hover:bg-muted/50 select-none">
           ▼ ステップ 5 — 報告・支払・備考
         </summary>
         <div className="p-4 border-t border-input grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1">
             <Label className="text-[11px] font-mono">
-              発行日 <span className="text-red-600">*</span>
+              発行日 <span className="text-destructive">*</span>
             </Label>
             <Input
               type="date"
@@ -1085,7 +1085,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           </div>
           <div className="space-y-1">
             <Label className="text-[11px] font-mono">
-              通貨 <span className="text-red-600">*</span>
+              通貨 <span className="text-destructive">*</span>
             </Label>
             <select
               value={formData.currency || "JPY"}
@@ -1134,7 +1134,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               }
               placeholder="例: 四半期報告後の翌月末日払い"
             />
-            <p className="text-[10px] font-mono text-muted-foreground/70">
+            <p className="text-[10px] text-muted-foreground/70">
               契約マスタの条件側 payment_terms から自動補完 (上書き可)
             </p>
           </div>

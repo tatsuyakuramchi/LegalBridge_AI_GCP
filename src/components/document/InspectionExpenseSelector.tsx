@@ -55,7 +55,7 @@ export const InspectionExpenseSelector: React.FC<Props> = ({
 }) => {
   if (!Array.isArray(poExpenses) || poExpenses.length === 0) {
     return (
-      <div className="text-[10px] font-mono italic text-muted-foreground p-3 border border-dashed border-input rounded-sm">
+      <div className="text-[10px] italic text-muted-foreground p-3 border border-dashed border-input rounded-sm">
         親 PO に経費の登録はありません。
       </div>
     );
@@ -95,7 +95,7 @@ export const InspectionExpenseSelector: React.FC<Props> = ({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1.5">
+        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
           <Receipt className="w-3 h-3" />
           親 PO の経費 {poExpenses.length} 件 / 合計 ¥
           {grandTotal.toLocaleString("ja-JP")} (税込)
@@ -106,7 +106,7 @@ export const InspectionExpenseSelector: React.FC<Props> = ({
           className={cn(
             "text-[10px] font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border flex items-center gap-1.5 transition-colors",
             isFinalInspection
-              ? "bg-emerald-600 text-white border-emerald-600 shadow ring-1 ring-emerald-200"
+              ? "bg-success text-white border-success shadow ring-1 ring-success"
               : "border-foreground/30 hover:bg-muted"
           )}
           title="ON にすると全経費を自動で「今回含める」になります"
@@ -149,7 +149,7 @@ export const InspectionExpenseSelector: React.FC<Props> = ({
                   className={cn(
                     "border-b border-border/50 transition-colors cursor-pointer",
                     checked
-                      ? "bg-emerald-50/60 hover:bg-emerald-50"
+                      ? "bg-success/10 hover:bg-success/10"
                       : "hover:bg-muted/20"
                   )}
                   onClick={() => toggleRow(e.line_no)}
@@ -186,7 +186,7 @@ export const InspectionExpenseSelector: React.FC<Props> = ({
               <td colSpan={5} className="p-2 text-right text-[10px] uppercase tracking-wider">
                 今回精算する経費合計 ({selectedLineNos.length} / {poExpenses.length} 件)
               </td>
-              <td className="p-2 text-right text-[13px] text-emerald-700">
+              <td className="p-2 text-right text-[13px] text-success">
                 ¥ {selectedTotal.toLocaleString("ja-JP")}
               </td>
               <td></td>
@@ -195,7 +195,7 @@ export const InspectionExpenseSelector: React.FC<Props> = ({
         </table>
       </div>
 
-      <div className="text-[10px] font-mono text-muted-foreground italic">
+      <div className="text-[10px] text-muted-foreground italic">
         ※ 経費は税込み額にて精算します。今回チェックを入れた経費だけが
         本検収書の支払額に加算され、PDF にも記載されます。
       </div>

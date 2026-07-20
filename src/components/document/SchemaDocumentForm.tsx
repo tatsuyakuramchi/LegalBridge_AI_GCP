@@ -116,7 +116,7 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
                   if (Object.keys(patch).length) ctx.setFormData({ ...ctx.formData, ...patch });
                 }}
                 title={ctx.companyProfile ? "自社(企業プロフィール)から充填" : "企業プロフィール未設定"}
-                className="text-[10px] font-mono border border-border px-2 py-0.5 uppercase rounded disabled:opacity-40 hover:bg-muted"
+                className="text-[10px] border border-border px-2 py-0.5 uppercase rounded disabled:opacity-40 hover:bg-muted"
               >
                 {sf.label || "自社を充填"}
               </button>
@@ -164,7 +164,7 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
               data-section-title={`${sec.title || `セクション ${i + 1}`}（任意）`}
               className="rounded-xl border border-border border-t-[3px] border-t-border bg-card overflow-hidden scroll-mt-4"
             >
-              <summary className="cursor-pointer select-none px-5 py-3 font-mono text-[12px] font-bold text-muted-foreground hover:text-foreground">
+              <summary className="cursor-pointer select-none px-5 py-3 text-[12px] font-bold text-muted-foreground hover:text-foreground">
                 ▶ {sec.title || `セクション ${i + 1}`}（任意）
               </summary>
               <div className="px-5 pb-5 pt-1 space-y-4">{inner}</div>

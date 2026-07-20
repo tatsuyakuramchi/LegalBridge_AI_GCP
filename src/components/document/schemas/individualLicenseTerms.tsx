@@ -616,8 +616,8 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       <div
         className={`flex items-center justify-between gap-3 px-4 py-2 rounded-sm border ${
           missingRequired.length === 0
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         }`}
       >
         <div className="text-[11px] font-mono">
@@ -646,7 +646,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
         {/* 基本契約設定 — 基本契約の紐づけ(唯一の入力点) */}
         <div className="col-span-full mt-2 pt-3 border-t border-border/60">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
             基本契約設定
           </div>
           <DocumentNumberLookup
@@ -679,11 +679,11 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           <div className="space-y-0.5">
             <label
               htmlFor="is_work_linked"
-              className="text-xs font-mono font-bold uppercase tracking-[0.14em] text-foreground cursor-pointer"
+              className="text-xs font-bold uppercase tracking-[0.14em] text-foreground cursor-pointer"
             >
               作品連動する契約
             </label>
-            <p className="text-[11px] font-mono text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               ON: 原作・原作マテリアルを紐付け、作品の構成・条件明細に連動させます。
               OFF: 作品に関わらない契約（NDA・一般業務委託 等）として原作・素材の紐付けを行いません。
             </p>
@@ -700,7 +700,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         {/* 作品設定 — 対象作品(own)。作品連動 ON のみ。なければその場で作成。 */}
         {formData.is_work_linked !== false && (
           <div className="col-span-full space-y-1">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               作品設定 — 対象作品（自社作品）
             </label>
             <WorkPicker
@@ -732,12 +732,12 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                 type="button"
                 onClick={() => void createOwnWork()}
                 disabled={creatingWork || !newWorkTitle.trim()}
-                className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
               >
                 {creatingWork ? "作成中…" : "＋作成"}
               </button>
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground/70">
+            <p className="text-[10px] text-muted-foreground/70">
               「どの作品のための契約か」を指定します。一覧に無ければ作品タイトルを入力して作成。選択すると「対象製品（予定）名」へ反映します。
             </p>
           </div>
@@ -745,7 +745,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
         {/* 許諾期間（テンプレ頭書「期間」）。開始日は頭書の契約開始日に反映。 */}
         <div className="col-span-full mt-2 pt-3 border-t border-border/60">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
             許諾期間（頭書）
           </div>
         </div>
@@ -763,7 +763,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         >
           {/* 原作(Ledger): マテリアル候補のコンテキスト。未登録の原作はその場で新規作成できる。 */}
           <div className="col-span-full space-y-1">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               原作 (Ledger) — 既存を選択 or 新規作成
             </label>
             <WorkPicker
@@ -775,7 +775,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               placeholder="原作を検索 (LO-コード / タイトル / 別名)"
             />
             <div className="flex items-center gap-1.5 pt-1">
-              <span className="text-[10px] font-mono text-muted-foreground shrink-0">または新規:</span>
+              <span className="text-[10px] text-muted-foreground shrink-0">または新規:</span>
               <input
                 value={iltNewSourceTitle}
                 onChange={(e) => setIltNewSourceTitle(e.target.value)}
@@ -792,39 +792,39 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                 type="button"
                 onClick={() => void createIltSourceIp()}
                 disabled={iltCreatingSource || !iltNewSourceTitle.trim()}
-                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
               >
                 {iltCreatingSource ? "作成中…" : "＋原作を新規作成"}
               </button>
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground/70">
+            <p className="text-[10px] text-muted-foreground/70">
               マスター &gt; Ledgers で登録した原作 (LO-YYYY-NNNN)。原著作物名・クレジット表示の既定値を補完します。未登録の原作はタイトル入力で作成でき、原作本体素材 -001 も同時生成されます。
             </p>
           </div>
 
           {/* 原作マテリアル(複数) ＋ 過去の利用許諾条件コピー/新規。 */}
-          <div className="col-span-full mt-3 rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-3 space-y-3">
+          <div className="col-span-full mt-3 rounded-md border border-success/40 bg-success/10 px-3 py-3 space-y-3">
             <div className="flex items-center justify-between">
-              <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700">
+              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-success">
                 原作マテリアル検索（複数可）＋ 過去条件の再利用
               </div>
               <button
                 type="button"
                 onClick={addMaterialRow}
-                className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-100"
+                className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10"
               >
                 ＋マテリアルを追加
               </button>
             </div>
 
             {materialPool.length === 0 && (
-              <p className="text-[10px] font-mono text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground">
                 原作マスター(Ledgers)にマテリアルがありません。上で原作を選択/作成し、「＋マテリアルを追加」の検索欄に素材名を入力するとその場で新規登録できます。
               </p>
             )}
 
             {masterMaterials.length === 0 ? (
-              <p className="text-[10px] font-mono text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground">
                 「＋マテリアルを追加」で、この契約が利用する原作マテリアルを選択します。検索でヒットしなければ入力した素材名のままその場で新規登録できます（登録先は上の原作）。各マテリアルに過去条件があればコピーして再利用、無ければ新規として金銭条件で入力します。
               </p>
             ) : (
@@ -838,10 +838,10 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                   return (
                     <div
                       key={i}
-                      className="rounded-md border border-emerald-200 bg-white/70 px-2.5 py-2 space-y-1.5"
+                      className="rounded-md border border-success/40 bg-white/70 px-2.5 py-2 space-y-1.5"
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-bold text-emerald-700 shrink-0">
+                        <span className="text-[10px] font-mono font-bold text-success shrink-0">
                           #{i + 1}
                         </span>
                         <MaterialSearchSelect
@@ -858,16 +858,16 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                         <button
                           type="button"
                           onClick={() => removeMaterialRow(i)}
-                          className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50"
+                          className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-destructive hover:bg-destructive/10"
                         >
                           削除
                         </button>
                       </div>
                       {row.material_code && (
                         <div className="flex items-center gap-2 pl-6 flex-wrap">
-                          <span className="text-[9px] font-mono text-muted-foreground">
+                          <span className="text-[9px] text-muted-foreground">
                             根拠文書:{" "}
-                            <span className="font-bold text-indigo-700">
+                            <span className="font-bold text-primary">
                               {row.source_doc || "この条件書(新規)"}
                             </span>
                           </span>
@@ -876,7 +876,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                               "text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border",
                               row.copied
                                 ? "text-teal-700 border-teal-300 bg-teal-50"
-                                : "text-amber-700 border-amber-300 bg-amber-50"
+                                : "text-warning border-warning/40 bg-warning/10"
                             )}
                           >
                             {row.copied ? "A 過去条件を引用" : "B この条件書で新規登録"}
@@ -884,7 +884,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                         </div>
                       )}
                       {row.copied && (
-                        <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-mono text-emerald-800 pl-6">
+                        <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-mono text-success pl-6">
                           <span>引用条件: {row.copied.condition_name || "(無題)"}</span>
                           <span className="inline-flex items-center gap-0.5">
                             料率
@@ -894,19 +894,19 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                               value={row.copied.rate_pct ?? ""}
                               onChange={(e) => setRowCopiedRate(i, e.target.value)}
                               placeholder="未入力"
-                              className="w-16 text-[10px] font-mono bg-transparent border-b border-emerald-300 py-0.5 text-right focus:outline-none focus:border-foreground"
+                              className="w-16 text-[10px] font-mono bg-transparent border-b border-success/40 py-0.5 text-right focus:outline-none focus:border-foreground"
                             />
                             %
                           </span>
                           {(row.copied.rate_pct == null || row.copied.rate_pct === "") && (
-                            <span className="text-[9px] text-amber-600">
+                            <span className="text-[9px] text-warning">
                               ブランク条件 — 料率を入力してください
                             </span>
                           )}
                           <button
                             type="button"
                             onClick={() => setRowCopied(i, null)}
-                            className="ml-1 text-[9px] underline text-muted-foreground hover:text-red-600"
+                            className="ml-1 text-[9px] underline text-muted-foreground hover:text-destructive"
                           >
                             解除
                           </button>
@@ -920,7 +920,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                           onCopy={(cond) => setRowCopied(i, cond)}
                         />
                       ) : (
-                        <p className="pl-6 text-[10px] font-mono text-muted-foreground/70">
+                        <p className="pl-6 text-[10px] text-muted-foreground/70">
                           マテリアルを選ぶと、その原作素材の過去条件を引用(コピー)できます。新規条件はそのまま金銭条件で入力します。
                         </p>
                       )}
@@ -937,7 +937,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                         ).find((l: any) => l.material_code === row.material_code)
                         if (allConds.length === 0) {
                           return (
-                            <div className="pl-6 text-[10px] font-mono text-amber-700">
+                            <div className="pl-6 text-[10px] font-mono text-warning">
                               金銭条件（取引形態 × 料率）は、下の「3. 金銭条件」で取引形態を初期化後に入力できます。
                             </div>
                           )
@@ -950,16 +950,16 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                             SUBSCRIPTION: "サブスク",
                             SUPPLY_QTY: "供給×個数×料率",
                           } as Record<string, string>)[String(t || "")] || "")
-                        const thc = "px-2 py-1 border-b border-indigo-200 whitespace-nowrap"
+                        const thc = "px-2 py-1 border-b border-primary/40 whitespace-nowrap"
                         const tdc = "px-2 py-1 border-b border-border/50 align-middle"
                         return (
                           <div className="pl-6 space-y-1">
-                            <div className="text-[9px] font-mono font-bold text-indigo-700">
+                            <div className="text-[9px] font-mono font-bold text-primary">
                               金銭条件（取引形態 × 料率）— 2-1と同じ構成
                             </div>
-                            <div className="overflow-x-auto rounded-md border border-indigo-200">
+                            <div className="overflow-x-auto rounded-md border border-primary/40">
                               <table className="w-full text-[10px] font-mono border-collapse">
-                                <thead className="bg-indigo-50/60 text-muted-foreground">
+                                <thead className="bg-primary/10 text-muted-foreground">
                                   <tr>
                                     <th className={`${thc} text-left`}>取引形態</th>
                                     <th className={`${thc} text-center w-24`}>種別</th>
@@ -975,7 +975,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                                       <td className={`${tdc} font-bold`}>{c.name || `取引形態${ci + 1}`}</td>
                                       <td className={`${tdc} text-center`}>
                                         <div className="text-[8px] font-bold">{c.addon ? "加算型" : "非加算型"}</div>
-                                        <div className="text-[8px] text-emerald-700">{calcShort(c.calc_type)}</div>
+                                        <div className="text-[8px] text-success">{calcShort(c.calc_type)}</div>
                                       </td>
                                       <td className={`${tdc} text-center`}>
                                         {c.addon ? (
@@ -1002,7 +1002,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                                 </tbody>
                               </table>
                             </div>
-                            <div className="text-[9px] font-mono text-muted-foreground/70">
+                            <div className="text-[9px] text-muted-foreground/70">
                               料率(このLC)＝この構成要素の当該取引形態の料率。加算型は各構成要素の料率を合算して適用料率になります。MG/AG/通貨・計算モデルは取引形態共通（3. の 2-1 で編集）。ここの入力は 3. マトリクスにも反映されます。
                             </div>
                           </div>
@@ -1013,7 +1013,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                 })}
               </div>
             )}
-            <p className="text-[10px] font-mono text-muted-foreground/70">
+            <p className="text-[10px] text-muted-foreground/70">
               選択したマテリアルは下の「金銭条件」の構成要素(LC)になります。コピーした条件の料率は加算型取引形態の初期値に反映されます（金銭条件側で修正可）。
             </p>
 
@@ -1028,7 +1028,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
           {/* 1-1 許諾概要。対象製品・独占性・許諾地域/言語/範囲を入力する。 */}
           <div className="col-span-full mt-3 pt-3 border-t border-border/60">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
               1-1 許諾概要
             </div>
           </div>
@@ -1048,7 +1048,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         variant="indigo"
         icon={<Coins className="w-4 h-4" />}
         headerActions={
-          <span className="text-[11px] font-mono text-muted-foreground italic">
+          <span className="text-[11px] text-muted-foreground italic">
             加算型＝LC料率の合算 / 非加算型＝実効料率
           </span>
         }
@@ -1094,7 +1094,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           }
         >
           <div className="col-span-full space-y-1">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               取引先を検索して許諾者を充填（DB検索補完）
             </label>
             <EntitySearchSelect entity="vendor" onSelect={(o) => o && fillLicensorFrom(o.raw)} placeholder="取引先を検索（名称 / コード）" />
@@ -1114,7 +1114,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           }
         >
           <div className="col-span-full space-y-1">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               取引先を検索して被許諾者を充填（DB検索補完）
             </label>
             <EntitySearchSelect entity="vendor" onSelect={(o) => o && fillLicenseeFrom(o.raw)} placeholder="取引先を検索（名称 / コード）" />
@@ -1131,7 +1131,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         headerActions={sideButton("Sync Staff", fillStaffAsSupervisor, !selectedStaff)}
       >
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             担当者を検索して監修者を充填（DB検索補完）
           </label>
           <EntitySearchSelect
@@ -1145,7 +1145,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         {renderField("承認時期")}
         <div className="col-span-full mt-1 pt-2 border-t border-dashed border-input">
           <div className="flex items-center flex-wrap gap-2">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               クレジット表示 プリセット:
             </span>
             <button
@@ -1184,12 +1184,12 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             <button
               type="button"
               onClick={() => setFormData({ ...formData, クレジット表示: "" })}
-              className="text-[10px] font-mono px-2 py-0.5 uppercase border border-foreground/30 text-foreground hover:bg-muted rounded-sm transition-colors"
+              className="text-[10px] px-2 py-0.5 uppercase border border-foreground/30 text-foreground hover:bg-muted rounded-sm transition-colors"
             >
               クリア
             </button>
           </div>
-          <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">
+          <p className="text-[10px] text-muted-foreground/70 mt-1">
             クイック選択で値を上書きできます。手入力も可。
           </p>
         </div>
@@ -1202,7 +1202,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           onChange={(next) => setFormData({ ...formData, v3_special_extras: next })}
         />
         <div className="col-span-full mt-3 pt-3 border-t border-border/60">
-          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+          <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
             特記事項（自由記述）
           </div>
         </div>

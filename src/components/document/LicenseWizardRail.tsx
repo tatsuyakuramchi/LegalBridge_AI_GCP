@@ -68,7 +68,7 @@ export const LicenseWizardRail: React.FC<{
                   aria-hidden
                   className={cn(
                     'h-px w-4 shrink-0',
-                    steps[i - 1].done ? 'bg-emerald-500' : 'bg-border'
+                    steps[i - 1].done ? 'bg-success' : 'bg-border'
                   )}
                 />
               )}
@@ -81,9 +81,9 @@ export const LicenseWizardRail: React.FC<{
                   'group flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 transition-colors',
                   clickable ? 'cursor-pointer hover:bg-muted/60' : 'cursor-default',
                   step.done
-                    ? 'border-emerald-500/60 bg-emerald-50/60 text-emerald-700'
+                    ? 'border-success bg-success/10 text-success'
                     : isCurrent
-                      ? 'border-indigo-500/70 bg-indigo-50/60 text-indigo-700 ring-1 ring-indigo-400/40'
+                      ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary'
                       : 'border-border bg-muted/20 text-muted-foreground'
                 )}
               >
@@ -91,15 +91,15 @@ export const LicenseWizardRail: React.FC<{
                   className={cn(
                     'flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-mono font-bold',
                     step.done
-                      ? 'bg-emerald-500 text-white'
+                      ? 'bg-success text-white'
                       : isCurrent
-                        ? 'bg-indigo-500 text-white'
+                        ? 'bg-primary text-white'
                         : 'bg-foreground/15 text-foreground/70'
                   )}
                 >
                   {step.done ? <Check className="h-2.5 w-2.5" /> : i + 1}
                 </span>
-                <span className="whitespace-nowrap text-[10px] font-mono font-bold uppercase tracking-[0.14em]">
+                <span className="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.14em]">
                   {step.label}
                 </span>
               </button>
@@ -107,12 +107,12 @@ export const LicenseWizardRail: React.FC<{
           );
         })}
       </div>
-      <p className="mt-2 text-[11px] font-mono text-muted-foreground">
+      <p className="mt-2 text-[11px] text-muted-foreground">
         {allDone ? (
-          <span className="text-emerald-700">すべてのステップが揃いました。内容を確認して文書を生成できます。</span>
+          <span className="text-success">すべてのステップが揃いました。内容を確認して文書を生成できます。</span>
         ) : (
           <>
-            <span className="font-bold text-indigo-700">いまここ: {current.label}</span>
+            <span className="font-bold text-primary">いまここ: {current.label}</span>
             {' — '}
             {current.hint}
           </>

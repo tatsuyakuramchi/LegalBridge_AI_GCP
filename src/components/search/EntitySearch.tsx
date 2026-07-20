@@ -191,7 +191,7 @@ export const EntitySearchSelect: React.FC<EntitySearchSelectProps> = ({
         {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
       </div>
       {entity === "work_material" && !parentId && (
-        <p className="font-mono text-[9px] text-amber-600 mt-1">先に原作を選択してください。</p>
+        <p className="font-mono text-[9px] text-warning mt-1">先に原作を選択してください。</p>
       )}
       {open && filtered.length > 0 && (
         <div className="absolute z-30 mt-1 w-full max-h-64 overflow-auto rounded-md border border-border bg-popover shadow-lg">
@@ -210,7 +210,7 @@ export const EntitySearchSelect: React.FC<EntitySearchSelectProps> = ({
         </div>
       )}
       {open && !loading && filtered.length === 0 && (
-        <div className="absolute z-30 mt-1 w-full rounded-md border border-border bg-popover shadow-lg px-2.5 py-2 text-[11px] font-mono text-muted-foreground">
+        <div className="absolute z-30 mt-1 w-full rounded-md border border-border bg-popover shadow-lg px-2.5 py-2 text-[11px] text-muted-foreground">
           該当なし
         </div>
       )}

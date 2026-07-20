@@ -60,14 +60,14 @@ export function CompletenessPanel({
     <div className="rounded-md border border-border bg-card">
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <div className="flex items-center gap-2">
-          <HeadIcon className={cn("h-4 w-4", ok ? "text-emerald-600" : "text-rose-600")} />
-          <span className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
+          <HeadIcon className={cn("h-4 w-4", ok ? "text-success" : "text-destructive")} />
+          <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
             完全性
           </span>
           <span
             className={cn(
               "rounded-sm border px-1.5 py-0.5 text-[10px] font-mono font-bold",
-              ok ? "border-emerald-300 text-emerald-700" : "border-rose-300 text-rose-700"
+              ok ? "border-success/40 text-success" : "border-destructive/40 text-destructive"
             )}
           >
             {s.score}/100
@@ -75,14 +75,14 @@ export function CompletenessPanel({
           {loading && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
         </div>
         <div className="flex items-center gap-1.5 text-[10px] font-mono">
-          {s.blocker_count > 0 && <span className="text-rose-700">必須 {s.blocker_count}</span>}
-          {s.error_count > 0 && <span className="text-amber-700">要修正 {s.error_count}</span>}
-          {s.warning_count > 0 && <span className="text-yellow-700">注意 {s.warning_count}</span>}
+          {s.blocker_count > 0 && <span className="text-destructive">必須 {s.blocker_count}</span>}
+          {s.error_count > 0 && <span className="text-warning">要修正 {s.error_count}</span>}
+          {s.warning_count > 0 && <span className="text-warning">注意 {s.warning_count}</span>}
         </div>
       </div>
 
       {ok ? (
-        <p className="px-3 py-2 text-[11px] font-mono text-muted-foreground">未解消の不足はありません。</p>
+        <p className="px-3 py-2 text-[11px] text-muted-foreground">未解消の不足はありません。</p>
       ) : (
         <ul className="divide-y divide-border/60">
           {issues.map((it) => (

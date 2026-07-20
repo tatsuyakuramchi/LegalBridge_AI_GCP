@@ -184,34 +184,34 @@ export const ConditionCopyPanel: React.FC<Props> = ({
 
   if (!materialCode) {
     return (
-      <div className="col-span-full mt-3 text-[10px] font-mono text-muted-foreground">
+      <div className="col-span-full mt-3 text-[10px] text-muted-foreground">
         既存条件を引用するには、先に上で<strong>原作素材</strong>を選択してください。
       </div>
     );
   }
 
   return (
-    <div className="col-span-full mt-3 rounded-md border border-sky-200 bg-sky-50/40 px-3 py-2">
+    <div className="col-span-full mt-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2">
       <button
         type="button"
         onClick={toggle}
         className="flex w-full items-center justify-between gap-2 text-left"
       >
-        <span className="flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.12em] text-sky-700">
+        <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-primary">
           <Copy className="h-3.5 w-3.5" />
           この原作素材の既存条件を引用してコピー
         </span>
         {open ? (
-          <ChevronUp className="h-3.5 w-3.5 text-sky-600" />
+          <ChevronUp className="h-3.5 w-3.5 text-primary" />
         ) : (
-          <ChevronDown className="h-3.5 w-3.5 text-sky-600" />
+          <ChevronDown className="h-3.5 w-3.5 text-primary" />
         )}
       </button>
 
       {open && (
         <div className="mt-2 space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <p className="text-[10px] font-mono text-sky-800/80">
+            <p className="text-[10px] font-mono text-primary">
               対象素材：<span className="font-bold">{materialLabel || materialCode}</span>
               {" "}（同一原作素材に登録された条件を一覧。L1=原作登録テンプレを優先表示）
             </p>
@@ -219,24 +219,24 @@ export const ConditionCopyPanel: React.FC<Props> = ({
               type="button"
               onClick={() => void fetchCandidates()}
               disabled={loading}
-              className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm border border-sky-300 text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+              className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm border border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-50"
             >
               再取得
             </button>
           </div>
 
           {loading && (
-            <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground py-1">
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground py-1">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> 取得中…
             </div>
           )}
           {error && (
-            <div className="text-[10px] font-mono text-red-600 py-1">
+            <div className="text-[10px] font-mono text-destructive py-1">
               取得に失敗しました: {error}
             </div>
           )}
           {!loading && !error && candidates && candidates.length === 0 && (
-            <div className="text-[10px] font-mono text-muted-foreground py-1">
+            <div className="text-[10px] text-muted-foreground py-1">
               この原作素材に登録済みの条件は見つかりませんでした。
             </div>
           )}
@@ -250,12 +250,12 @@ export const ConditionCopyPanel: React.FC<Props> = ({
                 return (
                   <li
                     key={cand.source_condition_line_id}
-                    className="flex items-center gap-2 rounded-sm bg-white/70 border border-sky-100 px-2 py-1"
+                    className="flex items-center gap-2 rounded-sm bg-white/70 border border-primary/40 px-2 py-1"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         {cand.is_template && (
-                          <span className="text-[8px] font-mono font-bold px-1 py-0.5 rounded-sm bg-amber-100 text-amber-800 border border-amber-300">
+                          <span className="text-[8px] font-mono font-bold px-1 py-0.5 rounded-sm bg-warning/10 text-warning border border-warning/40">
                             L1 テンプレ
                           </span>
                         )}
@@ -264,13 +264,13 @@ export const ConditionCopyPanel: React.FC<Props> = ({
                           {cand.condition_name ? `　${cand.condition_name}` : ""}
                         </span>
                         {(cand.document_number || origin) && (
-                          <span className="text-[9px] font-mono text-muted-foreground truncate">
+                          <span className="text-[9px] text-muted-foreground truncate">
                             {cand.document_number || ""}
                             {origin ? `（${origin}）` : ""}
                           </span>
                         )}
                       </div>
-                      <div className="text-[9px] font-mono text-sky-800/70 truncate">
+                      <div className="text-[9px] font-mono text-primary truncate">
                         {summarize(cand)}
                       </div>
                     </div>
@@ -288,8 +288,8 @@ export const ConditionCopyPanel: React.FC<Props> = ({
                       className={cn(
                         "shrink-0 text-[9px] font-mono px-2 py-1 rounded-sm border transition-colors",
                         copied
-                          ? "border-emerald-300 text-emerald-700 bg-emerald-50"
-                          : "border-sky-400 text-sky-700 hover:bg-sky-100"
+                          ? "border-success/40 text-success bg-success/10"
+                          : "border-primary text-primary hover:bg-primary/10"
                       )}
                       title="この条件を新しい行としてコピー(値を引用)"
                     >

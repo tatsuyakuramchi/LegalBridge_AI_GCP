@@ -188,7 +188,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
   return (
     <div className="border border-input rounded-sm bg-card/40 p-3 space-y-2">
       <div className="flex items-center justify-between">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+        <div className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
           <FileText className="w-3 h-3" />
           稟議番号
           {/* Phase 22.21.118: 任意項目であることを明示 */}
@@ -197,11 +197,11 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
           </span>
         </div>
         {normalized.length > 0 ? (
-          <span className="text-[11px] font-mono text-emerald-700">
+          <span className="text-[11px] font-mono text-success">
             {normalized.length} 件 紐付け済み
           </span>
         ) : (
-          <span className="text-[11px] font-mono text-muted-foreground opacity-70">
+          <span className="text-[11px] text-muted-foreground opacity-70">
             未入力でも保存可
           </span>
         )}
@@ -247,7 +247,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                 : "+ 別の稟議を追加"
             }
             disabled={disabled}
-            className="w-full text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+            className="w-full text-[11px] bg-transparent focus:outline-none placeholder:text-muted-foreground/40 placeholder:text-[10px]"
           />
           {showDropdown && hints.length > 0 && (
             <div className="lb-overlay absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-sm shadow-lg z-20 max-h-[280px] overflow-y-auto">
@@ -266,8 +266,8 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                     className={cn(
                       "text-[10px] font-bold px-1 rounded-sm border",
                       h.decision_type === "board_resolution"
-                        ? "bg-purple-50 border-purple-300 text-purple-800"
-                        : "bg-sky-50 border-sky-300 text-sky-800"
+                        ? "bg-info/10 border-info/40 text-info"
+                        : "bg-primary/10 border-primary/40 text-primary"
                     )}
                   >
                     {h.decision_type === "board_resolution" ? "取締役会" : "稟議"}
@@ -296,7 +296,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                       setCreateError(null)
                       setCreateOpen(true)
                     }}
-                    className="w-full text-left px-2 py-2 hover:bg-emerald-50 text-[11px] font-mono flex items-center gap-2 bg-emerald-50/50 text-emerald-800 font-bold"
+                    className="w-full text-left px-2 py-2 hover:bg-success/10 text-[11px] font-mono flex items-center gap-2 bg-success/10 text-success font-bold"
                   >
                     <Plus className="w-3 h-3" />
                     <span>稟議「{q.trim()}」を新規登録...</span>
@@ -318,7 +318,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-muted/30 border-b border-border px-4 py-2 flex items-center justify-between">
-              <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+              <span className="text-[11px] uppercase tracking-wider font-bold">
                 稟議を新規登録
               </span>
               <button
@@ -332,7 +332,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
             <div className="p-4 space-y-3">
               {/* Phase 22.21.117: 決裁種別 */}
               <label className="space-y-1 block">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+                <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
                   決裁種別 (必須)
                 </div>
                 <select
@@ -404,7 +404,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                 placeholder="任意"
               />
               {createError && (
-                <div className="border border-red-200 bg-red-50 rounded-sm px-2 py-1.5 flex items-start gap-1.5 text-[10px] font-mono text-red-800">
+                <div className="border border-destructive/40 bg-destructive/10 rounded-sm px-2 py-1.5 flex items-start gap-1.5 text-[10px] font-mono text-destructive">
                   <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
                   {createError}
                 </div>
@@ -415,7 +415,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                 type="button"
                 onClick={() => setCreateOpen(false)}
                 disabled={creating}
-                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
+                className="text-[10px] uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
               >
                 キャンセル
               </button>
@@ -423,7 +423,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                 type="button"
                 onClick={submitCreate}
                 disabled={creating}
-                className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
+                className="text-[10px] uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 disabled:opacity-50 flex items-center gap-1.5"
               >
                 {creating ? (
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -449,7 +449,7 @@ const RingiField: React.FC<{
   maxLength?: number
 }> = ({ label, value, onChange, placeholder, inputMode = "text", maxLength }) => (
   <label className="space-y-1 block">
-    <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
+    <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
       {label}
     </div>
     <input

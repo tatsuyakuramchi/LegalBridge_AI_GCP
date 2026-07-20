@@ -521,11 +521,11 @@ export const LineItemTable: React.FC<Props> = ({
   //   発注書フォームの「利用許諾条件（共通）」セクションで一括定義する。
   //   この明細は「受注者帰属＝共通利用許諾の対象」という選択を表すのみ。
   const renderLicenseFields = (it: LineItem, idx: number) => (
-    <div className="rounded-sm border border-amber-300/60 bg-amber-50/30 p-2 space-y-1">
-      <div className="text-[10px] font-mono font-bold text-amber-700">
+    <div className="rounded-sm border border-warning/40 bg-warning/10 p-2 space-y-1">
+      <div className="text-[10px] font-mono font-bold text-warning">
         利用許諾の対象（受注者帰属）— 確定額には含めません
       </div>
-      <div className="text-[10px] font-mono text-amber-700/80 leading-relaxed">
+      <div className="text-[10px] font-mono text-warning leading-relaxed">
         この成果物は<strong>共通の利用許諾条件</strong>の対象です。料率・基準価格・
         テリトリー等の条件は、フォーム下部の<strong>「利用許諾条件（共通）」</strong>
         セクションで定義してください（適用範囲にこの明細が自動で列挙されます）。
@@ -588,7 +588,7 @@ export const LineItemTable: React.FC<Props> = ({
             )}
           </label>
         </div>
-        <div className="text-[9px] font-mono text-muted-foreground/70">
+        <div className="text-[9px] text-muted-foreground/70">
           報酬が無く利用許諾料のみの場合は単価=0のままにしてください。
         </div>
       </div>
@@ -629,7 +629,7 @@ export const LineItemTable: React.FC<Props> = ({
     if (isDayBasedCycle(it)) {
       // N日ごとのカスタム周期は暦日ベースではないため支払日(毎期X日)は使わない。
       return (
-        <span className="text-[10px] font-mono text-muted-foreground/70 py-1 inline-block">
+        <span className="text-[10px] text-muted-foreground/70 py-1 inline-block">
           開始日からの経過日で計算
         </span>
       );
@@ -646,7 +646,7 @@ export const LineItemTable: React.FC<Props> = ({
     return (
       <div className="flex items-center gap-1">
         {it.cycle && it.cycle !== "MONTHLY" && (
-          <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">
+          <span className="text-[10px] text-muted-foreground whitespace-nowrap">
             {cyclePrefixLabel(it.cycle)}
           </span>
         )}
@@ -706,7 +706,7 @@ export const LineItemTable: React.FC<Props> = ({
           "w-full text-[11px] font-mono rounded-sm border px-2 py-1.5 cursor-pointer",
           "focus:outline-none focus:ring-1 focus:ring-foreground/40 disabled:opacity-60",
           it.deliverable_ownership === "受注者"
-            ? "border-amber-400 bg-amber-50 text-amber-800 font-semibold"
+            ? "border-warning bg-warning/10 text-warning font-semibold"
             : "border-input bg-muted/50 text-foreground"
         )}
         title="成果物のIP帰属を切り替えます。受注者帰属は利用許諾料(金銭条件)として扱い、確定額には含めません。"
@@ -714,7 +714,7 @@ export const LineItemTable: React.FC<Props> = ({
         <option value="発注者">発注者帰属（業務委託）</option>
         <option value="受注者">受注者帰属（利用許諾）</option>
       </select>
-      <span className="text-[9px] font-mono text-muted-foreground/70">
+      <span className="text-[9px] text-muted-foreground/70">
         ▼ 帰属を切替
       </span>
     </div>
@@ -737,7 +737,7 @@ export const LineItemTable: React.FC<Props> = ({
           "w-full text-[11px] font-mono rounded-sm border px-2 py-1.5 cursor-pointer",
           "focus:outline-none focus:ring-1 focus:ring-foreground/40 disabled:opacity-60",
           it.work_id != null
-            ? "border-sky-400 bg-sky-50 text-sky-800"
+            ? "border-primary bg-primary/10 text-primary"
             : "border-input bg-muted/50 text-muted-foreground"
         )}
         title="この明細の成果物作品。未選択なら文書の作品に従います。複数タイトル混在の発注書で行ごとに指定。"
@@ -765,7 +765,7 @@ export const LineItemTable: React.FC<Props> = ({
         className="rounded-md border border-border bg-card p-3 shadow-sm space-y-3"
       >
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
             行 {idx + 1}
           </span>
           {!readOnly && (
@@ -781,7 +781,7 @@ export const LineItemTable: React.FC<Props> = ({
           )}
         </div>
         <label className="block">
-          <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+          <span className="text-[10px] text-muted-foreground block mb-1">
             品目名
           </span>
           {cellInput(
@@ -792,7 +792,7 @@ export const LineItemTable: React.FC<Props> = ({
           )}
         </label>
         <label className="block">
-          <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+          <span className="text-[10px] text-muted-foreground block mb-1">
             仕様
           </span>
           {cellTextarea(
@@ -803,14 +803,14 @@ export const LineItemTable: React.FC<Props> = ({
           )}
         </label>
         <label className="block">
-          <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+          <span className="text-[10px] text-muted-foreground block mb-1">
             成果物帰属
           </span>
           {ownershipSelect(it, idx)}
         </label>
         {works.length > 0 && (
           <label className="block">
-            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+            <span className="text-[10px] text-muted-foreground block mb-1">
               作品（この明細）
             </span>
             {workSelect(it, idx)}
@@ -820,7 +820,7 @@ export const LineItemTable: React.FC<Props> = ({
         <>
         <div className="grid grid-cols-3 gap-3 items-end">
           <label className="block">
-            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+            <span className="text-[10px] text-muted-foreground block mb-1">
               単価
             </span>
             {cellInput(
@@ -831,7 +831,7 @@ export const LineItemTable: React.FC<Props> = ({
             )}
           </label>
           <label className="block">
-            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+            <span className="text-[10px] text-muted-foreground block mb-1">
               数量
             </span>
             {cellInput(
@@ -842,15 +842,15 @@ export const LineItemTable: React.FC<Props> = ({
             )}
           </label>
           <div>
-            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+            <span className="text-[10px] text-muted-foreground block mb-1">
               確定額 (税抜)
             </span>
             {(() => {
               const d = formatAmountDisplay(it);
               return (
-                <div className={cn("text-right text-sm font-mono py-1", d.muted ? "text-amber-700 text-[11px] font-semibold" : "font-bold")}>
+                <div className={cn("text-right text-sm font-mono py-1", d.muted ? "text-warning text-[11px] font-semibold" : "font-bold")}>
                   {d.primary}
-                  {d.note && <div className="text-[10px] text-amber-700 font-normal">{d.note}</div>}
+                  {d.note && <div className="text-[10px] text-warning font-normal">{d.note}</div>}
                 </div>
               );
             })()}
@@ -859,7 +859,7 @@ export const LineItemTable: React.FC<Props> = ({
         {showPaymentColumns && (
           <>
             <label className="block">
-              <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+              <span className="text-[10px] text-muted-foreground block mb-1">
                 計算方式
               </span>
               <div className="flex items-center gap-2">
@@ -918,7 +918,7 @@ export const LineItemTable: React.FC<Props> = ({
             {it.calc_method === "ROYALTY" && (
               <div className="grid grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="text-[10px] font-mono text-muted-foreground block mb-1">計算式方法</span>
+                  <span className="text-[10px] text-muted-foreground block mb-1">計算式方法</span>
                   <select
                     value={it.royalty_calc_basis || "manufacturing"}
                     onChange={(e) => update(idx, { royalty_calc_basis: e.target.value })}
@@ -931,15 +931,15 @@ export const LineItemTable: React.FC<Props> = ({
                   </select>
                 </label>
                 <label className="block">
-                  <span className="text-[10px] font-mono text-muted-foreground block mb-1">料率 (%)</span>
+                  <span className="text-[10px] text-muted-foreground block mb-1">料率 (%)</span>
                   {cellInput(it.rate_pct, (v) => update(idx, { rate_pct: Number(v) || 0 }), "number", "例: 5.0")}
-                  <span className="text-[10px] font-mono text-muted-foreground/70 block mt-1">利用許諾料は別途（利用許諾計算書による算定）</span>
+                  <span className="text-[10px] text-muted-foreground/70 block mt-1">利用許諾料は別途（利用許諾計算書による算定）</span>
                 </label>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
-                <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+                <span className="text-[10px] text-muted-foreground block mb-1">
                   {it.calc_method === "SUBSCRIPTION" ? "周期" : "契約種別"}
                 </span>
                 {it.calc_method === "SUBSCRIPTION" ? (
@@ -976,7 +976,7 @@ export const LineItemTable: React.FC<Props> = ({
                 )}
               </label>
               <label className="block">
-                <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+                <span className="text-[10px] text-muted-foreground block mb-1">
                   {it.calc_method === "SUBSCRIPTION" ? "支払日" : "納期"}
                 </span>
                 {it.calc_method === "SUBSCRIPTION" ? (
@@ -991,7 +991,7 @@ export const LineItemTable: React.FC<Props> = ({
               </label>
             </div>
             <label className="block">
-              <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+              <span className="text-[10px] text-muted-foreground block mb-1">
                 {it.calc_method === "SUBSCRIPTION" ? "契約期間" : "支払日"}
               </span>
               {it.calc_method === "SUBSCRIPTION" ? (
@@ -1003,7 +1003,7 @@ export const LineItemTable: React.FC<Props> = ({
                   )}
                 </span>
               ) : it.calc_method === "ROYALTY" && computeAmount(it) <= 0 ? (
-                <span className="text-xs font-mono py-1 block text-amber-700">
+                <span className="text-xs font-mono py-1 block text-warning">
                   利用許諾料計算書の通り
                 </span>
               ) : (
@@ -1037,7 +1037,7 @@ export const LineItemTable: React.FC<Props> = ({
           <div className="space-y-3 lg:hidden">
             {items.map((it, idx) => renderCard(it, idx))}
             <div className="rounded-md border border-foreground/30 bg-muted/40 px-3 py-2 flex items-center justify-between">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 合計 (税抜)
               </span>
               <span className="text-sm font-mono font-bold">
@@ -1121,9 +1121,9 @@ export const LineItemTable: React.FC<Props> = ({
                     {(() => {
                       const d = formatAmountDisplay(it);
                       return (
-                        <td className={cn("p-2 text-right", d.muted ? "text-amber-700 text-[10px] font-semibold" : "font-bold")}>
+                        <td className={cn("p-2 text-right", d.muted ? "text-warning text-[10px] font-semibold" : "font-bold")}>
                           {d.primary}
-                          {d.note && <div className="text-[9px] text-amber-700 font-normal">{d.note}</div>}
+                          {d.note && <div className="text-[9px] text-warning font-normal">{d.note}</div>}
                         </td>
                       );
                     })()}
@@ -1203,9 +1203,9 @@ export const LineItemTable: React.FC<Props> = ({
                                 }
                                 placeholder="料率% 例: 5.0"
                                 disabled={readOnly}
-                                className="w-full text-xs font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px] disabled:opacity-60"
+                                className="w-full text-xs bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px] disabled:opacity-60"
                               />
-                              <span className="text-[9px] font-mono text-muted-foreground/70 block">
+                              <span className="text-[9px] text-muted-foreground/70 block">
                                 利用許諾料は別途（利用許諾計算書）
                               </span>
                             </div>
@@ -1282,7 +1282,7 @@ export const LineItemTable: React.FC<Props> = ({
                           {it.calc_method === "SUBSCRIPTION" ? (
                             subBillingDaySelect(it, idx)
                           ) : it.calc_method === "ROYALTY" && computeAmount(it) <= 0 ? (
-                            <span className="text-[10px] font-mono text-amber-700 whitespace-nowrap">
+                            <span className="text-[10px] font-mono text-warning whitespace-nowrap">
                               利用許諾料計算書の通り
                             </span>
                           ) : (
@@ -1335,12 +1335,12 @@ export const LineItemTable: React.FC<Props> = ({
           <button
             type="button"
             onClick={addRow}
-            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-colors"
+            className="text-[10px] uppercase tracking-wider border border-foreground/30 hover:bg-muted px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-colors"
           >
             <Plus className="w-3 h-3" />
             行追加
           </button>
-          <div className="text-[10px] font-mono text-muted-foreground italic">
+          <div className="text-[10px] text-muted-foreground italic">
             小計は単価 × 数量を切り上げで自動計算されます (税は別途)。
           </div>
         </div>
@@ -1367,10 +1367,10 @@ export const LineItemTable: React.FC<Props> = ({
             <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
               <div className="flex items-center gap-2">
                 <Repeat className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-mono font-bold uppercase tracking-[0.16em]">
+                <h3 className="text-sm font-bold uppercase tracking-[0.16em]">
                   サブスク詳細編集
                 </h3>
-                <span className="text-[10px] font-mono text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground">
                   行 {subEditIdx + 1} ·{" "}
                   {subEditItem.item_name || "(品目名未入力)"}
                 </span>
@@ -1387,7 +1387,7 @@ export const LineItemTable: React.FC<Props> = ({
             <div className="p-5 space-y-4">
               {/* 周期 */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                   周期
                 </label>
                 <select
@@ -1409,11 +1409,11 @@ export const LineItemTable: React.FC<Props> = ({
               {/* カスタム周期: 間隔 (Nヶ月ごと / N日ごと) */}
               {subEditItem.cycle === "CUSTOM" && (
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                     任意周期の間隔
                   </label>
                   <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono text-muted-foreground">毎</span>
+                    <span className="text-[11px] text-muted-foreground">毎</span>
                     <input
                       type="number"
                       min={1}
@@ -1440,7 +1440,7 @@ export const LineItemTable: React.FC<Props> = ({
                       <option value="DAY">日ごと</option>
                     </select>
                   </div>
-                  <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                  <p className="text-[10px] text-muted-foreground/70 italic">
                     例: 「毎 3 ヶ月ごと」=四半期相当 / 「毎 90 日ごと」。日ごとの場合、下の
                     支払日(毎期X日)は使わず開始日からの経過日で計算します。
                   </p>
@@ -1450,8 +1450,8 @@ export const LineItemTable: React.FC<Props> = ({
               {/* 開始日 / 終了日 */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                    契約開始日 <span className="text-amber-600">*</span>
+                  <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    契約開始日 <span className="text-warning">*</span>
                   </label>
                   <input
                     type="date"
@@ -1463,7 +1463,7 @@ export const LineItemTable: React.FC<Props> = ({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                     契約終了日 (任意)
                   </label>
                   <input
@@ -1474,14 +1474,14 @@ export const LineItemTable: React.FC<Props> = ({
                     }
                     className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
                   />
-                  <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                  <p className="text-[10px] text-muted-foreground/70 italic">
                     空欄なら PDF に「継続中」と記載
                   </p>
                 </div>
               </div>
               {/* 支払日 */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                   支払日 (締めた期の分を いつ・何日に支払うか)
                 </label>
                 <div className="flex items-center gap-2">
@@ -1517,7 +1517,7 @@ export const LineItemTable: React.FC<Props> = ({
                     ))}
                   </select>
                 </div>
-                <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                <p className="text-[10px] text-muted-foreground/70 italic">
                   プレビュー:{" "}
                   <strong>
                     {formatBillingDay(
@@ -1532,11 +1532,11 @@ export const LineItemTable: React.FC<Props> = ({
               {/* 支払予定日(任意の日に個別指定 / 周期から自動生成) */}
               <div className="space-y-2 border-t border-border pt-4">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                     支払予定日(各回の支払日)
                   </label>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-mono text-muted-foreground">回数</span>
+                    <span className="text-[10px] text-muted-foreground">回数</span>
                     <input
                       type="number"
                       min={1}
@@ -1553,7 +1553,7 @@ export const LineItemTable: React.FC<Props> = ({
                           payment_schedule: generatePaymentSchedule(subEditItem, subPeriods),
                         })
                       }
-                      className="text-[10px] font-mono uppercase tracking-wider border border-foreground/40 bg-foreground text-background hover:opacity-80 px-2.5 py-1 rounded-sm"
+                      className="text-[10px] uppercase tracking-wider border border-foreground/40 bg-foreground text-background hover:opacity-80 px-2.5 py-1 rounded-sm"
                       title="周期・開始日・支払日から支払予定日を自動生成(既存リストは置換)"
                     >
                       ⟳ 自動生成
@@ -1562,7 +1562,7 @@ export const LineItemTable: React.FC<Props> = ({
                 </div>
 
                 {(subEditItem.payment_schedule?.length ?? 0) === 0 ? (
-                  <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                  <p className="text-[10px] text-muted-foreground/70 italic">
                     「⟳ 自動生成」で周期から展開するか、「+ 行追加」で支払日を個別に列挙できます。
                   </p>
                 ) : (
@@ -1652,14 +1652,14 @@ export const LineItemTable: React.FC<Props> = ({
                     next.push({ date: "", amount: Number(subEditItem.unit_price) || 0 });
                     update(subEditIdx, { payment_schedule: next });
                   }}
-                  className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-2.5 py-1 rounded-sm"
+                  className="text-[10px] uppercase tracking-wider border border-foreground/30 hover:bg-muted px-2.5 py-1 rounded-sm"
                 >
                   + 行追加
                 </button>
               </div>
 
               {/* 数量 ヒント */}
-              <div className="rounded-sm bg-amber-50 border border-amber-200 px-3 py-2 text-[10px] font-mono text-amber-900 leading-relaxed">
+              <div className="rounded-sm bg-warning/10 border border-warning/40 px-3 py-2 text-[10px] font-mono text-warning leading-relaxed">
                 ※ 単価=1周期あたりの料金、数量=期間内の周期数 で
                 <strong> 小計 = 期間総額</strong> になります。
                 例: 月額 100,000 円 × 12 ヶ月 = 1,200,000 円。
@@ -1669,7 +1669,7 @@ export const LineItemTable: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setSubEditIdx(null)}
-                className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-4 py-1.5 rounded-sm transition-colors"
+                className="text-[11px] uppercase tracking-wider border border-foreground/30 hover:bg-muted px-4 py-1.5 rounded-sm transition-colors"
               >
                 閉じる
               </button>
@@ -1697,10 +1697,10 @@ export const LineItemTable: React.FC<Props> = ({
             <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
               <div className="flex items-center gap-2">
                 <Maximize2 className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-mono font-bold uppercase tracking-[0.16em]">
+                <h3 className="text-sm font-bold uppercase tracking-[0.16em]">
                   仕様詳細編集
                 </h3>
-                <span className="text-[10px] font-mono text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground">
                   行 {specEditIdx + 1} ·{" "}
                   {items[specEditIdx]?.item_name || "(品目名未入力)"}
                 </span>
@@ -1729,7 +1729,7 @@ export const LineItemTable: React.FC<Props> = ({
                 )}
                 autoFocus
               />
-              <p className="mt-2 text-[10px] font-mono text-muted-foreground italic">
+              <p className="mt-2 text-[10px] text-muted-foreground italic">
                 編集内容は即座に明細行に反映されます。閉じるだけで保存完了。
               </p>
             </div>
@@ -1737,7 +1737,7 @@ export const LineItemTable: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setSpecEditIdx(null)}
-                className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-4 py-1.5 rounded-sm transition-colors"
+                className="text-[11px] uppercase tracking-wider border border-foreground/30 hover:bg-muted px-4 py-1.5 rounded-sm transition-colors"
               >
                 閉じる
               </button>

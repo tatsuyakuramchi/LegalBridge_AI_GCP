@@ -77,7 +77,7 @@ const ArticleBadge: React.FC<{ no?: number }> = ({ no }) =>
       第{no}条
     </span>
   ) : (
-    <span className="text-[10px] font-mono text-muted-foreground">
+    <span className="text-[10px] text-muted-foreground">
       ※ 項目を1つ以上追加すると、前のセクションからの続き番号で自動採番されます
     </span>
   )
@@ -136,7 +136,7 @@ export function maintenanceSpecBuilder(metadata: any): DocFormSchema {
             ctx,
             "handoverItems",
             MaintenanceSpecParts.HandoverItemsTable,
-            <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">引継ぎ残課題</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">引継ぎ残課題</div>
           ),
       },
       {

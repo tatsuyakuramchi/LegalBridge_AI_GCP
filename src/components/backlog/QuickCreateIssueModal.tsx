@@ -407,18 +407,18 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
             })()
             return (
               <div className="space-y-1.5">
-                <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
                   <GitBranch className="h-3 w-3" />
                   親課題 (任意 — 子課題として起案する場合のみ)
                 </label>
                 {parentIssueKey ? (
-                  <div className="flex items-center gap-2 px-2 py-1.5 bg-emerald-50 border border-emerald-200 rounded-sm">
-                    <GitBranch className="h-3 w-3 text-emerald-700 flex-shrink-0" />
-                    <span className="text-[11px] font-mono font-bold text-emerald-900">
+                  <div className="flex items-center gap-2 px-2 py-1.5 bg-success/10 border border-success/40 rounded-sm">
+                    <GitBranch className="h-3 w-3 text-success flex-shrink-0" />
+                    <span className="text-[11px] font-mono font-bold text-success">
                       {parentIssueKey}
                     </span>
                     {selectedParent && (
-                      <span className="text-[10px] font-mono text-emerald-800/80 truncate flex-1">
+                      <span className="text-[10px] font-mono text-success truncate flex-1">
                         {selectedParent.summary}
                       </span>
                     )}
@@ -428,7 +428,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
                         setParentIssueKey("")
                         setParentInheritDone(false)
                       }}
-                      className="text-emerald-700/60 hover:text-emerald-900 p-0.5"
+                      className="text-success hover:text-success p-0.5"
                       title="親課題をクリア"
                     >
                       <X className="h-3 w-3" />
@@ -451,7 +451,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
                           setTimeout(() => setParentSearchOpen(false), 150)
                         }}
                         placeholder="親課題を検索 (キー / タイトル) — 不要なら空欄のまま"
-                        className="flex-1 text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
+                        className="flex-1 text-[11px] bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
                       />
                     </div>
                     {parentSearchOpen && filteredParents.length > 0 && (
@@ -489,7 +489,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
                   </div>
                 )}
                 {parentIssueKey && (
-                  <p className="text-[10px] font-mono text-muted-foreground/70">
+                  <p className="text-[10px] text-muted-foreground/70">
                     この課題は <strong>{parentIssueKey}</strong> の子課題として作成され、
                     親の取引先が自動継承されます (上書き可能)。
                   </p>
@@ -500,8 +500,8 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
 
           {/* 1. 課題タイプ */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-              課題タイプ <span className="text-amber-600">*</span>
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              課題タイプ <span className="text-warning">*</span>
             </label>
             <select
               value={templateId}
@@ -514,7 +514,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
                 </option>
               ))}
             </select>
-            <p className="text-[10px] font-mono text-muted-foreground/70">
+            <p className="text-[10px] text-muted-foreground/70">
               Backlog 種別: <strong>{currentTemplate.issueTypeLabel}</strong> /
               内部 type: <code>{currentTemplate.requestType}</code>
             </p>
@@ -523,8 +523,8 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
           {/* 2. 相手方 (master / manual 切替) */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                相手方 <span className="text-amber-600">*</span>
+              <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                相手方 <span className="text-warning">*</span>
               </label>
               <div className="flex items-center gap-1">
                 <button
@@ -572,8 +572,8 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
 
           {/* 3. サブテーマ */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-              サブテーマ <span className="text-amber-600">*</span>
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              サブテーマ <span className="text-warning">*</span>
             </label>
             <Input
               value={subTopic}
@@ -584,7 +584,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
               }
               className="text-xs font-mono"
             />
-            <p className="text-[10px] font-mono text-muted-foreground/70">
+            <p className="text-[10px] text-muted-foreground/70">
               課題名に含まれる短い見出し。具体的な文書名やテーマを記入。
             </p>
           </div>
@@ -592,7 +592,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
           {/* 4. 希望納期 + 依頼部署 */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                 希望納期 (任意)
               </label>
               <Input
@@ -603,7 +603,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
                 依頼部署 (任意)
               </label>
               <Input
@@ -617,7 +617,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
 
           {/* 5. 詳細メモ */}
           <div className="space-y-1.5">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               詳細メモ (任意)
             </label>
             <Textarea
@@ -631,7 +631,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
 
           {/* プレビュー */}
           <div className="border border-dashed border-border rounded-sm bg-muted/30 p-3 space-y-1">
-            <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
               作成される課題名 (プレビュー)
             </div>
             <div className="text-sm font-mono font-bold break-all">

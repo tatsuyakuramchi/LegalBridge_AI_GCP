@@ -151,7 +151,7 @@ const SublicenseOutTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         }
       >
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             取引先を検索して被許諾者を充填（DB検索補完）
           </label>
           <EntitySearchSelect
@@ -165,7 +165,7 @@ const SublicenseOutTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
       <FormSection title="III. 対象作品" variant="blue" icon={<Building2 className="w-4 h-4" />}>
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             対象作品(自社作品)を選択
           </label>
           <WorkPicker items={workItems} value={String(workId || "")} onSelect={onPickWork} />
@@ -175,11 +175,11 @@ const SublicenseOutTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
       <FormSection title="IV. 再許諾元 (親ライセンス)" icon={<Link2 className="w-4 h-4" />}>
         <div className="col-span-full space-y-1">
-          <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+          <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
             再許諾元の利用許諾条件 (license_in)（任意）
           </label>
           {!workId ? (
-            <p className="text-[11px] font-mono text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               先に対象作品を選択すると、その作品の許諾(license_in)条件から選べます。
             </p>
           ) : (
@@ -215,7 +215,7 @@ const SublicenseOutTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
             conditions={conditions}
             onChange={(next) => patch({ financial_conditions: next })}
           />
-          <p className="mt-2 text-[10.5px] font-mono text-muted-foreground">
+          <p className="mt-2 text-[10.5px] text-muted-foreground">
             当社が受け取る再許諾(sublicense_out)条件です。料率/MG/AG・許諾地域・許諾言語を入力してください。
           </p>
         </div>

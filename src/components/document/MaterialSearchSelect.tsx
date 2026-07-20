@@ -173,7 +173,7 @@ export function MaterialSearchSelect({
                 type="button"
                 disabled={!!createDisabledReason}
                 title={createDisabledReason}
-                className="block w-full text-left px-2.5 py-1.5 text-[11px] font-mono border-t border-input text-emerald-700 hover:bg-emerald-50 dark:hover:bg-white/10 disabled:opacity-50"
+                className="block w-full text-left px-2.5 py-1.5 text-[11px] font-mono border-t border-input text-success hover:bg-success/10 dark:hover:bg-white/10 disabled:opacity-50"
                 onMouseDown={(e) => {
                   e.preventDefault(); // onBlur より先に確定
                   openForm();
@@ -182,7 +182,7 @@ export function MaterialSearchSelect({
                 {`＋「${q.trim()}」を新規マテリアルとして登録…`}
               </button>
               {createDisabledReason && (
-                <div className="px-2.5 pb-1.5 text-[9px] font-mono text-muted-foreground">
+                <div className="px-2.5 pb-1.5 text-[9px] text-muted-foreground">
                   {createDisabledReason}
                 </div>
               )}
@@ -194,9 +194,9 @@ export function MaterialSearchSelect({
       {/* 新規作成フォーム(スコープ付き)。open とは独立表示。素材名/種別/権利者/許諾地域/許諾言語。 */}
       {onCreate && showForm && (
         <div className="lb-overlay absolute z-50 mt-1 w-full rounded-md border shadow-md p-2.5 space-y-2">
-          <div className="text-[10px] font-mono font-bold text-emerald-700">新規構成要素（原作マテリアル）を作成</div>
+          <div className="text-[10px] font-mono font-bold text-success">新規構成要素（原作マテリアル）を作成</div>
           <label className="block">
-            <span className="text-[9px] font-mono text-muted-foreground">素材名 *</span>
+            <span className="text-[9px] text-muted-foreground">素材名 *</span>
             <input
               value={fName}
               onChange={(e) => setFName(e.target.value)}
@@ -205,7 +205,7 @@ export function MaterialSearchSelect({
             />
           </label>
           <label className="block">
-            <span className="text-[9px] font-mono text-muted-foreground">種別（ジャンル）</span>
+            <span className="text-[9px] text-muted-foreground">種別（ジャンル）</span>
             <select
               value={fGenre}
               onChange={(e) => setFGenre(e.target.value)}
@@ -216,7 +216,7 @@ export function MaterialSearchSelect({
               ))}
             </select>
             {/* 種別から役割(role)を判定して表示。コアロジック=原作の本体 / サブ=構成要素。 */}
-            <span className="mt-0.5 block text-[9px] font-mono text-muted-foreground">
+            <span className="mt-0.5 block text-[9px] text-muted-foreground">
               役割: <b>{roleLabel(defaultRoleForGenre(fGenre))}</b>
               {defaultRoleForGenre(fGenre) === 'core_logic'
                 ? '（原作の本体。登録先は上で選択中の原作）'
@@ -224,7 +224,7 @@ export function MaterialSearchSelect({
             </span>
           </label>
           <label className="block">
-            <span className="text-[9px] font-mono text-muted-foreground">権利者（ラベル・任意）</span>
+            <span className="text-[9px] text-muted-foreground">権利者（ラベル・任意）</span>
             <input
               value={fHolder}
               onChange={(e) => setFHolder(e.target.value)}
@@ -234,7 +234,7 @@ export function MaterialSearchSelect({
           </label>
           <div className="grid grid-cols-2 gap-2">
             <label className="block">
-              <span className="text-[9px] font-mono text-muted-foreground">許諾地域（枠・任意）</span>
+              <span className="text-[9px] text-muted-foreground">許諾地域（枠・任意）</span>
               <input
                 value={fTerritory}
                 onChange={(e) => setFTerritory(e.target.value)}
@@ -243,7 +243,7 @@ export function MaterialSearchSelect({
               />
             </label>
             <label className="block">
-              <span className="text-[9px] font-mono text-muted-foreground">許諾言語（枠・任意）</span>
+              <span className="text-[9px] text-muted-foreground">許諾言語（枠・任意）</span>
               <input
                 value={fLanguage}
                 onChange={(e) => setFLanguage(e.target.value)}
@@ -252,7 +252,7 @@ export function MaterialSearchSelect({
               />
             </label>
           </div>
-          <div className="text-[9px] font-mono text-muted-foreground/70">
+          <div className="text-[9px] text-muted-foreground/70">
             許諾地域・言語は 1-3「構成要素の許諾範囲」に表示されます（空＝1-1に準ずる）。
           </div>
           <div className="flex items-center justify-end gap-2 pt-1">
@@ -267,7 +267,7 @@ export function MaterialSearchSelect({
               type="button"
               disabled={creating || !fName.trim() || !!createDisabledReason}
               onClick={() => void submitForm()}
-              className="px-2.5 py-1 text-[10px] font-mono font-bold rounded-sm bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+              className="px-2.5 py-1 text-[10px] font-mono font-bold rounded-sm bg-success text-white hover:bg-success disabled:opacity-50"
             >
               {creating ? '登録中…' : '登録して選択'}
             </button>

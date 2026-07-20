@@ -324,13 +324,13 @@ export function WorkflowPanel({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="retro-tag">STATUS · WORKFLOW</p>
-          <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-1">
+          <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mt-1">
             {issueKey}
           </p>
         </div>
         <Badge
           variant="outline"
-          className="h-6 font-mono text-[11px] uppercase tracking-wider"
+          className="h-6 text-[11px] uppercase tracking-wider"
         >
           <CheckCircle2 className="h-3 w-3 mr-1 text-phosphor" />
           {displayStatus({
@@ -344,7 +344,7 @@ export function WorkflowPanel({
       <div className="retro-rule" />
 
       <div>
-        <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">
+        <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2">
           Advance to:
           <span className="ml-2 text-muted-foreground/70 normal-case tracking-normal">
             ({category})
@@ -393,7 +393,7 @@ export function WorkflowPanel({
           })}
         </div>
         {recommendedId != null && (
-          <p className="text-[10px] font-mono text-muted-foreground mt-2">
+          <p className="text-[10px] text-muted-foreground mt-2">
             <Sparkles className="inline h-3 w-3 mr-1 text-phosphor" />
             <span className="tracking-[0.14em] uppercase">Recommended next</span>
           </p>
@@ -409,7 +409,7 @@ export function WorkflowPanel({
             variant="outline"
             onClick={() => setTerminateOpen(true)}
             disabled={pending != null}
-            className="h-8 font-mono text-[11px] uppercase tracking-[0.14em] text-destructive border-destructive/40 hover:border-destructive"
+            className="h-8 text-[11px] uppercase tracking-[0.14em] text-destructive border-destructive/40 hover:border-destructive"
             title="既存課題に統合された場合に終結 (terminal)"
           >
             <GitMerge className="h-3 w-3" />
@@ -417,7 +417,7 @@ export function WorkflowPanel({
           </Button>
         ) : (
           <div className="space-y-2">
-            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
               Terminate (merge into existing):
             </p>
             <div className="flex flex-wrap gap-1.5 items-center">
@@ -427,7 +427,7 @@ export function WorkflowPanel({
                 value={mergeIntoInput}
                 onChange={(e) => setMergeIntoInput(e.target.value)}
                 disabled={terminatePending}
-                className="h-8 w-44 font-mono text-xs uppercase"
+                className="h-8 w-44 text-xs uppercase"
                 maxLength={50}
               />
               <Input
@@ -444,7 +444,7 @@ export function WorkflowPanel({
                 variant="destructive"
                 onClick={handleTerminate}
                 disabled={terminatePending || !mergeIntoInput.trim()}
-                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
+                className="h-8 text-[11px] uppercase tracking-[0.14em]"
               >
                 {terminatePending ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -462,12 +462,12 @@ export function WorkflowPanel({
                   setTerminateReason("")
                 }}
                 disabled={terminatePending}
-                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
+                className="h-8 text-[11px] uppercase tracking-[0.14em]"
               >
                 <X className="h-3 w-3" />
               </Button>
             </div>
-            <p className="text-[10px] font-mono text-muted-foreground">
+            <p className="text-[10px] text-muted-foreground">
               本課題のステータスを「終結」に変え、legal_requests.merged_into_issue_key
               に統合先を記録します。Backlog 課題にもコメントが追加されます。
               <span className="text-destructive ml-1">この操作は取り消し不可。</span>
@@ -481,13 +481,13 @@ export function WorkflowPanel({
         <>
           <div className="retro-rule" />
           <div>
-            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2 flex items-center gap-1.5">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground mb-2 flex items-center gap-1.5">
               <CalendarClock className="h-3 w-3" />
               Deliveries · Line items
             </p>
 
             {lineItemsLoading ? (
-              <p className="text-[10px] font-mono text-muted-foreground">
+              <p className="text-[10px] text-muted-foreground">
                 <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
                 Loading…
               </p>
@@ -508,26 +508,26 @@ export function WorkflowPanel({
                   let dateBadge: React.ReactNode = null
                   if (item.accepted) {
                     dateBadge = (
-                      <span className="text-[11px] font-mono tracking-[0.14em] text-emerald-600 uppercase ml-1">
+                      <span className="text-[11px] tracking-[0.14em] text-success uppercase ml-1">
                         accepted
                       </span>
                     )
                   } else if (daysUntil != null) {
                     if (daysUntil < 0) {
                       dateBadge = (
-                        <span className="text-[11px] font-mono tracking-[0.14em] text-destructive uppercase ml-1">
+                        <span className="text-[11px] tracking-[0.14em] text-destructive uppercase ml-1">
                           {Math.abs(daysUntil)}d overdue
                         </span>
                       )
                     } else if (daysUntil <= 7) {
                       dateBadge = (
-                        <span className="text-[11px] font-mono tracking-[0.14em] text-phosphor uppercase ml-1">
+                        <span className="text-[11px] tracking-[0.14em] text-phosphor uppercase ml-1">
                           in {daysUntil}d
                         </span>
                       )
                     } else {
                       dateBadge = (
-                        <span className="text-[11px] font-mono tracking-[0.14em] text-muted-foreground uppercase ml-1">
+                        <span className="text-[11px] tracking-[0.14em] text-muted-foreground uppercase ml-1">
                           in {daysUntil}d
                         </span>
                       )
@@ -543,13 +543,13 @@ export function WorkflowPanel({
                       )}
                     >
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.12em] shrink-0">
+                        <span className="text-[10px] font-bold uppercase tracking-[0.12em] shrink-0">
                           #{item.line_no}
                         </span>
                         <span className="text-xs font-mono flex-1 truncate">
                           {item.item_name || "—"}
                         </span>
-                        <span className="text-[11px] font-mono text-muted-foreground tab-mono">
+                        <span className="text-[11px] text-muted-foreground tab-mono">
                           {dateStr}
                         </span>
                         {dateBadge}
@@ -559,7 +559,7 @@ export function WorkflowPanel({
                             variant="outline"
                             onClick={() => startEditLine(item)}
                             disabled={linePending != null}
-                            className="h-6 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            className="h-6 text-[10px] uppercase tracking-[0.14em]"
                             title="この明細の納期を変更"
                           >
                             <CalendarClock className="h-2.5 w-2.5" />
@@ -592,7 +592,7 @@ export function WorkflowPanel({
                               size="sm"
                               onClick={() => handleExtendLine(item)}
                               disabled={isPending || !lineDateInput}
-                              className="h-7 font-mono text-[10px] uppercase tracking-[0.14em]"
+                              className="h-7 text-[10px] uppercase tracking-[0.14em]"
                             >
                               {isPending ? (
                                 <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -606,12 +606,12 @@ export function WorkflowPanel({
                               variant="ghost"
                               onClick={cancelEditLine}
                               disabled={isPending}
-                              className="h-7 font-mono text-[10px] uppercase tracking-[0.14em]"
+                              className="h-7 text-[10px] uppercase tracking-[0.14em]"
                             >
                               <X className="h-2.5 w-2.5" />
                             </Button>
                           </div>
-                          <p className="text-[10px] font-mono text-muted-foreground">
+                          <p className="text-[10px] text-muted-foreground">
                             DB の delivery_date を更新し、Backlog 課題にコメントを追加します。
                             申請者と部署チャンネルにも通知されます。
                           </p>
@@ -775,16 +775,16 @@ function CompactDropdown({
                 borderBottom: "1px solid hsl(var(--border))",
               }}
             >
-              <span className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+              <span className="text-[11px] uppercase tracking-[0.22em] text-muted-foreground">
                 ▍ STATUS · {issueKey}
               </span>
-              <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
                 {statuses.length}
               </span>
             </div>
 
             {statuses.length === 0 ? (
-              <div className="px-2 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+              <div className="px-2 py-1.5 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
                 no statuses
               </div>
             ) : (
@@ -861,7 +861,7 @@ function CompactDropdown({
           setOpen((v) => !v)
         }}
         disabled={pending != null}
-        className="h-7 font-mono text-[10px] uppercase tracking-[0.14em]"
+        className="h-7 text-[10px] uppercase tracking-[0.14em]"
         title={`Backlog ${issueKey} のステータスを変更`}
       >
         {pending != null ? (

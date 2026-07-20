@@ -439,7 +439,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
   return (
     <div className="col-span-full space-y-3">
       {conditions.length === 0 ? (
-        <div className="p-4 rounded-sm border border-dashed border-input bg-muted/20 text-[11px] font-mono text-muted-foreground text-center">
+        <div className="p-4 rounded-sm border border-dashed border-input bg-muted/20 text-[11px] text-muted-foreground text-center">
           金銭条件はまだ追加されていません。下の「条件追加」から開始してください。
         </div>
       ) : (
@@ -452,7 +452,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
             >
               <header className="flex items-start justify-between gap-3 px-3 py-2 border-b border-border bg-muted/30">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-2 min-w-0 flex-1">
-                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-foreground text-background">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-foreground text-background">
                     条件 {condNo}
                   </span>
                   {/* 取引区分: ライセンスイン / プロダクトイン。プロダクトインは供給価格×個数を既定に。 */}
@@ -482,8 +482,8 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     className={cn(
                       "text-[10px] font-mono rounded-sm border px-1.5 py-0.5 bg-transparent focus:outline-none",
                       c.transaction_kind === "product"
-                        ? "border-amber-300 text-amber-800"
-                        : "border-indigo-300 text-indigo-800"
+                        ? "border-warning/40 text-warning"
+                        : "border-primary/40 text-primary"
                     )}
                   >
                     <option value="license">ライセンスイン</option>
@@ -492,7 +492,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                   {/* O4: 原作素材の既存条件からコピーした行であることの痕跡バッジ。 */}
                   {c.copied_from_condition_id != null && (
                     <span
-                      className="text-[8px] font-mono font-bold px-1 py-0.5 rounded-sm bg-sky-100 text-sky-700 border border-sky-300 whitespace-nowrap"
+                      className="text-[8px] font-mono font-bold px-1 py-0.5 rounded-sm bg-primary/10 text-primary border border-primary/40 whitespace-nowrap"
                       title={`原作素材の既存条件(#${c.copied_from_condition_id})から引用コピー`}
                     >
                       引用
@@ -507,7 +507,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     placeholder={`条件名称 (任意・例: ${presetLabel(condNo)})`}
                     disabled={readOnly}
                     title="任意の条件名称。空欄なら標準の見出しを表示。"
-                    className="flex-1 min-w-[140px] text-[11px] font-mono font-semibold bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+                    className="flex-1 min-w-[140px] text-[11px] font-semibold bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
                   />
                   {/* 条件ごとの作品(作品1:文書N:明細N)。複数作品混在の受注者帰属で行ごとに指定。
                       未選択は文書の作品にフォールバック。works が無ければ非表示。 */}
@@ -526,7 +526,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                       className={cn(
                         "text-[10px] font-mono rounded-sm border px-1.5 py-0.5 bg-transparent focus:outline-none",
                         c.work_id != null
-                          ? "border-sky-300 text-sky-800"
+                          ? "border-primary/40 text-primary"
                           : "border-input text-muted-foreground"
                       )}
                     >
@@ -789,12 +789,12 @@ export const FinancialConditionTable: React.FC<Props> = ({
                       ))}
                     </select>
                   ) : (
-                    <div className="text-[10px] font-mono text-muted-foreground/60 py-1 px-1 border-b border-dashed border-input/50">
+                    <div className="text-[10px] text-muted-foreground/60 py-1 px-1 border-b border-dashed border-input/50">
                       (種別によっては不要)
                     </div>
                   )}
                   {c.calc_period && (
-                    <div className="text-[11px] font-mono text-muted-foreground/70 mt-0.5">
+                    <div className="text-[11px] text-muted-foreground/70 mt-0.5">
                       ラベル: {c.calc_period}
                     </div>
                   )}
@@ -923,7 +923,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                           })()}
                         </>
                       ) : (
-                        <div className="text-[10px] font-mono text-muted-foreground/60 py-1 px-1 border-b border-dashed border-input/50">
+                        <div className="text-[10px] text-muted-foreground/60 py-1 px-1 border-b border-dashed border-input/50">
                           (保証なし)
                         </div>
                       )}
@@ -971,12 +971,12 @@ export const FinancialConditionTable: React.FC<Props> = ({
           <button
             type="button"
             onClick={addRow}
-            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-colors"
+            className="text-[10px] uppercase tracking-wider border border-foreground/30 hover:bg-muted px-3 py-1.5 rounded-sm flex items-center gap-1.5 transition-colors"
           >
             <Plus className="w-3 h-3" />
             条件追加
           </button>
-          <div className="text-[10px] font-mono text-muted-foreground italic flex items-center gap-2">
+          <div className="text-[10px] text-muted-foreground italic flex items-center gap-2">
             <span className="not-italic px-1.5 py-0.5 rounded-sm bg-muted text-foreground/70">
               {division === "PUB" ? "出版(PUB)プリセット" : "ボードゲーム(BDG)プリセット"}
             </span>

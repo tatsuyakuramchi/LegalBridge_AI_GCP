@@ -156,8 +156,8 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2.5 rounded-sm border",
           stepsDone === totalSteps
-            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-            : "bg-amber-50 border-amber-200 text-amber-800"
+            ? "bg-success/10 border-success/40 text-success"
+            : "bg-warning/10 border-warning/40 text-warning"
         )}
       >
         <div className="text-[11px] font-mono">
@@ -184,7 +184,7 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         variant="indigo"
         icon={<Briefcase className="w-4 h-4" />}
       >
-        <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
+        <p className="text-[10px] text-muted-foreground leading-relaxed mb-2 border-l-2 border-success pl-2">
           <strong>受託者・明細・経費・手数料は親契約から自動入力されます。</strong>
           <br />
           発注書 / 業務委託の個別契約・単独契約 を 1 つのピッカーから検索できます。
@@ -346,9 +346,9 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           }}
         />
         {hasParentPo && (
-          <div className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900 shadow-sm">
+          <div className="mt-3 rounded-md border border-success/40 bg-success/10 p-3 text-xs leading-relaxed text-success shadow-sm">
             <div className="flex items-start gap-2">
-              <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+              <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-success text-white text-[10px] font-bold">
                 ✓
               </div>
               <div className="flex-1 space-y-1">
@@ -370,7 +370,7 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                   <li>• 税率・発注日</li>
                   <li>• 経費・その他手数料 (候補)</li>
                 </ul>
-                <div className="mt-1 text-[10px] text-emerald-700">
+                <div className="mt-1 text-[10px] text-success">
                   手動で上書き編集も可能です。親契約を切り替えるには
                   上の「親契約を切り替える」を、連動を外すには「連動解除」を
                   クリック。
@@ -394,7 +394,7 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           variant="indigo"
           icon={<Scale className="w-4 h-4" />}
           headerActions={
-            <span className="text-[11px] font-mono italic text-muted-foreground">
+            <span className="text-[11px] italic text-muted-foreground">
               📄 親契約:{" "}
               {formData.parent_po_number ||
                 formData.parent_po_issue_key ||
@@ -450,14 +450,14 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                     })
                   )
                 }
-                className="text-[10px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
+                className="text-[10px] border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
               >
                 <Link className="w-2 h-2" /> PO紐付
               </button>
             )
           }
         >
-          <p className="text-[10px] font-mono text-amber-700 mb-2 border-l-2 border-amber-400 pl-2">
+          <p className="text-[10px] font-mono text-warning mb-2 border-l-2 border-warning pl-2">
             ⚠ 親 PO 未連動です。ステップ 1 で発注書を選ぶと明細が自動入力されます。
             ここは PO 連動できない場合 (旧データ等) の手入力フォールバックです。
           </p>
@@ -578,7 +578,7 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         >
           {/* 統一検索モジュール: サイドバー選択なしでも担当者を直接検索補完。 */}
           <div className="col-span-full space-y-1">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               担当者を検索して検収者を充填（DB検索補完）
             </label>
             <EntitySearchSelect
@@ -597,13 +597,13 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           headerActions={sideButton("取引先", fillCounterpartyFromPartner, !activeVendor)}
         >
           {hasParentPo && (
-            <p className="text-[10px] font-mono text-emerald-700 mb-2 border-l-2 border-emerald-500 pl-2">
+            <p className="text-[10px] font-mono text-success mb-2 border-l-2 border-success pl-2">
               ✓ 親 PO から自動入力済み。必要なら下のフィールドで編集してください。
             </p>
           )}
           {/* 統一検索モジュール: 親PO非依存で受託者を直接検索補完(取引先ボタンと同一)。 */}
           <div className="col-span-full space-y-1">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+            <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
               取引先を検索して受託者を充填（DB検索補完）
             </label>
             <EntitySearchSelect
@@ -640,7 +640,7 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           {renderField("isPartial")}
         </div>
         <details className="mt-4 group rounded-sm border border-input">
-          <summary className="cursor-pointer px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+          <summary className="cursor-pointer px-3 py-1.5 text-[10px] uppercase tracking-wider hover:bg-muted/50 select-none">
             ▶ 自動補完項目 (ステップ 1 で親契約を選ぶと埋まる) — 必要に応じて手動修正
           </summary>
           <div className="p-3 border-t border-input space-y-3">
@@ -652,14 +652,14 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
       {/* ─── 任意セクション (折りたたみ) ─────────────────────────── */}
       <details className="group rounded-sm border border-input">
-        <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+        <summary className="cursor-pointer px-4 py-2 text-[11px] uppercase tracking-wider hover:bg-muted/50 select-none">
           ▶ 進捗・財務 (任意) — クリックして展開
         </summary>
         <div className="p-4 border-t border-input">{renderGroup("V. 進捗・財務 (任意)")}</div>
       </details>
 
       <details className="group rounded-sm border border-input">
-        <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+        <summary className="cursor-pointer px-4 py-2 text-[11px] uppercase tracking-wider hover:bg-muted/50 select-none">
           ▶ 振込先 (受託者口座, 任意 — 親 PO から自動入力済み) — クリックして展開
         </summary>
         <div className="p-4 border-t border-input">

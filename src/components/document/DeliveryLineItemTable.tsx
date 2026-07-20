@@ -161,7 +161,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
 
   if (orderLines.length === 0) {
     return (
-      <div className="col-span-full p-4 rounded-sm border border-dashed border-input bg-muted/20 text-[11px] font-mono text-muted-foreground text-center">
+      <div className="col-span-full p-4 rounded-sm border border-dashed border-input bg-muted/20 text-[11px] text-muted-foreground text-center">
         親となる発注書の明細が見つかりませんでした。Backlog 上で発注書 (親 issue)
         との親子関係を設定するか、フォーム下部で手動入力してください。
       </div>
@@ -209,7 +209,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
   const statusBadge = (r: typeof rows[number]) =>
     r.isOverflow ? (
       <span
-        className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-sm"
+        className="inline-flex items-center gap-1 text-[11px] font-bold text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-sm"
         title={`発注額/数量を超過 (${
           r.willOverflowAmount ? "amount" : ""
         }${r.willOverflowAmount && r.willOverflowQty ? " & " : ""}${
@@ -219,11 +219,11 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
         <AlertTriangle className="w-2.5 h-2.5" /> 超過
       </span>
     ) : r.isExact ? (
-      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-sm">
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-sm">
         <CheckCircle2 className="w-2.5 h-2.5" /> 完了
       </span>
     ) : r.inspectedThisTime > 0 ? (
-      <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-sm">
+      <span className="inline-flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-1.5 py-0.5 rounded-sm">
         分割中
       </span>
     ) : (
@@ -239,13 +239,13 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
             key={r.line.id}
             className={cn(
               "rounded-md border bg-card p-3 shadow-sm",
-              r.isOverflow ? "border-red-300 bg-red-50/40" : "border-border"
+              r.isOverflow ? "border-destructive/40 bg-destructive/10" : "border-border"
             )}
           >
             <div className="flex items-start justify-between gap-2 mb-2">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground font-mono">
+                  <span className="text-xs text-muted-foreground">
                     #{r.line.line_no}
                   </span>
                   {statusBadge(r)}
@@ -265,7 +265,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 </div>
                 <div className="font-medium">
                   {isLicenseIncluded(r.line) ? (
-                    <span className="text-[10px] text-amber-700">利用許諾料に含む</span>
+                    <span className="text-[10px] text-warning">利用許諾料に含む</span>
                   ) : (
                     yen(r.insp.ordered_amount)
                   )}
@@ -286,7 +286,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 <div
                   className={cn(
                     "font-bold",
-                    r.insp.remaining_amount === 0 && "text-emerald-700"
+                    r.insp.remaining_amount === 0 && "text-success"
                   )}
                 >
                   {yen(r.insp.remaining_amount)}
@@ -358,7 +358,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
           <span className="text-[10px] uppercase tracking-wider font-bold">
             今回検収合計 (税抜)
           </span>
-          <span className="font-mono font-bold text-lg">{yen(grandTotal)}</span>
+          <span className="font-bold text-lg">{yen(grandTotal)}</span>
         </div>
       </div>
 
@@ -422,7 +422,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                   key={line.id}
                   className={cn(
                     "border-b border-border/50 hover:bg-muted/20 transition-colors",
-                    isOverflow && "bg-red-50"
+                    isOverflow && "bg-destructive/10"
                   )}
                 >
                   <td className="p-2 text-muted-foreground">{line.line_no}</td>
@@ -437,7 +437,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                   <td className="p-2 text-right text-[10px]">
                     <div>
                       {isLicenseIncluded(line) ? (
-                        <span className="text-amber-700">利用許諾料に含む</span>
+                        <span className="text-warning">利用許諾料に含む</span>
                       ) : (
                         yen(insp.ordered_amount)
                       )}
@@ -448,7 +448,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                     <div
                       className={cn(
                         "font-bold",
-                        insp.remaining_amount === 0 && "text-emerald-700"
+                        insp.remaining_amount === 0 && "text-success"
                       )}
                     >
                       残 {yen(insp.remaining_amount)}
@@ -502,7 +502,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                   <td className="p-2">
                     {isOverflow ? (
                       <span
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-sm"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-destructive bg-destructive/10 px-1.5 py-0.5 rounded-sm"
                         title={`発注額/数量を超過しています (overflow: ${
                           willOverflowAmount ? "amount" : ""
                         }${willOverflowAmount && willOverflowQty ? " & " : ""}${
@@ -512,11 +512,11 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                         <AlertTriangle className="w-2.5 h-2.5" /> 超過
                       </span>
                     ) : isExact ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-sm">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-success bg-success/10 px-1.5 py-0.5 rounded-sm">
                         <CheckCircle2 className="w-2.5 h-2.5" /> 完了
                       </span>
                     ) : inspectedThisTime > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-sm">
+                      <span className="inline-flex items-center gap-1 text-[11px] text-warning bg-warning/10 px-1.5 py-0.5 rounded-sm">
                         分割中
                       </span>
                     ) : (

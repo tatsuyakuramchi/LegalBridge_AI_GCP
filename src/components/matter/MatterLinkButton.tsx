@@ -65,7 +65,7 @@ export function MatterLinkButton({
         type="button"
         onClick={() => navigate(`/matters/${linkedMatter.id}`)}
         className={
-          "inline-flex items-center gap-1 text-[11px] font-mono transition-colors border px-2 py-1 rounded-md border-sky-600 text-sky-700 bg-sky-500/10 hover:bg-sky-500/20 " +
+          "inline-flex items-center gap-1 text-[11px] font-mono transition-colors border px-2 py-1 rounded-md border-primary text-primary bg-primary hover:bg-primary " +
           (className || "")
         }
         title={`案件 ${linkedMatter.matter_code || `#${linkedMatter.id}`} を開く`}
@@ -145,7 +145,7 @@ export function MatterLinkButton({
             {/* 1) この依頼から新規案件を作成(この依頼を主要課題に) */}
             <div className="space-y-2 rounded-md border border-border p-3">
               <div className="flex items-center gap-1.5 text-[12px] font-mono font-bold">
-                <FolderPlus className="h-3.5 w-3.5 text-emerald-600" />
+                <FolderPlus className="h-3.5 w-3.5 text-success" />
                 新規案件を作成（この依頼を主要課題に）
               </div>
               <div className="space-y-1">
@@ -162,7 +162,7 @@ export function MatterLinkButton({
                     }
                   }}
                 />
-                <p className="text-[10px] font-mono text-muted-foreground/70">
+                <p className="text-[10px] text-muted-foreground/70">
                   依頼「{summary || issueKey}」を主要課題として新しい案件を作成します。
                 </p>
               </div>
@@ -172,7 +172,7 @@ export function MatterLinkButton({
               </Button>
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
               <span className="h-px flex-1 bg-border" />
               または
               <span className="h-px flex-1 bg-border" />
@@ -181,7 +181,7 @@ export function MatterLinkButton({
             {/* 2) 既存案件へ紐づけ */}
             <div className="space-y-2 rounded-md border border-border p-3">
               <div className="flex items-center gap-1.5 text-[12px] font-mono font-bold">
-                <Link2 className="h-3.5 w-3.5 text-sky-600" />
+                <Link2 className="h-3.5 w-3.5 text-primary" />
                 既存案件へ紐づけ
               </div>
               <div className="space-y-1">
@@ -193,7 +193,7 @@ export function MatterLinkButton({
                   }}
                   placeholder="案件を検索して選ぶと即紐づけ"
                 />
-                <p className="text-[10px] font-mono text-muted-foreground/70">
+                <p className="text-[10px] text-muted-foreground/70">
                   選択すると、この依頼を関連課題としてその案件に束ねます。
                 </p>
               </div>

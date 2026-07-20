@@ -42,7 +42,7 @@ export const InspectionOtherFeesSelector: React.FC<Props> = ({
 }) => {
   if (!Array.isArray(poOtherFees) || poOtherFees.length === 0) {
     return (
-      <div className="text-[10px] font-mono italic text-muted-foreground p-3 border border-dashed border-input rounded-sm">
+      <div className="text-[10px] italic text-muted-foreground p-3 border border-dashed border-input rounded-sm">
         親 PO にその他手数料の登録はありません。
       </div>
     );
@@ -81,7 +81,7 @@ export const InspectionOtherFeesSelector: React.FC<Props> = ({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="text-[10px] font-mono text-muted-foreground flex items-center gap-1.5">
+        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5">
           <Coins className="w-3 h-3" />
           親 PO のその他手数料 {poOtherFees.length} 件 / 合計 ¥
           {grandTotal.toLocaleString("ja-JP")} (税抜)
@@ -92,7 +92,7 @@ export const InspectionOtherFeesSelector: React.FC<Props> = ({
           className={cn(
             "text-[10px] font-mono uppercase tracking-wider px-3 py-1.5 rounded-sm border flex items-center gap-1.5 transition-colors",
             isFinalInspection
-              ? "bg-emerald-600 text-white border-emerald-600 shadow ring-1 ring-emerald-200"
+              ? "bg-success text-white border-success shadow ring-1 ring-success"
               : "border-foreground/30 hover:bg-muted"
           )}
           title="ON にすると全手数料を自動で「今回含める」になります"
@@ -133,7 +133,7 @@ export const InspectionOtherFeesSelector: React.FC<Props> = ({
                   className={cn(
                     "border-b border-border/50 transition-colors cursor-pointer",
                     checked
-                      ? "bg-emerald-50/60 hover:bg-emerald-50"
+                      ? "bg-success/10 hover:bg-success/10"
                       : "hover:bg-muted/20"
                   )}
                   onClick={() => toggleRow(f.line_no)}
@@ -164,7 +164,7 @@ export const InspectionOtherFeesSelector: React.FC<Props> = ({
               <td colSpan={3} className="p-2 text-right text-[10px] uppercase tracking-wider">
                 今回精算する手数料合計 ({selectedLineNos.length} / {poOtherFees.length} 件)
               </td>
-              <td className="p-2 text-right text-[13px] text-emerald-700">
+              <td className="p-2 text-right text-[13px] text-success">
                 ¥ {selectedTotal.toLocaleString("ja-JP")}
               </td>
               <td></td>
@@ -173,7 +173,7 @@ export const InspectionOtherFeesSelector: React.FC<Props> = ({
         </table>
       </div>
 
-      <div className="text-[10px] font-mono text-muted-foreground italic">
+      <div className="text-[10px] text-muted-foreground italic">
         ※ その他手数料は税抜表示。チェックを入れた手数料の合計が本検収書の
         税抜支払額に加算されます (消費税は税抜額に対して再計算)。
       </div>

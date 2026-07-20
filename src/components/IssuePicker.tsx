@@ -50,7 +50,7 @@ export const IssuePicker: React.FC<Props> = ({
     <div ref={boxRef} className={cn("relative", className)}>
       {value ? (
         <div className="flex items-center gap-2 h-8 px-2.5 border border-border rounded-md text-[12px]">
-          <span className="font-mono text-sky-700">{value}</span>
+          <span className="font-mono text-primary">{value}</span>
           <button className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => onSelect(null)}>
             <X className="h-3.5 w-3.5" />
           </button>
@@ -81,7 +81,7 @@ export const IssuePicker: React.FC<Props> = ({
                   }}
                   className="flex w-full items-start gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-muted/60"
                 >
-                  <span className="font-mono text-sky-700 shrink-0">{i.issueKey}</span>
+                  <span className="font-mono text-primary shrink-0">{i.issueKey}</span>
                   <span className="text-muted-foreground truncate">{i.summary || ""}</span>
                 </button>
               ))}
