@@ -55,6 +55,7 @@ import {
   getNewLedgerId,
   getNewLedgerCode,
   getNewWorkId,
+  resolveLedgerRef,
   getNewIltNumberForLedger,
   sanitizeForFilename,
   createLedgerWithDefaultMaterial,
@@ -8850,8 +8851,8 @@ ${details}
     try {
       const r = await query(
         `SELECT
-            l.ledger_code                                   AS ledger_code,
-            l.title                                         AS ledger_title,
+            w.work_code                                     AS ledger_code,
+            w.title                                         AS ledger_title,
             ow.work_code                                    AS work_code,
             ow.title                                        AS work_name,
             wm.material_name                                AS material_name,
@@ -8878,8 +8879,7 @@ ${details}
             COALESCE(cc.document_url, cc.drive_url)          AS cap_doc_url,
             dcap.master_document_number                     AS cap_master_doc,
             wm.material_code                                AS material_code
-           FROM ledgers l
-           JOIN works w  ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
+           FROM works w
            JOIN work_materials wm ON wm.work_id = w.id
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
            LEFT JOIN condition_lines cl
@@ -8887,7 +8887,8 @@ ${details}
            LEFT JOIN documents cc ON cc.id = cl.capability_id
            LEFT JOIN documents dcap ON dcap.id = cl.capability_id
            LEFT JOIN works ow ON ow.id = cl.work_id AND COALESCE(ow.kind,'own') = 'own'
-          ORDER BY l.ledger_code, wm.material_no NULLS LAST, cl.id NULLS LAST`
+          WHERE w.kind = 'licensed_in'
+          ORDER BY w.work_code, wm.material_no NULLS LAST, cl.id NULLS LAST`
       );
       res.json(r.rows);
     } catch (error: any) {
@@ -9892,13 +9893,13 @@ ${details}
           if (v3Conds) {
             let ledgerCodeForV3: string | null = null;
             try {
-              const lc = await query(
-                `SELECT l.ledger_code FROM documents cc
-                   JOIN ledgers l ON l.id = cc.ledger_ref_id
-                  WHERE cc.id = $1 LIMIT 1`,
+              // WM-01 Phase B: ledger_ref_id(ledgers.id/works.id 混在) を両対応で解決。
+              const ref = await query(
+                `SELECT ledger_ref_id FROM documents WHERE id = $1 LIMIT 1`,
                 [capId]
               );
-              ledgerCodeForV3 = lc.rows[0]?.ledger_code || null;
+              const refId = ref.rows[0]?.ledger_ref_id ? Number(ref.rows[0].ledger_ref_id) : 0;
+              ledgerCodeForV3 = refId ? (await resolveLedgerRef(refId))?.ledger_code || null : null;
             } catch (e: any) {
               console.warn(`[F1b v3] ledger_code lookup skipped:`, e?.message || e);
             }
@@ -16196,14 +16197,12 @@ ${details}
             ? Number(formData.ledger_ref_id)
             : 0;
           if (lref) {
-            const lr = await query(
-              "SELECT ledger_code FROM ledgers WHERE id = $1",
-              [lref]
-            );
-            if (lr.rows[0]?.ledger_code) {
-              preResolvedWorkId = await getNewWorkId(lr.rows[0].ledger_code);
+            // WM-01 Phase B: ledger_ref_id は ledgers.id / works.id 混在。両対応で解決。
+            const resolved = await resolveLedgerRef(lref);
+            if (resolved?.ledger_code) {
+              preResolvedWorkId = await getNewWorkId(resolved.ledger_code);
               console.log(
-                `🎫 [work-id pre-render] auto-assigned ${preResolvedWorkId} for ${issueKey} (ledger=${lr.rows[0].ledger_code})`
+                `🎫 [work-id pre-render] auto-assigned ${preResolvedWorkId} for ${issueKey} (ledger=${resolved.ledger_code})`
               );
             }
           }
@@ -17310,11 +17309,9 @@ ${details}
                 let pubLedgerCode: string | null = formData.ledger_code || null;
                 if (!pubLedgerCode && formData.ledger_ref_id) {
                   try {
-                    const lr = await query(
-                      `SELECT ledger_code FROM ledgers WHERE id = $1`,
-                      [Number(formData.ledger_ref_id)]
-                    );
-                    pubLedgerCode = lr.rows[0]?.ledger_code || null;
+                    // WM-01 Phase B: ledger_ref_id(ledgers.id/works.id 混在) 両対応解決。
+                    const resolved = await resolveLedgerRef(Number(formData.ledger_ref_id));
+                    pubLedgerCode = resolved?.ledger_code || null;
                   } catch {
                     /* noop */
                   }
@@ -18323,15 +18320,13 @@ ${details}
         // 原作 / 素材 マスター情報を引いて PDF テンプレフィールドに反映
         let ledgerCodeForWork = "";
         if (resolvedLedgerRefId) {
-          const lr = await query(
-            "SELECT ledger_code, title FROM ledgers WHERE id = $1",
-            [resolvedLedgerRefId]
-          );
-          if (lr.rows[0]) {
-            ledgerCodeForWork = lr.rows[0].ledger_code;
-            // 原著作物名 を ledger.title で同期 (ユーザー入力なしの場合)
-            if (!formData.原著作物名 || !String(formData.原著作物名).trim()) {
-              formData.原著作物名 = lr.rows[0].title;
+          // WM-01 Phase B: ledger_ref_id(ledgers.id/works.id 混在) を両対応で解決。
+          const resolved = await resolveLedgerRef(Number(resolvedLedgerRefId));
+          if (resolved) {
+            ledgerCodeForWork = resolved.ledger_code;
+            // 原著作物名 を 原作 title で同期 (ユーザー入力なしの場合)
+            if ((!formData.原著作物名 || !String(formData.原著作物名).trim()) && resolved.title) {
+              formData.原著作物名 = resolved.title;
             }
           }
         }
