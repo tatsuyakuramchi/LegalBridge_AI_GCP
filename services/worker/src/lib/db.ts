@@ -207,21 +207,18 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
  *
  * 形式: LO-{YYYY}-{NNNN} (例: LO-2026-0001)
  *
- * 採番ロジック: **ledgers ∪ works の当年 LO 最大 +1** から導出する。
- *   旧実装は document_sequences(kind="LO") の独立カウンタだったが、api 側
- *   (POST /api/v3/source-ips) は ledgers∪works の max+1 で LO を振るため、
- *   両系統が同一 LO 番号を二重採番しうる問題があった(移行0075も max+1)。
- *   両者を同一の実コード由来ロジックに揃え、系統間衝突を構造的に解消する。
- *   (残: 同時 INSERT の競合は ledger_code/work_code の UNIQUE 制約で検出。)
+ * 採番ロジック: **works(原作正本) の当年 LO 最大 +1** から導出する。
+ *   WM-01 で原作正本は works に一本化(work_code=ledger_code)されたため、
+ *   works 単独で当年 LO の最大を取れる(旧 ledgers ∪ works の UNION は撤去)。
+ *   (残: 同時 INSERT の競合は work_code の UNIQUE 制約で検出。)
  */
 export async function getNewLedgerCode(year?: number): Promise<string> {
   const y = year || new Date().getFullYear();
   const res = await query(
     `SELECT COALESCE(MAX(
-              CASE WHEN code ~ ('^LO-' || $1 || '-[0-9]+$')
-                   THEN split_part(code, '-', 3)::int ELSE 0 END), 0) + 1 AS n
-       FROM (SELECT ledger_code AS code FROM ledgers
-             UNION ALL SELECT work_code AS code FROM works) c`,
+              CASE WHEN work_code ~ ('^LO-' || $1 || '-[0-9]+$')
+                   THEN split_part(work_code, '-', 3)::int ELSE 0 END), 0) + 1 AS n
+       FROM works`,
     [String(y)]
   );
   const n: number = res.rows[0]?.n ?? 1;
@@ -459,33 +456,8 @@ export async function createLedgerWithDefaultMaterial(payload: {
     Array.isArray(payload.division) && payload.division.length > 0
       ? payload.division
       : ["BDG"];
-  const ledgerRes = await query(
-    `INSERT INTO ledgers (
-       ledger_code, title, title_kana, alternative_titles,
-       creator_name, publisher_name, remarks,
-       default_rights_holder, default_credit_display, default_work_supplement,
-       default_approval_target, default_approval_timing, division
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-     RETURNING id, ledger_code`,
-    [
-      ledgerCode,
-      payload.title,
-      payload.title_kana || null,
-      payload.alternative_titles || [],
-      payload.creator_name || null,
-      payload.publisher_name || null,
-      payload.remarks || null,
-      payload.default_rights_holder || null,
-      payload.default_credit_display || null,
-      payload.default_work_supplement || null,
-      payload.default_approval_target || null,
-      payload.default_approval_timing || null,
-      division,
-    ]
-  );
-  const ledgerId = Number(ledgerRes.rows[0].id);
 
-  // マテリアル一本化(0089/0090): 原作の正本 works(licensed_in) を作成/更新し、
+  // WM-01 Phase E: 原作の正本 works(licensed_in) を作成/更新し、
   //   原作本体素材(-001)は正準表 work_materials に立てる(materials 表は廃止)。
   //   work_code = ledger_code で ledgers と紐付く。works/素材作成は必須経路(best-effort では無い)。
   const wk = await query(
@@ -538,7 +510,7 @@ export async function createLedgerWithDefaultMaterial(payload: {
   );
 
   return {
-    id: ledgerId,
+    id: workId,
     ledger_code: ledgerCode,
     default_material_id: Number(matRes.rows[0].id),
     default_material_code: matRes.rows[0].material_code,

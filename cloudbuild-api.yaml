@@ -58,8 +58,8 @@ steps:
       - scripts/audit/legacy_master_refs.sh
       - --gate
       - "0"
-      - "7"
-      - "16"
+      - "0"
+      - "2"
 
   - id: build
     name: gcr.io/cloud-builders/docker

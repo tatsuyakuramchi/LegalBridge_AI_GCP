@@ -292,45 +292,29 @@ export function registerEntityMergeRoutes(
 
       // 原作: ledgers(LO) の付け替え + loser 台帳の削除。
       if (cfg.ledger) {
+        // WM-01 Phase E: ledger_ref_id は works(id) を指す(0101 FK)。旧 ledgers.id 経由の
+        //   解決は撤去し、works id(loser→survivor) で直接付け替える。
         await client.query("SAVEPOINT lg");
         try {
-          const loseCode = await (async () => {
-            const r = await client.query(`SELECT work_code FROM works WHERE id = $1`, [loserId]);
-            return r.rows[0]?.work_code ?? null;
-          })();
-          const survCode = await (async () => {
-            const r = await client.query(`SELECT work_code FROM works WHERE id = $1`, [survivorId]);
-            return r.rows[0]?.work_code ?? null;
-          })();
-          if (loseCode && survCode) {
-            const lg = await client.query(`SELECT id FROM ledgers WHERE ledger_code = $1`, [loseCode]);
-            const sv = await client.query(`SELECT id FROM ledgers WHERE ledger_code = $1`, [survCode]);
-            const loseLid = lg.rows[0]?.id;
-            const survLid = sv.rows[0]?.id;
-            if (loseLid && survLid) {
-              const refs = await discoverRefTables(query, ["ledger_ref_id"]);
-              for (const r of refs) {
-                await client.query("SAVEPOINT lr");
-                try {
-                  const u = await client.query(
-                    `UPDATE ${qi(r.table)} SET ${qi(r.column)} = $1 WHERE ${qi(r.column)} = $2`,
-                    [survLid, loseLid]
-                  );
-                  moved.push({ table: r.table, column: r.column, updated: u.rowCount || 0 });
-                  await client.query("RELEASE SAVEPOINT lr");
-                } catch (e: any) {
-                  await client.query("ROLLBACK TO SAVEPOINT lr");
-                  conflicts.push({ table: r.table, column: r.column, error: String(e?.message || e) });
-                }
-              }
-              await client.query(`DELETE FROM ledgers WHERE id = $1`, [loseLid]);
-              moved.push({ table: "ledgers", column: "(loser削除)", updated: 1 });
+          const refs = await discoverRefTables(query, ["ledger_ref_id"]);
+          for (const r of refs) {
+            await client.query("SAVEPOINT lr");
+            try {
+              const u = await client.query(
+                `UPDATE ${qi(r.table)} SET ${qi(r.column)} = $1 WHERE ${qi(r.column)} = $2`,
+                [survivorId, loserId]
+              );
+              moved.push({ table: r.table, column: r.column, updated: u.rowCount || 0 });
+              await client.query("RELEASE SAVEPOINT lr");
+            } catch (e: any) {
+              await client.query("ROLLBACK TO SAVEPOINT lr");
+              conflicts.push({ table: r.table, column: r.column, error: String(e?.message || e) });
             }
           }
           await client.query("RELEASE SAVEPOINT lg");
         } catch (e: any) {
           await client.query("ROLLBACK TO SAVEPOINT lg");
-          conflicts.push({ table: "ledgers", column: "(merge)", error: String(e?.message || e) });
+          conflicts.push({ table: "ledger_ref_id", column: "(merge)", error: String(e?.message || e) });
         }
       }
 

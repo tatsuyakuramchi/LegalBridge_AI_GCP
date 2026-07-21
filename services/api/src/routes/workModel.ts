@@ -755,11 +755,11 @@ export function registerWorkModelRoutes(
       const r = await query(
         `WITH yr AS (SELECT $1::text AS y),
          maxno AS (
+           -- WM-01 Phase E: 原作正本は works に一本化。当年 LO 最大は works 単独で取る。
            SELECT COALESCE(MAX(
-                    CASE WHEN code ~ ('^LO-' || (SELECT y FROM yr) || '-[0-9]+$')
-                         THEN split_part(code, '-', 3)::int ELSE 0 END), 0) AS n
-             FROM (SELECT ledger_code AS code FROM ledgers
-                   UNION ALL SELECT work_code AS code FROM works) c
+                    CASE WHEN work_code ~ ('^LO-' || (SELECT y FROM yr) || '-[0-9]+$')
+                         THEN split_part(work_code, '-', 3)::int ELSE 0 END), 0) AS n
+             FROM works
          ),
          newcode AS (
            SELECT COALESCE($16,
@@ -773,13 +773,6 @@ export function registerWorkModelRoutes(
            SELECT (SELECT c FROM newcode), $2, $3, COALESCE($4::text[],'{}'), COALESCE($5::text[],'{}'),
                   FALSE, 'licensed_in', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
            RETURNING *, work_code AS source_code
-         ),
-         ins_ledger AS (
-           -- ledgers 親は残置(原作一覧 /api/master/ledgers の親)。素材は work_materials に一本化。
-           INSERT INTO ledgers (ledger_code, title, is_active)
-           SELECT (SELECT c FROM newcode), $2, true
-           ON CONFLICT (ledger_code) DO NOTHING
-           RETURNING id
          ),
          genre AS (
            -- O5: 本体ジャンルを事業部で確定(PUB→執筆文書 / それ以外→ゲームデザイン)。
@@ -3290,9 +3283,7 @@ export function registerWorkModelRoutes(
         const delWork = await client.query(
           `DELETE FROM works WHERE id = $1 AND kind = 'licensed_in' RETURNING id`, [id]
         );
-        if (refs.work_code) {
-          await client.query(`DELETE FROM ledgers WHERE ledger_code = $1`, [refs.work_code]);
-        }
+        // WM-01 Phase E: 原作正本は works に一本化。旧 ledgers ミラー行の削除は不要。
         await client.query("COMMIT");
         res.json({
           ok: true, deleted: delWork.rowCount || 0,

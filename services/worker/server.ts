@@ -883,10 +883,11 @@ async function startServer() {
     try {
       const report: any = { generated_at: new Date().toISOString() };
 
-      // A) Ledgers / materials の移行対象
+      // A) 原作(licensed_in) / materials の移行対象
+      //    WM-01 Phase E: 原作正本は works に一本化。旧 ledgers 由来の集計は works へ。
       report.ledgers = {
-        total: await scalar(`SELECT COUNT(*)::int n FROM ledgers`),
-        active: await scalar(`SELECT COUNT(*)::int n FROM ledgers WHERE COALESCE(is_active,true)=true`),
+        total: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='licensed_in'`),
+        active: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='licensed_in' AND COALESCE(is_active,true)=true`),
         materials: await scalar(`SELECT COUNT(*)::int n FROM work_materials`),
         materials_default: await scalar(`SELECT COUNT(*)::int n FROM work_materials WHERE is_default=true`),
       };
@@ -896,21 +897,6 @@ async function startServer() {
         licensed_in_total: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='licensed_in'`),
         ip_coded: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='licensed_in' AND work_code LIKE 'IP-%'`),
         own_total: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='own'`),
-      };
-      // ledgers.title ↔ works(licensed_in).title の正規化一致(=名寄せ要レビュー)
-      report.name_collisions = {
-        count: await scalar(
-          `SELECT COUNT(*)::int n FROM ledgers l
-             JOIN works w ON w.kind='licensed_in'
-              AND lower(btrim(w.title)) = lower(btrim(l.title))`
-        ),
-        sample: await rowsOf(
-          `SELECT l.ledger_code, w.work_code, l.title
-             FROM ledgers l
-             JOIN works w ON w.kind='licensed_in'
-              AND lower(btrim(w.title)) = lower(btrim(l.title))
-            ORDER BY l.ledger_code LIMIT 20`
-        ),
       };
 
       // C) IP→LO 再採番の影響(被参照件数=ブラスト半径)
@@ -8406,8 +8392,10 @@ ${details}
     const { id } = req.params;
     const body = req.body || {};
     try {
+      // WM-01 Phase E: 原作正本は works に一本化。:id は works.id(Phase C 一覧由来)。
+      //   旧 ledgers UPDATE + works ミラーJOIN を廃し、works を直接更新する。
       await query(
-        `UPDATE ledgers SET
+        `UPDATE works SET
            title                    = $1,
            title_kana               = $2,
            alternative_titles       = $3,
@@ -8422,7 +8410,7 @@ ${details}
            default_approval_timing  = $12,
            division                 = COALESCE($13, division),
            updated_at               = CURRENT_TIMESTAMP
-         WHERE id = $14`,
+         WHERE id = $14 AND kind = 'licensed_in'`,
         [
           body.title,
           body.title_kana || null,
@@ -8441,24 +8429,6 @@ ${details}
           id,
         ]
       );
-      // 統合Phase3b: works(source) ミラーへ同期(同コードの licensed_in)。
-      try {
-        await query(
-          `UPDATE works w SET
-              title=$1, title_kana=$2, default_rights_holder=$3,
-              default_credit_display=$4, default_work_supplement=$5,
-              default_approval_target=$6, default_approval_timing=$7, updated_at=now()
-             FROM ledgers l
-            WHERE l.id=$8 AND w.kind='licensed_in' AND w.work_code=l.ledger_code`,
-          [
-            body.title, body.title_kana || null, body.default_rights_holder || null,
-            body.default_credit_display || null, body.default_work_supplement || null,
-            body.default_approval_target || null, body.default_approval_timing || null, id,
-          ]
-        );
-      } catch (e: any) {
-        console.warn(`[ledger] works mirror sync (update) failed:`, e?.message || e);
-      }
       res.json({ ok: true });
     } catch (error) {
       console.error("PUT /api/master/ledgers/:id failed:", error);
@@ -8485,7 +8455,11 @@ ${details}
           error: `この原作には ${refs.rows[0].c} 件の契約が紐付いているため削除できません`,
         });
       }
-      await query("DELETE FROM ledgers WHERE id = $1", [id]);
+      // WM-01 Phase E: 原作正本は works に一本化。:id は works.id。旧実装は ledgers 行のみ
+      //   削除していたため works ベース一覧から消えなかった。works とその子(素材/カテゴリ)を削除する。
+      await query("DELETE FROM work_materials WHERE work_id = $1", [id]);
+      await query("DELETE FROM material_categories WHERE work_id = $1", [id]);
+      await query("DELETE FROM works WHERE id = $1 AND kind = 'licensed_in'", [id]);
       res.json({ ok: true });
     } catch (error) {
       console.error("DELETE /api/master/ledgers/:id failed:", error);
@@ -8574,15 +8548,19 @@ ${details}
             rhWarning = `取引先コード「${rhCode}」に一致する取引先が見つかりません`;
           }
         }
-        // 1) 原作(ledger)を解決 or 作成。原作コード優先(既存指定)、無ければ title 一致。
+        // 1) 原作を解決 or 作成。原作コード優先(既存指定)、無ければ title 一致。
+        //    WM-01 Phase E: 原作正本は works(licensed_in)。work_code AS ledger_code。
         const codeGiven = s(r.ledger_code);
         let found: any = { rows: [] };
         if (codeGiven) {
-          found = await query(`SELECT id, ledger_code, title FROM ledgers WHERE ledger_code = $1`, [codeGiven]);
+          found = await query(
+            `SELECT id, work_code AS ledger_code, title FROM works WHERE work_code = $1 AND kind = 'licensed_in'`,
+            [codeGiven]
+          );
         }
         if (found.rows.length === 0 && ledgerTitle) {
           found = await query(
-            `SELECT id, ledger_code, title FROM ledgers WHERE title = $1 ORDER BY id LIMIT 1`,
+            `SELECT id, work_code AS ledger_code, title FROM works WHERE title = $1 AND kind = 'licensed_in' ORDER BY id LIMIT 1`,
             [ledgerTitle]
           );
         }
@@ -8593,22 +8571,14 @@ ${details}
           ledgerId = Number(found.rows[0].id);
           ledgerCode = found.rows[0].ledger_code;
           ledgerAction = "updated";
-          // タイトルが空の行(コードのみ指定)は既存タイトルを保持する。
-          const effectiveTitle = ledgerTitle || String(found.rows[0].title || ledgerCode);
+          // タイトルが空の行(コードのみ指定)は既存タイトルを保持する。works を直接更新。
           await query(
-            `UPDATE ledgers SET
+            `UPDATE works SET
                title = COALESCE(NULLIF($2,''), title),
                default_rights_holder = COALESCE(NULLIF($3,''), default_rights_holder),
                updated_at = now()
-             WHERE id = $1`,
+             WHERE id = $1 AND kind = 'licensed_in'`,
             [ledgerId, ledgerTitle, rhLabel]
-          );
-          // works(licensed_in) を保証(旧データで欠けている場合に備え get-or-create)。空タイトルにしない。
-          await query(
-            `INSERT INTO works (work_code, title, kind, is_original, is_active)
-             VALUES ($1, $2, 'licensed_in', FALSE, TRUE)
-             ON CONFLICT (work_code) DO UPDATE SET title = COALESCE(NULLIF(EXCLUDED.title,''), works.title), updated_at = now()`,
-            [ledgerCode, effectiveTitle]
           );
         } else {
           // 新規作成にはタイトルが必要(コードが見つからず、作成用タイトルも無ければエラー)。
