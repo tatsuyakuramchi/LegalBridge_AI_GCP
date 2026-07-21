@@ -8296,22 +8296,27 @@ ${details}
    */
   app.get("/api/master/ledgers", async (_req, res) => {
     try {
+      // WM-01 Phase C(H-3b parity): 原作台帳 list を正本 works(licensed_in) 由来へ。
+      //   work_code AS ledger_code / id = works.id。BFF 既定(API_READS_TO_WORKER=1)では
+      //   GET /api/master/ledgers は本 worker ハンドラが応答するため、search-api(Phase A)
+      //   と同一 shape へ揃える(旧 ledgers 由来だと Phase A が実アプリに効かない)。
       const ledgers = await query(
-        `SELECT id, ledger_code, title, title_kana, alternative_titles,
+        `SELECT id, work_code AS ledger_code, title, title_kana, alternative_titles,
                 creator_name, publisher_name, remarks, is_active,
                 default_rights_holder, default_credit_display, default_work_supplement,
                 default_approval_target, default_approval_timing, division,
                 created_at, updated_at
-           FROM ledgers
-          ORDER BY ledger_code DESC`
+           FROM works
+          WHERE kind = 'licensed_in'
+          ORDER BY work_code DESC`
       );
       const ids = ledgers.rows.map((l: any) => Number(l.id));
       const matsMap = new Map<number, any[]>();
       if (ids.length > 0) {
         // マテリアル一本化(0089/0090): 子素材は正準表 work_materials から取得。
-        //   台帳(ledgers.id) ← works(licensed_in, work_code=ledger_code) ← work_materials。
+        //   ledger_id = works.id(WM-01 Phase C で ledgers 依存を除去)。
         const mats = await query(
-          `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
+          `SELECT wm.id, w.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
                   wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
                   wm.territory, wm.language,
                   wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
@@ -8327,10 +8332,9 @@ ${details}
                   wm.created_at, wm.updated_at
              FROM work_materials wm
              JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
-             JOIN ledgers l ON l.ledger_code = w.work_code
              LEFT JOIN material_categories mc ON mc.id = wm.category_id
-            WHERE l.id = ANY($1::int[])
-            ORDER BY l.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
+            WHERE w.id = ANY($1::int[])
+            ORDER BY w.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
           [ids]
         );
         mats.rows.forEach((m: any) => {
