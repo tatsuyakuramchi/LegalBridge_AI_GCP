@@ -360,6 +360,57 @@ export async function resolveLicensedInWork(
   return null;
 }
 
+/**
+ * WM-01 Phase B: documents.ledger_ref_id 等の「保存済み FK」から原作を解決する。
+ *   ledger_ref_id の id 空間は歴史的に混在している:
+ *     - 旧データ: ledgers.id（レガシー・正準の FK）
+ *     - 新規/フォールバック: works.id（documentSave の `?? origWorkId`、
+ *                            および原作一覧 API を works 由来へ切替えた後の選択 id）
+ *   スタブ ledgers 行は ledger_code で紐付くだけで id は works.id と別番のため、
+ *   works.id の ledger_ref_id は `WHERE ledgers.id=$1` では空振りしていた（silent degrade）。
+ *
+ *   ここでは「ledgers.id 優先 → works.id フォールバック」で解決する。この順序は:
+ *     - 旧 ledgers.id を従来どおり正しい ledger_code に解決する（挙動不変）。
+ *     - works.id（ledgers 行を持たない新規）を初めて正しく解決する（バグ修正）。
+ *   なお素材 write 系（新一覧 id = works.id 由来）は works 優先の
+ *   resolveLicensedInWork を使うこと（id の出所で優先順を使い分ける）。
+ */
+export async function resolveLedgerRef(
+  id: number
+): Promise<{ work_id: number | null; ledger_code: string; title: string | null } | null> {
+  // 1) レガシー正準: ledgers.id → ledger_code（works があれば work_id/title も同時解決）
+  const l = await query(
+    `SELECT l.ledger_code AS ledger_code,
+            COALESCE(w.title, l.title) AS title,
+            w.id AS work_id
+       FROM ledgers l
+       LEFT JOIN works w ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
+      WHERE l.id = $1`,
+    [id]
+  );
+  if (l.rows[0]) {
+    return {
+      work_id: l.rows[0].work_id != null ? Number(l.rows[0].work_id) : null,
+      ledger_code: l.rows[0].ledger_code,
+      title: l.rows[0].title ?? null,
+    };
+  }
+  // 2) 新規/フォールバック: works.id（ledgers 行が無いケースのみここへ到達）
+  const w = await query(
+    `SELECT id AS work_id, work_code AS ledger_code, title
+       FROM works WHERE id = $1 AND kind = 'licensed_in'`,
+    [id]
+  );
+  if (w.rows[0]) {
+    return {
+      work_id: Number(w.rows[0].work_id),
+      ledger_code: w.rows[0].ledger_code,
+      title: w.rows[0].title ?? null,
+    };
+  }
+  return null;
+}
+
 export async function getNextMaterialNo(ledgerId: number): Promise<number> {
   // マテリアル一本化(0089/0090): 正準表 work_materials の枝番を採番。
   //   WM-01 Phase A′: ledgers.id ∪ works.id の両対応で works を解決してから枝番採番。
