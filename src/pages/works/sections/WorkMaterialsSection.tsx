@@ -8,8 +8,42 @@ import * as React from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/EmptyState"
+import { DataTableShell, type DataTableColumn } from "@/src/components/form"
 import { useWorkDetail } from "@/src/pages/works/WorkDetailContext"
 import { yen, matDisplay } from "./shared"
+
+// own(自社作品)の素材一覧の列定義（DataTableShell）。原作ビューは条件明細を
+//   展開するため従来のカスタム描画を維持し、こちらは own の読み取り一覧のみ。
+const ownMaterialColumns: DataTableColumn<any>[] = [
+  {
+    key: "code",
+    header: "コード",
+    className: "font-mono text-[10px] text-muted-foreground whitespace-nowrap",
+    render: (m) => m.material_code || "—",
+  },
+  {
+    key: "name",
+    header: "素材名",
+    render: (m) => (
+      <span>
+        <span className="font-semibold">{m.material_name}</span>
+        {m.is_default && (
+          <Badge variant="outline" className="ml-1 border-success/40 text-success">本体</Badge>
+        )}
+      </span>
+    ),
+  },
+  {
+    key: "rights_holder",
+    header: "権利者",
+    render: (m) =>
+      m.rights_holder ? (
+        <span className="text-[10px] text-warning">{m.rights_holder}</span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+  },
+]
 
 export const WorkMaterialsSection: React.FC = () => {
   const {
@@ -266,31 +300,33 @@ export const WorkMaterialsSection: React.FC = () => {
               <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                 素材{isSource && "（クリックで条件明細を確認）"}
               </div>
-              {materials.map((m) => (
+              {!isSource ? (
+                /* own(自社作品)の素材一覧は共通 DataTableShell へ。 */
+                <DataTableShell
+                  columns={ownMaterialColumns}
+                  rows={materials}
+                  rowKey={(m) => m.id}
+                  emptyTitle="素材はありません"
+                  dense
+                />
+              ) : (
+                materials.map((m) => (
                 <div key={m.id} id={`srcmat-${m.id}`} className="text-[11px] font-mono border border-border/60 rounded overflow-hidden scroll-mt-20">
-                  {isSource ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleMatCond(m.id)}
-                      className="w-full text-left px-2 py-1 hover:bg-muted/40 flex items-center justify-between gap-2"
-                    >
-                      <span className="truncate">
-                        <span className="font-semibold">{m.material_code || "—"}</span>{work?.title ? ` ${work.title}　` : " "}{m.material_name}
-                        {m.is_default && <Badge variant="outline" className="ml-1 border-success/40 text-success">本体</Badge>}
-                        {m.rights_holder && <span className="text-[10px] text-warning"> · 権利者: {m.rights_holder}</span>}
-                      </span>
-                      <span className="text-[10px] text-primary shrink-0">
-                        {matCondOpen === m.id ? "▲ 閉じる" : "利用許諾条件 ▾"}
-                      </span>
-                    </button>
-                  ) : (
-                    <div className="px-2 py-1">
-                      <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
+                  <button
+                    type="button"
+                    onClick={() => toggleMatCond(m.id)}
+                    className="w-full text-left px-2 py-1 hover:bg-muted/40 flex items-center justify-between gap-2"
+                  >
+                    <span className="truncate">
+                      <span className="font-semibold">{m.material_code || "—"}</span>{work?.title ? ` ${work.title}　` : " "}{m.material_name}
                       {m.is_default && <Badge variant="outline" className="ml-1 border-success/40 text-success">本体</Badge>}
                       {m.rights_holder && <span className="text-[10px] text-warning"> · 権利者: {m.rights_holder}</span>}
-                    </div>
-                  )}
-                  {isSource && matCondOpen === m.id && (
+                    </span>
+                    <span className="text-[10px] text-primary shrink-0">
+                      {matCondOpen === m.id ? "▲ 閉じる" : "利用許諾条件 ▾"}
+                    </span>
+                  </button>
+                  {matCondOpen === m.id && (
                     <div className="border-t border-border/60 p-2 space-y-2 bg-muted/20">
                       <div className="space-y-1">
                         <p className="text-[10px] text-muted-foreground">
@@ -356,7 +392,8 @@ export const WorkMaterialsSection: React.FC = () => {
                     </div>
                   )}
                 </div>
-              ))}
+                ))
+              )}
             </div>
           )}
           {/* 素材を追加(work_material)。{work_code}-NNN を自動採番。 */}
