@@ -62,6 +62,20 @@ steps:
       - --gate-reads
       - "0"
 
+  # WM-01 Phase D: 旧原作マスタ(ledgers / source_ips)参照のラチェット。
+  #   source_ips への SQL アクセスは 0 を維持。ledgers への write/read は現状値を
+  #   上限に据え置き「増やさない」。works(licensed_in) へ付け替えて減らしたら上限も下げ、
+  #   Phase E(要人間承認)で全て 0 → DROP する。引数: source_ips write read。
+  - id: gate-legacy-master
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - scripts/audit/legacy_master_refs.sh
+      - --gate
+      - "0"
+      - "7"
+      - "16"
+
   # ──────────────────────────────────────────────────────────────────────
   # ① DB マイグレーション（worker デプロイの前提。失敗したら以降のステップは走らない）
   #    migrations/ を Cloud Run Job としてビルド→deploy→execute する。
