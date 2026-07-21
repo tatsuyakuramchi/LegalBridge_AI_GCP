@@ -1794,6 +1794,60 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // ⑥製品編集: 製品(SKU)の基本情報を更新(名称/形態/希望小売価格)。
+  //   v3 write=search-api 所有(apiRoutingRules: READ_PATHS_ON_POST の /api/v3/)。
+  app.put("/api/v3/works/:id/products/:productId", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const productId = Number(req.params.productId);
+      if (!Number.isFinite(id) || !Number.isFinite(productId))
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      if (b.product_name != null && !String(b.product_name).trim())
+        return res.status(400).json({ ok: false, error: "product_name is required" });
+      const r = await query(
+        `UPDATE products
+            SET product_name = COALESCE($3, product_name),
+                format       = $4,
+                msrp         = $5
+          WHERE id = $1 AND work_id = $2
+         RETURNING *`,
+        [productId, id, b.product_name ?? null, b.format ?? null, b.msrp ?? null]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "product not found" });
+      res.json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // ⑥製品削除: 既定 safe。受取エッジ(condition_lines.product_id)に紐付く場合は
+  //   409→?force=true で紐付けを外して削除。v3 write=search-api 所有。
+  app.delete("/api/v3/works/:id/products/:productId", ...requireWrite, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const productId = Number(req.params.productId);
+      if (!Number.isFinite(id) || !Number.isFinite(productId))
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      const force = String(req.query.force ?? "") === "true";
+      const refs = await query(
+        `SELECT COUNT(*)::int AS n FROM condition_lines WHERE product_id = $1`,
+        [productId]
+      );
+      const linked = Number(refs.rows[0]?.n ?? 0);
+      if (linked > 0 && !force) {
+        return res.status(409).json({ ok: false, error: "product has linked edges", links: linked });
+      }
+      if (linked > 0 && force) {
+        await query(`UPDATE condition_lines SET product_id = NULL WHERE product_id = $1`, [productId]);
+      }
+      const r = await query(
+        `DELETE FROM products WHERE id = $1 AND work_id = $2 RETURNING id`,
+        [productId, id]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "product not found" });
+      res.json({ ok: true, deleted: productId, unlinked: linked });
+    } catch (e) { fail(res, e); }
+  });
+
   // 増分⑦: 受取先(取引先) picker 用の簡易一覧(名称/コード部分一致)。
   app.get("/api/v3/vendors", ...requireRead, async (req, res) => {
     try {

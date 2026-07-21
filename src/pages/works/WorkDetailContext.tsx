@@ -113,6 +113,16 @@ export interface WorkDetailModel {
   setProdMsrp: React.Dispatch<React.SetStateAction<string>>
   addingProduct: boolean
   addProduct: () => Promise<void>
+  // ⑥製品 編集/削除
+  editingProductId: number | null
+  productForm: Record<string, string>
+  setProductForm: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  productSaving: boolean
+  productErr: string | null
+  startEditProduct: (p: any) => void
+  cancelEditProduct: () => void
+  saveProduct: () => Promise<void>
+  deleteProduct: (p: any) => Promise<void>
 
   // エッジのノード参照リンク
   linkEdge: (edgeId: number, patch: any) => Promise<void>
@@ -207,6 +217,11 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
   const [prodFormat, setProdFormat] = React.useState("")
   const [prodMsrp, setProdMsrp] = React.useState("")
   const [addingProduct, setAddingProduct] = React.useState(false)
+  // ⑥製品 インライン編集/削除
+  const [editingProductId, setEditingProductId] = React.useState<number | null>(null)
+  const [productForm, setProductForm] = React.useState<Record<string, string>>({})
+  const [productSaving, setProductSaving] = React.useState(false)
+  const [productErr, setProductErr] = React.useState<string | null>(null)
   // 個別条件書からの参照リンク
   const [edgeDoc, setEdgeDoc] = React.useState("")
   const [edgeLines, setEdgeLines] = React.useState<any[]>([])
@@ -295,6 +310,83 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
       console.error("addProduct failed", e)
     } finally {
       setAddingProduct(false)
+    }
+  }
+
+  // ⑥製品 編集: 名称/形態/希望小売価格を更新(PUT /api/v3/works/:id/products/:productId)。
+  const startEditProduct = (p: any) => {
+    setEditingProductId(p.id)
+    setProductErr(null)
+    setProductForm({
+      product_name: p.product_name ?? "",
+      format: p.format ?? "",
+      msrp: p.msrp != null ? String(p.msrp) : "",
+    })
+  }
+  const cancelEditProduct = () => {
+    setEditingProductId(null)
+    setProductErr(null)
+  }
+  const saveProduct = async () => {
+    if (editingProductId == null || !workId) return
+    if (!productForm.product_name?.trim()) {
+      setProductErr("製品名は必須です")
+      return
+    }
+    setProductSaving(true)
+    setProductErr(null)
+    try {
+      const r = await fetch(
+        `/api/v3/works/${encodeURIComponent(workId)}/products/${editingProductId}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            product_name: productForm.product_name.trim(),
+            format: productForm.format || null,
+            msrp: productForm.msrp.trim() ? Number(productForm.msrp) : null,
+          }),
+        }
+      )
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setEditingProductId(null)
+      await loadGraph(workId)
+    } catch (e: any) {
+      setProductErr(`保存に失敗しました（${e?.message || "unknown"}）`)
+    } finally {
+      setProductSaving(false)
+    }
+  }
+  // ⑥製品 削除: 既定 safe。受取エッジ紐付けがあれば 409→確認のうえ force で紐付けを外して削除。
+  const deleteProduct = async (p: any) => {
+    if (!workId) return
+    const label = p.product_name || p.product_code || `#${p.id}`
+    if (!window.confirm(`製品「${label}」を削除しますか？`)) return
+    try {
+      let r = await fetch(
+        `/api/v3/works/${encodeURIComponent(workId)}/products/${p.id}`,
+        { method: "DELETE" }
+      )
+      if (r.status === 409) {
+        const info = await r.json().catch(() => ({} as any))
+        if (
+          !window.confirm(
+            `この製品は受取エッジ ${info.links ?? 0} 件に紐付いています。\n紐付けを外して削除しますか？`
+          )
+        )
+          return
+        r = await fetch(
+          `/api/v3/works/${encodeURIComponent(workId)}/products/${p.id}?force=true`,
+          { method: "DELETE" }
+        )
+      }
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as any))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await loadGraph(workId)
+    } catch (e: any) {
+      window.alert(`削除に失敗: ${String(e?.message || e)}`)
     }
   }
 
@@ -761,6 +853,7 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
     sourceWorks, uses, newOwnTitle, setNewOwnTitle, creatingOwn, createOwnFromSource,
     showNewSource, setShowNewSource, newSourceTitle, setNewSourceTitle, creatingSource, createSource, createLicenseDocForSource,
     vendors, prodName, setProdName, prodFormat, setProdFormat, prodMsrp, setProdMsrp, addingProduct, addProduct,
+    editingProductId, productForm, setProductForm, productSaving, productErr, startEditProduct, cancelEditProduct, saveProduct, deleteProduct,
     linkEdge,
     edgeDoc, setEdgeDoc, edgeLines, edgeSearching, edgeSearched, searchEdges, attachEdge, newDocTemplate, setNewDocTemplate, issueNewConditionDoc,
     pickerSource, setPickerSource, pickerLines, pickerLoading, pickerMaterials, pickerLineMat, setPickerLineMat, loadPicker, addComponentLine, removeComponentLine, pickerGroups, pickerSrcTitle,
