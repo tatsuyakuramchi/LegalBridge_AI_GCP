@@ -3460,36 +3460,43 @@ async function startServer() {
       //   も含める。worker 未デプロイ環境で 42703 ならフォールバックを 2 段階で実行。
       let ledgers: any;
       try {
+        // WM-01 Phase A(H-3b): 原作台帳の list を正本 works(licensed_in) 由来へ。
+        //   work_code AS ledger_code / id = works.id。旧 ledgers テーブルは参照しない。
+        //   原作メタ(title_kana/creator_name/publisher_name/division/alternative_titles)は
+        //   0142(H-3a) で works へ backfill 済み。shape は従来の ledgers 応答と同一。
         ledgers = await query(
-          `SELECT id, ledger_code, title, title_kana, alternative_titles,
+          `SELECT id, work_code AS ledger_code, title, title_kana, alternative_titles,
                   creator_name, publisher_name, remarks, is_active,
                   default_rights_holder, default_credit_display, default_work_supplement,
                   default_approval_target, default_approval_timing, division,
                   created_at, updated_at
-             FROM ledgers
-            ORDER BY ledger_code DESC`
+             FROM works
+            WHERE kind = 'licensed_in'
+            ORDER BY work_code DESC`
         );
       } catch (err: any) {
         if (err && err.code === "42703") {
           // Phase 22.20 列はあるが 22.21.7 列がないケース → 22.20 SELECT に fallback
           try {
             ledgers = await query(
-              `SELECT id, ledger_code, title, title_kana, alternative_titles,
+              `SELECT id, work_code AS ledger_code, title, title_kana, alternative_titles,
                       creator_name, publisher_name, remarks, is_active,
                       default_rights_holder, default_credit_display, default_work_supplement,
                       created_at, updated_at
-                 FROM ledgers
-                ORDER BY ledger_code DESC`
+                 FROM works
+                WHERE kind = 'licensed_in'
+                ORDER BY work_code DESC`
             );
           } catch (err2: any) {
             if (err2 && err2.code === "42703") {
               // legacy 環境 (Phase 22.20 列もない)
               ledgers = await query(
-                `SELECT id, ledger_code, title, title_kana, alternative_titles,
+                `SELECT id, work_code AS ledger_code, title, title_kana, alternative_titles,
                         creator_name, publisher_name, remarks, is_active,
                         created_at, updated_at
-                   FROM ledgers
-                  ORDER BY ledger_code DESC`
+                   FROM works
+                  WHERE kind = 'licensed_in'
+                  ORDER BY work_code DESC`
               );
             } else {
               throw err2;
@@ -3511,7 +3518,7 @@ async function startServer() {
         let mats: any;
         try {
           mats = await query(
-            `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
+            `SELECT wm.id, w.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
                     wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
                     wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
                     wm.territory, wm.language,
@@ -3526,27 +3533,25 @@ async function startServer() {
                       ORDER BY cl2.id DESC LIMIT 1) AS source_doc_number
                FROM work_materials wm
                JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
-               JOIN ledgers l ON l.ledger_code = w.work_code
                LEFT JOIN material_categories mc ON mc.id = wm.category_id
-              WHERE l.id = ANY($1::int[])
-              ORDER BY l.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
+              WHERE w.id = ANY($1::int[])
+              ORDER BY w.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
             [ids]
           );
         } catch (matErr: any) {
           // territory/language 列が無い旧環境 → 従来 SELECT にフォールバック。
           if (matErr && matErr.code === "42703") {
             mats = await query(
-              `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
+              `SELECT wm.id, w.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
                       wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
                       wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
                       mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
                       COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder
                  FROM work_materials wm
                  JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
-                 JOIN ledgers l ON l.ledger_code = w.work_code
                  LEFT JOIN material_categories mc ON mc.id = wm.category_id
-                WHERE l.id = ANY($1::int[])
-                ORDER BY l.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
+                WHERE w.id = ANY($1::int[])
+                ORDER BY w.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
               [ids]
             );
           } else {
