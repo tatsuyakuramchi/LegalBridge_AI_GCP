@@ -14598,6 +14598,40 @@ ${details}
         syncRoyaltyCalcEvent({ query }, Number(result.rows[0].id))
       );
 
+      // WM-05(§6.6): 計算書 発行時に利用料名目を snapshot 凍結する。
+      //   対象条件明細 = license_financial_condition_id(= condition_lines.id / cfc)。
+      //   解決順は 0141 バックフィルと同一(override → 権利根源名 → 権利根源作品『』原作利用料
+      //   → 条件の原作作品 → マテリアル名利用料)。既存 snapshot は上書きしない(冪等)。
+      //   解決不能なら NULL のまま(MAT-FEE-002 で検出)。best-effort(計算書保存は壊さない)。
+      if (Number.isFinite(Number(body.license_financial_condition_id))) {
+        await safeSync("fee_subject snapshot", async () =>
+          (await query(
+            `UPDATE condition_lines t
+                SET fee_subject_snapshot = r.resolved, updated_at = now()
+               FROM (
+                 SELECT cl.id,
+                        COALESCE(
+                          NULLIF(btrim(cl.fee_subject_override), ''),
+                          NULLIF(btrim(COALESCE(mrs.fee_subject_name, '') || COALESCE(mrs.fee_subject_suffix, '')), ''),
+                          CASE WHEN swm.title IS NOT NULL THEN '『' || swm.title || '』原作利用料' END,
+                          CASE WHEN csw.title IS NOT NULL THEN '『' || csw.title || '』原作利用料' END,
+                          CASE WHEN wm.material_name IS NOT NULL THEN wm.material_name || '利用料' END
+                        ) AS resolved
+                   FROM condition_lines cl
+                   LEFT JOIN material_rights_sources mrs ON mrs.id = cl.material_rights_source_id
+                   LEFT JOIN works swm ON swm.id = mrs.source_work_id
+                   LEFT JOIN works csw ON csw.id = cl.source_work_id
+                   LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
+                  WHERE cl.id = $1
+               ) r
+              WHERE t.id = r.id
+                AND t.fee_subject_snapshot IS NULL
+                AND r.resolved IS NOT NULL`,
+            [Number(body.license_financial_condition_id)]
+          )).rowCount ?? 0
+        );
+      }
+
       res.json({ ok: true, id: result.rows[0].id, computed });
     } catch (error) {
       console.error("/api/royalty-calculations failed:", error);
