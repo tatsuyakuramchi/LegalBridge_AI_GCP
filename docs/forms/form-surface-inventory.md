@@ -78,7 +78,7 @@ Document Editor（`/documents/new`）が唯一の起票口。基盤は `document
 | form_surface_id | ルート | パネル/ページ | 基盤 | 方針 |
 |---|---|---|---|---|
 | WRK-list | `/works` | WorksListPanel | page-specific | 作品管理の正準入口。完全性 Badge 追加（DQ-04）。共通シェルへ（FRM-06） |
-| WRK-graph | `/works/:id` | WorkGraphPanel | page-specific | V3LicenseMatrix 直接保存を撤去済（UIC-02 / Phase C 第1弾）→文書起票CTA。残: タブ分割（UIC-09） |
+| WRK-graph | `/works/:id` | WorkDetailTabs（+ WorkDetailContext / sections/*） | tabbed | V3LicenseMatrix 直接保存を撤去済（UIC-02 / Phase C 第1弾）→文書起票CTA。✅ タブ分割完了（UIC-09 / 8タブ移行 Phase 5-6）：旧 WorkGraphPanel(3カード1866行)を WorkDetailContext(state基盤)＋タブ別 section へ分解し①〜⑧へ物理配置、旧パネル撤去。API 呼び方は不変（§20） |
 | DOC-editor | `/documents/new` | DocumentEditorPage | Schema+DocumentForm | ✅ true readonly（UIC-06：`<fieldset disabled>`）／✅ アクションバー sticky 化（UIC-04：body スクロール前提で親 `overflow-hidden` を外し `sticky bottom-0`。作成ボタンは常に画面内） |
 | MAT-list | `/matters` | MattersListPage | page-specific | ✅ nested interactive 解消済（UIC-07：行=overlay button＋統合カートは独立 button）。残: カード対応（UIC-21） |
 | MAT-detail | `/matters/:matterId` | MatterDetailPage | page-specific | ✅ Matterのみ下書き（UIC-05：課題なしでも matter:<id> 合成キーで下書き保存・再開。DBスキーマ変更なし）。残: タブ化（UIC-20） |
