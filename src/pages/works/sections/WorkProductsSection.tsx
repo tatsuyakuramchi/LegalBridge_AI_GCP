@@ -1,14 +1,20 @@
 /**
  * ⑥ 製品 — 製品(SKU)一覧・追加 ＋ 受取（派生物 / 卸）downstream。8タブ移行 Phase 6。
  *   旧 WorkGraphPanel 中カードの製品ブロック＋右カード（受取エッジ）を移設。
- *   product_code 採番・結線ロジックは context 経由で不変（§20）。
+ *   一覧は共通 DataTableShell へ寄せた（列 render でインライン編集を吸収）。
+ *   product_code 採番・編集/削除ロジックは context 経由で不変（§20）。
  */
 import * as React from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/EmptyState"
+import { DataTableShell, type DataTableColumn } from "@/src/components/form"
 import { useWorkDetail } from "@/src/pages/works/WorkDetailContext"
 import { EdgeRow, yen, inlineInputCls } from "./shared"
+
+const FORMATS = ["", "physical", "ebook", "print_on_demand"]
+const ecls =
+  "w-full text-[11px] font-mono bg-transparent border-b border-input py-0.5 focus:outline-none focus:border-foreground"
 
 export const WorkProductsSection: React.FC = () => {
   const {
@@ -19,7 +25,121 @@ export const WorkProductsSection: React.FC = () => {
 
   if (!work) return <EmptyState title="作品を選択してください" />
 
-  const FORMATS = ["", "physical", "ebook", "print_on_demand"]
+  // ⑥製品一覧の列定義（DataTableShell）。編集中の行はセル内で input/select を描画する。
+  const productColumns: DataTableColumn<any>[] = [
+    {
+      key: "code",
+      header: "コード",
+      className: "font-mono text-[10px] text-muted-foreground whitespace-nowrap",
+      render: (p) => p.product_code || "—",
+    },
+    {
+      key: "name",
+      header: "製品名",
+      render: (p) =>
+        editingProductId === p.id ? (
+          <div className="space-y-0.5">
+            <input
+              className={ecls}
+              value={productForm.product_name || ""}
+              onChange={(e) => setProductForm((f) => ({ ...f, product_name: e.target.value }))}
+              placeholder="製品名 *"
+            />
+            {productErr && <p className="text-[9px] text-destructive">{productErr}</p>}
+          </div>
+        ) : (
+          <span className="font-semibold">{p.product_name}</span>
+        ),
+    },
+    {
+      key: "format",
+      header: "形態",
+      className: "whitespace-nowrap",
+      render: (p) =>
+        editingProductId === p.id ? (
+          <select
+            className={ecls}
+            value={productForm.format || ""}
+            onChange={(e) => setProductForm((f) => ({ ...f, format: e.target.value }))}
+          >
+            {FORMATS.map((fm) => (
+              <option key={fm} value={fm}>{fm || "—"}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="text-muted-foreground">{p.format || "—"}</span>
+        ),
+    },
+    {
+      key: "msrp",
+      header: "希望小売価格",
+      align: "right",
+      className: "whitespace-nowrap tabular-nums",
+      render: (p) =>
+        editingProductId === p.id ? (
+          <input
+            className={`${ecls} text-right`}
+            value={productForm.msrp || ""}
+            onChange={(e) => setProductForm((f) => ({ ...f, msrp: e.target.value }))}
+            inputMode="numeric"
+            placeholder="0"
+          />
+        ) : (
+          <span className="text-muted-foreground">{p.msrp != null ? yen(p.msrp) : "—"}</span>
+        ),
+    },
+    // 操作列は own のみ。原作ビューは製品編集不可のため列自体を出さない。
+    ...(!isSource
+      ? [
+          {
+            key: "actions",
+            header: "",
+            align: "right" as const,
+            className: "whitespace-nowrap",
+            render: (p: any) =>
+              editingProductId === p.id ? (
+                <span className="inline-flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={cancelEditProduct}
+                    disabled={productSaving}
+                    className="text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground disabled:opacity-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveProduct()}
+                    disabled={productSaving || !productForm.product_name?.trim()}
+                    className="text-[9px] px-1.5 py-0.5 rounded border border-success bg-success/10 text-success font-bold disabled:opacity-50"
+                  >
+                    {productSaving ? "保存中…" : "保存"}
+                  </button>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => startEditProduct(p)}
+                    className="text-[9px] font-mono px-1 py-0.5 rounded border border-border hover:border-foreground/40"
+                    title="編集"
+                  >
+                    編集
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteProduct(p)}
+                    className="text-[9px] font-mono px-1 py-0.5 rounded border border-destructive/40 text-destructive hover:bg-destructive/10"
+                    title="削除"
+                  >
+                    削除
+                  </button>
+                </span>
+              ),
+          },
+        ]
+      : []),
+  ]
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
@@ -27,104 +147,13 @@ export const WorkProductsSection: React.FC = () => {
       <Card>
         <CardContent className="px-3.5 py-3 space-y-2">
           <h3 className="text-sm font-mono font-bold">製品（SKU）</h3>
-          {products.length > 0 && (
-            <div className="space-y-1">
-              {products.map((p) => {
-                const editing = editingProductId === p.id
-                const ecls =
-                  "w-full text-[11px] font-mono bg-transparent border-b border-input py-0.5 focus:outline-none focus:border-foreground"
-                return (
-                  <div key={p.id} className="text-[11px] font-mono border border-border/60 rounded px-2 py-1.5">
-                    {editing ? (
-                      <div className="space-y-1.5">
-                        <div className="text-[10px] font-bold text-muted-foreground">{p.product_code || "—"}</div>
-                        <label className="block space-y-0.5">
-                          <span className="text-[9px] text-muted-foreground">製品名 *</span>
-                          <input
-                            className={ecls}
-                            value={productForm.product_name || ""}
-                            onChange={(e) => setProductForm((f) => ({ ...f, product_name: e.target.value }))}
-                            placeholder="製品名"
-                          />
-                        </label>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          <label className="space-y-0.5">
-                            <span className="text-[9px] text-muted-foreground">形態</span>
-                            <select
-                              className={ecls}
-                              value={productForm.format || ""}
-                              onChange={(e) => setProductForm((f) => ({ ...f, format: e.target.value }))}
-                            >
-                              {FORMATS.map((fm) => (
-                                <option key={fm} value={fm}>{fm || "—"}</option>
-                              ))}
-                            </select>
-                          </label>
-                          <label className="space-y-0.5">
-                            <span className="text-[9px] text-muted-foreground">希望小売価格</span>
-                            <input
-                              className={ecls}
-                              value={productForm.msrp || ""}
-                              onChange={(e) => setProductForm((f) => ({ ...f, msrp: e.target.value }))}
-                              inputMode="numeric"
-                              placeholder="0"
-                            />
-                          </label>
-                        </div>
-                        {productErr && <p className="text-[9px] text-destructive">{productErr}</p>}
-                        <div className="flex justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={cancelEditProduct}
-                            disabled={productSaving}
-                            className="text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground disabled:opacity-50"
-                          >
-                            取消
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void saveProduct()}
-                            disabled={productSaving || !productForm.product_name?.trim()}
-                            className="text-[9px] px-1.5 py-0.5 rounded border border-success bg-success/10 text-success font-bold disabled:opacity-50"
-                          >
-                            {productSaving ? "保存中…" : "保存"}
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="min-w-0 truncate">
-                          <span className="font-semibold">{p.product_code || "—"}</span> {p.product_name}
-                          {p.format && <span className="text-muted-foreground"> · {p.format}</span>}
-                          {p.msrp != null && <span className="text-muted-foreground"> · {yen(p.msrp)}</span>}
-                        </span>
-                        {!isSource && (
-                          <span className="shrink-0 flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => startEditProduct(p)}
-                              className="text-[9px] font-mono px-1 py-0.5 rounded border border-border hover:border-foreground/40"
-                              title="編集"
-                            >
-                              編集
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void deleteProduct(p)}
-                              className="text-[9px] font-mono px-1 py-0.5 rounded border border-destructive/40 text-destructive hover:bg-destructive/10"
-                              title="削除"
-                            >
-                              削除
-                            </button>
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          <DataTableShell
+            columns={productColumns}
+            rows={products}
+            rowKey={(p) => p.id}
+            emptyTitle="製品はありません"
+            dense
+          />
           {/* 製品(SKU)を追加(own のみ)。product_code は API で {work_code}-P-NNN 採番。 */}
           {!isSource && (
             <div className="border-t border-border/60 pt-2 space-y-1.5">
@@ -163,9 +192,6 @@ export const WorkProductsSection: React.FC = () => {
                 </button>
               </div>
             </div>
-          )}
-          {products.length === 0 && isSource && (
-            <p className="text-[11px] text-muted-foreground py-1">製品はありません。</p>
           )}
         </CardContent>
       </Card>
