@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/EmptyState"
 import { DataTableShell, type DataTableColumn } from "@/src/components/form"
 import { useWorkDetail } from "@/src/pages/works/WorkDetailContext"
 import { yen, matDisplay } from "./shared"
+import { FeeSubjectEditor } from "./FeeSubjectEditor"
 
 // own(自社作品)の素材一覧の列定義（DataTableShell）。原作ビューは条件明細を
 //   展開するため従来のカスタム描画を維持し、こちらは own の読み取り一覧のみ。
@@ -249,6 +250,8 @@ export const WorkMaterialsSection: React.FC = () => {
                                     <label className="space-y-0.5"><span className="text-muted-foreground">地域</span><input className={ecls} value={matEditForm.region_territory || ""} onChange={(e) => setMatEditForm({ ...matEditForm, region_territory: e.target.value })} /></label>
                                     <label className="space-y-0.5"><span className="text-muted-foreground">言語</span><input className={ecls} value={matEditForm.region_language || ""} onChange={(e) => setMatEditForm({ ...matEditForm, region_language: e.target.value })} /></label>
                                   </div>
+                                  {/* WM-05: 利用料名目 プレビュー＋手動上書き（§6.6）。 */}
+                                  <FeeSubjectEditor conditionId={c.id} />
                                   {matEditErr && <p className="text-[9px] text-destructive">{matEditErr}</p>}
                                   <div className="flex justify-end gap-1">
                                     <button type="button" onClick={() => setMatEditId(null)} className="text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">取消</button>

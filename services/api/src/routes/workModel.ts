@@ -2075,6 +2075,89 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // ─────────────────────────────────────────────────────────────
+  // 利用料名目（fee_subject）— 条件明細の名目 解決順(§6.6) / WM-05。
+  //   0141 で fee_subject_override / fee_subject_snapshot 追加済み。
+  //   解決順: override → material_rights_sources.fee_subject_name(+suffix)
+  //          → 権利根源作品『』原作利用料 → 条件の原作作品『』原作利用料 → マテリアル名利用料。
+  //   （#4 権利根源作品群名は work_families 整理(F5)後）
+  // ─────────────────────────────────────────────────────────────
+
+  // 1 条件明細の名目を §6.6 で解決して返す。
+  async function resolveFeeSubject(conditionId: number) {
+    const r = await query(
+      `SELECT cl.id, cl.fee_subject_override, cl.fee_subject_snapshot,
+              cl.source_material_id, cl.source_work_id, cl.material_rights_source_id,
+              mrs.fee_subject_name   AS mrs_name,
+              mrs.fee_subject_suffix AS mrs_suffix,
+              swm.title AS mrs_source_work_title,
+              csw.title AS cl_source_work_title,
+              wm.material_name
+         FROM condition_lines cl
+         LEFT JOIN material_rights_sources mrs ON mrs.id = cl.material_rights_source_id
+         LEFT JOIN works swm ON swm.id = mrs.source_work_id
+         LEFT JOIN works csw ON csw.id = cl.source_work_id
+         LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
+        WHERE cl.id = $1`,
+      [conditionId]
+    );
+    if (r.rows.length === 0) return null;
+    const x = r.rows[0];
+    let resolved: string | null = null;
+    let rule: string | null = null;
+    const trim = (v: any) => (v == null ? "" : String(v).trim());
+    if (trim(x.fee_subject_override)) { resolved = trim(x.fee_subject_override); rule = "override"; }
+    else if (trim(x.mrs_name)) { resolved = trim(x.mrs_name) + trim(x.mrs_suffix); rule = "rights_source"; }
+    else if (trim(x.mrs_source_work_title)) { resolved = `『${trim(x.mrs_source_work_title)}』原作利用料`; rule = "source_work"; }
+    else if (trim(x.cl_source_work_title)) { resolved = `『${trim(x.cl_source_work_title)}』原作利用料`; rule = "condition_source_work"; }
+    else if (trim(x.material_name)) { resolved = `${trim(x.material_name)}利用料`; rule = "material"; }
+    return {
+      id: x.id,
+      resolved,
+      rule,
+      override: x.fee_subject_override ?? null,
+      snapshot: x.fee_subject_snapshot ?? null,
+      parts: {
+        rights_source_name: x.mrs_name ?? null,
+        rights_source_suffix: x.mrs_suffix ?? null,
+        source_work_title: x.mrs_source_work_title ?? null,
+        condition_source_work_title: x.cl_source_work_title ?? null,
+        material_name: x.material_name ?? null,
+      },
+    };
+  }
+
+  // GET: 名目のプレビュー（解決結果＋どのルールで解決したか＋各候補）。
+  app.get("/api/v3/condition-lines/:id/fee-subject", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const out = await resolveFeeSubject(id);
+      if (!out) return res.status(404).json({ ok: false, error: "not found" });
+      res.json(out);
+    } catch (e) { fail(res, e); }
+  });
+
+  // PATCH: 名目の手動上書き(fee_subject_override)を設定/解除。解決結果を返す。
+  app.patch("/api/v3/condition-lines/:id/fee-subject", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const override = b.fee_subject_override != null && String(b.fee_subject_override).trim() !== ""
+        ? String(b.fee_subject_override).trim()
+        : null;
+      const r = await query(
+        `UPDATE condition_lines SET fee_subject_override = $2, updated_at = now()
+          WHERE id = $1 RETURNING id`,
+        [id, override]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      const out = await resolveFeeSubject(id);
+      res.json(out);
+    } catch (e) { fail(res, e); }
+  });
+
   // 増分⑦: 受取先(取引先) picker 用の簡易一覧(名称/コード部分一致)。
   app.get("/api/v3/vendors", ...requireRead, async (req, res) => {
     try {
