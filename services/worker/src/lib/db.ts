@@ -333,16 +333,43 @@ export async function ensureMaterialCategory(
   return r.rows[0]?.id ? Number(r.rows[0].id) : null;
 }
 
+/**
+ * WM-01 Phase A′ (dual-resolve): 原作(licensed_in)の識別子を works へ解決する。
+ *   入力 id は ledgers.id ∪ works.id の両方を受け付ける（後方互換）。
+ *   - まず works.id として解決（新: /api/master/ledgers list が works.id を返す場合）。
+ *   - 見つからなければ ledgers.id → ledger_code=work_code で works へブリッジ（旧: ledgers.id）。
+ *   これにより list の id 空間を works.id へ切り替えても素材 write が壊れない。
+ */
+export async function resolveLicensedInWork(
+  id: number
+): Promise<{ work_id: number; ledger_code: string } | null> {
+  const w = await query(
+    `SELECT id AS work_id, work_code AS ledger_code
+       FROM works WHERE id = $1 AND kind = 'licensed_in'`,
+    [id]
+  );
+  if (w.rows[0]) return { work_id: Number(w.rows[0].work_id), ledger_code: w.rows[0].ledger_code };
+  const l = await query(
+    `SELECT w.id AS work_id, w.work_code AS ledger_code
+       FROM ledgers l
+       JOIN works w ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
+      WHERE l.id = $1`,
+    [id]
+  );
+  if (l.rows[0]) return { work_id: Number(l.rows[0].work_id), ledger_code: l.rows[0].ledger_code };
+  return null;
+}
+
 export async function getNextMaterialNo(ledgerId: number): Promise<number> {
   // マテリアル一本化(0089/0090): 正準表 work_materials の枝番を採番。
-  //   台帳(ledgers.id) → works(licensed_in, work_code=ledger_code) → work_materials で解決。
+  //   WM-01 Phase A′: ledgers.id ∪ works.id の両対応で works を解決してから枝番採番。
+  const resolved = await resolveLicensedInWork(ledgerId);
+  if (!resolved) return 1;
   const res = await query(
     `SELECT COALESCE(MAX(wm.material_no), 0) + 1 AS next
        FROM work_materials wm
-       JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
-       JOIN ledgers l ON l.ledger_code = w.work_code
-      WHERE l.id = $1`,
-    [ledgerId]
+      WHERE wm.work_id = $1`,
+    [resolved.work_id]
   );
   return Number(res.rows[0].next) || 1;
 }
@@ -481,20 +508,15 @@ export async function addMaterialToLedger(payload: {
   territory?: string;
   language?: string;
 }): Promise<{ id: number; material_code: string; material_no: number }> {
-  // マテリアル一本化(0089/0090): 台帳(ledgers.id) → 正本 works(licensed_in) を解決し、
+  // マテリアル一本化(0089/0090): 台帳 → 正本 works(licensed_in) を解決し、
   //   派生素材は正準表 work_materials に直接追加する(materials 表は廃止)。
-  const ledgerRes = await query(
-    `SELECT l.ledger_code, w.id AS work_id
-       FROM ledgers l
-       JOIN works w ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
-      WHERE l.id = $1`,
-    [payload.ledger_id]
-  );
-  if (ledgerRes.rows.length === 0) {
+  //   WM-01 Phase A′: ledger_id は ledgers.id ∪ works.id の両対応で解決する。
+  const resolved = await resolveLicensedInWork(payload.ledger_id);
+  if (!resolved) {
     throw new Error(`ledger ${payload.ledger_id} (works licensed_in) not found`);
   }
-  const ledgerCode = ledgerRes.rows[0].ledger_code;
-  const workId = Number(ledgerRes.rows[0].work_id);
+  const ledgerCode = resolved.ledger_code;
+  const workId = resolved.work_id;
   // B系(T1): 同作品内で同名(正規化一致)の素材が既にあれば新規作成せず既存を返す(重複防止)。
   //   lb_norm_name 欠如時は fail-open(従来通り新規追加)。
   try {
