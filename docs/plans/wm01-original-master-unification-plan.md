@@ -23,8 +23,9 @@
 | C | 実アプリの原作一覧（既定 `API_READS_TO_WORKER=1`=worker）を works 由来へ | worker | ✅ live |
 | **D** | **CI ラチェット（source_ips=0 凍結・ledgers write/read 据え置き）** | CI | ✅ 済 |
 | **E-code** | **ledgers write/read のコード付替（write 7→0 / read 16→2）** | worker/api | ✅ 済 |
-| E-verify | 本番で `documents.ledger_ref_id` に ledgers.id 残存が無いことを確認 | prod SQL | ⏸ 要確認 |
-| E-final | resolver フォールバック撤去（read 2→0）→ `DROP source_ips` / `DROP ledgers` | worker/migration | ⏸ 要人間承認（破壊的） |
+| E-verify | 本番で `documents.ledger_ref_id` に ledgers.id 残存が無いことを確認 | prod SQL | ✅ 0 件 |
+| E-final-① | resolver フォールバック撤去（read 2→0・コードから ledgers 参照 0） | worker | ✅ 済 |
+| E-final-② | `DROP source_ips` / `DROP ledgers`（migration） | migration | ⏸ 要人間承認（破壊的） |
 
 デプロイ順の制約: B は後方互換のため A と同時か先に。A 単独先行は degrade 窓を作る。
 
