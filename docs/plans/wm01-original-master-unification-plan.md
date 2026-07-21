@@ -21,8 +21,10 @@
 | A | 原作一覧を works 由来へ（read superset / rollback 経路） | search-api | ✅ live |
 | B | 原作解決 read 4 箇所＋bulk-export を両対応（`resolveLedgerRef`） | worker | ✅ live |
 | C | 実アプリの原作一覧（既定 `API_READS_TO_WORKER=1`=worker）を works 由来へ | worker | ✅ live |
-| **D** | **CI ラチェット（source_ips=0 凍結・ledgers write/read 据え置き）** | CI | ✅ 本コミット |
-| E | スタブ INSERT/DELETE 撤去 → `DROP source_ips` / `DROP ledgers` | migration | ⏸ 要人間承認（破壊的） |
+| **D** | **CI ラチェット（source_ips=0 凍結・ledgers write/read 据え置き）** | CI | ✅ 済 |
+| **E-code** | **ledgers write/read のコード付替（write 7→0 / read 16→2）** | worker/api | ✅ 済 |
+| E-verify | 本番で `documents.ledger_ref_id` に ledgers.id 残存が無いことを確認 | prod SQL | ⏸ 要確認 |
+| E-final | resolver フォールバック撤去（read 2→0）→ `DROP source_ips` / `DROP ledgers` | worker/migration | ⏸ 要人間承認（破壊的） |
 
 デプロイ順の制約: B は後方互換のため A と同時か先に。A 単独先行は degrade 窓を作る。
 
@@ -33,19 +35,32 @@ Cloud Build（`cloudbuild-worker.yaml` / `cloudbuild-api.yaml`）で計測し、
 | カテゴリ | 上限（現状） | 意味 | 目標 |
 |---|---|---|---|
 | source_ips | 0 | `(FROM/JOIN/INTO/UPDATE/DELETE) source_ips` の SQL アクセス | 0 維持 |
-| ledgers_write | 7 | `(INSERT/UPDATE/DELETE) ledgers` | Phase E で 0 |
-| ledgers_read | 16 | `(FROM/JOIN) ledgers` | Phase E で 0 |
+| ledgers_write | 0 | `(INSERT/UPDATE/DELETE) ledgers` | 0 維持 |
+| ledgers_read | 2 | `(FROM/JOIN) ledgers` | E-final で 0 |
 
 **運用**: works へ付け替えて参照を減らしたら、この上限も同時に下げる（増加は不可）。
 
-### 現状の ledgers 参照内訳（Phase E の撤去対象）
+### E-code で付け替え済み（write 7→0 / read 16→2）
 
-- write(7): worker `UPDATE ledgers`×2 / `DELETE`（旧 master PUT/DELETE）,
-  db.ts `INSERT`（createLedgerWithDefaultMaterial）, workModel stub `INSERT` + `DELETE`,
-  entityMerge `DELETE`。
-- read(16): 診断メトリクス, LO 採番 UNION（workModel/db.ts）, `resolveLedgerRef`/
-  `resolveLicensedInWork` の ledgers フォールバック, bulk-import の code/title lookup,
-  entityMerge の code→id 解決, 旧 master PUT サブクエリ。
+- write(7→0): createLedger の ledgers INSERT / workModel stub INSERT+DELETE /
+  旧 master PUT・DELETE（works 直接更新・削除へ）/ bulk-import UPDATE / entityMerge DELETE。
+- read(16→2): 診断メトリクス→works / LO 採番 UNION→works 単独 / bulk-import lookup→works /
+  entityMerge の ledger_ref_id 付替を works.id 直接へ / 旧 master PUT サブクエリ撤去。
+
+### 残り 2 read（E-final の撤去対象）
+
+`services/worker/src/lib/db.ts` の `resolveLicensedInWork` / `resolveLedgerRef` の
+**ledgers フォールバック tier**。`documents.ledger_ref_id` は 0101 で `REFERENCES works(id)` の
+FK になっており値は works.id のはずだが、FK が `IF NOT EXISTS` 追加のため未強制の可能性が残る。
+**E-verify（下記 SQL）で ledgers.id 残存が 0 と確認できたら**、この 2 tier を撤去して read=0 にする。
+
+```sql
+-- ledger_ref_id に ledgers.id 空間（= works に存在しない id）が残っていないか
+SELECT COUNT(*) FROM documents d
+ WHERE d.ledger_ref_id IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM works w WHERE w.id = d.ledger_ref_id);
+-- 0 なら E-final（resolver フォールバック撤去→DROP）に進める。
+```
 
 ## Phase E 事前条件（着手前に全て満たすこと・要人間承認）
 
