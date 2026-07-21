@@ -314,10 +314,16 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
     counterpartyDisplay || "(相手方未指定)"
   }_${subTopic.trim() || "(内容未指定)"}_${ymdPreview}`
 
-  const canSubmit =
-    !submitting &&
-    counterpartyDisplay.length > 0 &&
-    subTopic.trim().length > 0
+  // 相手方の必須要件: 契約系(issueTypeLabel=契約審査)のみ必須。
+  //   法務相談 / 事務手続 / 納品・検収 / 利用許諾計算 は相手方未定でも起案できるよう任意
+  //   (課題名は「(相手方未指定)」で生成。backend の quick-create も空相手方を許容する)。
+  const requiresCounterparty = currentTemplate.issueTypeLabel === "契約審査"
+  // ボタン無効時に「何が足りないか」を明示するための不足項目リスト。
+  const missingReasons: string[] = []
+  if (requiresCounterparty && counterpartyDisplay.length === 0)
+    missingReasons.push("相手方")
+  if (subTopic.trim().length === 0) missingReasons.push("サブテーマ")
+  const canSubmit = !submitting && missingReasons.length === 0
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -524,7 +530,14 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <label className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                相手方 <span className="text-warning">*</span>
+                相手方{" "}
+                {requiresCounterparty ? (
+                  <span className="text-warning">*</span>
+                ) : (
+                  <span className="font-normal normal-case tracking-normal text-muted-foreground/70">
+                    (任意)
+                  </span>
+                )}
               </label>
               <div className="flex items-center gap-1">
                 <button
@@ -641,6 +654,12 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
         </DialogBody>
 
         <DialogFooter>
+          {/* 無効化されたボタンの理由を明示(何を入れれば起案できるか)。 */}
+          {!submitting && missingReasons.length > 0 && (
+            <span className="mr-auto self-center text-[11px] text-muted-foreground">
+              未入力: <strong className="text-warning">{missingReasons.join(" / ")}</strong> を入力すると起案できます
+            </span>
+          )}
           <Button
             type="button"
             variant="ghost"
