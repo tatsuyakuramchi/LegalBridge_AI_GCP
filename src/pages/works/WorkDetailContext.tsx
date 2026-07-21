@@ -186,6 +186,14 @@ export interface WorkDetailModel {
   addRelation: () => Promise<void>
   deleteRelation: (relationId: number) => Promise<void>
 
+  // ④ 権利根源（material_rights_sources）
+  rightsSources: any[]
+  rightsSourcesLoading: boolean
+  loadRightsSources: () => Promise<void>
+  addRightsSource: (materialId: number, payload: any) => Promise<boolean>
+  updateRightsSource: (id: number, payload: any) => Promise<boolean>
+  deleteRightsSource: (id: number) => Promise<void>
+
   // 派生値
   consumedGroups: ConsumedGroup[]
   parentCandidates: WorkPickerItem[]
@@ -261,6 +269,9 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
   const [relForm, setRelForm] = React.useState<Record<string, string>>({})
   const [addingRelation, setAddingRelation] = React.useState(false)
   const [relationErr, setRelationErr] = React.useState<string | null>(null)
+  // ④ 権利根源
+  const [rightsSources, setRightsSources] = React.useState<any[]>([])
+  const [rightsSourcesLoading, setRightsSourcesLoading] = React.useState(false)
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -477,6 +488,77 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
   React.useEffect(() => {
     void loadRelations()
   }, [loadRelations, graph])
+
+  // ④ 権利根源: この作品のマテリアル配下の権利根源を取得。
+  const loadRightsSources = React.useCallback(async () => {
+    if (!workId) { setRightsSources([]); return }
+    setRightsSourcesLoading(true)
+    try {
+      const r = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/rights-sources`)
+      const d = await r.json()
+      setRightsSources(Array.isArray(d) ? d : [])
+    } catch {
+      setRightsSources([])
+    } finally {
+      setRightsSourcesLoading(false)
+    }
+  }, [workId])
+
+  const addRightsSource = async (materialId: number, payload: any): Promise<boolean> => {
+    try {
+      const r = await fetch(`/api/v3/materials/${encodeURIComponent(materialId)}/rights-sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as any))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await loadRightsSources()
+      return true
+    } catch (e: any) {
+      window.alert(`権利根源の追加に失敗: ${String(e?.message || e)}`)
+      return false
+    }
+  }
+
+  const updateRightsSource = async (id: number, payload: any): Promise<boolean> => {
+    try {
+      const r = await fetch(`/api/v3/rights-sources/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as any))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await loadRightsSources()
+      return true
+    } catch (e: any) {
+      window.alert(`権利根源の更新に失敗: ${String(e?.message || e)}`)
+      return false
+    }
+  }
+
+  const deleteRightsSource = async (id: number) => {
+    if (!window.confirm("この権利根源を削除しますか？")) return
+    try {
+      const r = await fetch(`/api/v3/rights-sources/${encodeURIComponent(id)}`, { method: "DELETE" })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as any))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await loadRightsSources()
+    } catch (e: any) {
+      window.alert(`権利根源の削除に失敗: ${String(e?.message || e)}`)
+    }
+  }
+
+  React.useEffect(() => {
+    void loadRightsSources()
+  }, [loadRightsSources, graph])
 
   React.useEffect(() => {
     fetch("/api/v3/works")
@@ -949,6 +1031,7 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
     matEditId, setMatEditId, matEditForm, setMatEditForm, matEditSaving, matEditErr, startEditCond, saveEditCond, deleteCond,
     matRecallDoc, setMatRecallDoc, matRecallLines, matRecallLoading, recallByDoc, assignRecalled, srcMatConds,
     relations, relationsLoading, loadRelations, relForm, setRelForm, addingRelation, relationErr, addRelation, deleteRelation,
+    rightsSources, rightsSourcesLoading, loadRightsSources, addRightsSource, updateRightsSource, deleteRightsSource,
     consumedGroups, parentCandidates,
     loadGraph,
   }
