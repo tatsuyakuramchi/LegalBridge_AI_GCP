@@ -905,6 +905,16 @@ export function registerWorkModelRoutes(
          b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      // 原作(licensed_in)の派生元編集も work_relations へ反映（upsert のみ・②が正本）。
+      if (b.parent_work_id != null) {
+        await query(
+          `INSERT INTO work_relations (child_work_id, parent_work_id, relation_type)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (child_work_id, parent_work_id)
+             DO UPDATE SET relation_type = EXCLUDED.relation_type`,
+          [id, b.parent_work_id, b.derivation_type ?? null]
+        );
+      }
       res.json(r.rows[0]);
     } catch (e) { fail(res, e); }
   });
@@ -927,6 +937,17 @@ export function registerWorkModelRoutes(
          b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      // ①概要の派生元(主たる親)編集を work_relations へも反映(②系譜で見えるように)。
+      //   ②が関係の正本なので、ここでは upsert のみ（他の関係は消さない・主親再計算もしない）。
+      if (b.parent_work_id != null) {
+        await query(
+          `INSERT INTO work_relations (child_work_id, parent_work_id, relation_type)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (child_work_id, parent_work_id)
+             DO UPDATE SET relation_type = EXCLUDED.relation_type`,
+          [id, b.parent_work_id, b.derivation_type ?? null]
+        );
+      }
       res.json(r.rows[0]);
     } catch (e) { fail(res, e); }
   });
@@ -1845,6 +1866,116 @@ export function registerWorkModelRoutes(
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "product not found" });
       res.json({ ok: true, deleted: productId, unlinked: linked });
+    } catch (e) { fail(res, e); }
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 作品系譜（work_relations, 0138）— 多対多の派生関係。② 作品系譜タブ用。
+  //   works.parent_work_id は「主たる親」ミラーとして自動維持する（§20: receivableMap
+  //   /DQ/①概要/一覧 は従来どおり単一 parent_work_id で動く）。
+  // ─────────────────────────────────────────────────────────────
+
+  // 主たる親ミラーの再計算: 現行の主親がまだ関係として残っていれば維持、無ければ
+  //   最小 id の関係を主親に採用（無ければ null）。derivation_type も主親の関係に揃える。
+  async function syncPrimaryParent(childId: number) {
+    const cur = await query(`SELECT parent_work_id FROM works WHERE id = $1`, [childId]);
+    const curParent = cur.rows[0]?.parent_work_id ?? null;
+    let keepParent: number | null = null;
+    let keepType: string | null = null;
+    if (curParent != null) {
+      const chk = await query(
+        `SELECT relation_type FROM work_relations WHERE child_work_id = $1 AND parent_work_id = $2`,
+        [childId, curParent]
+      );
+      if (chk.rows.length) {
+        keepParent = curParent;
+        keepType = chk.rows[0].relation_type ?? null;
+      }
+    }
+    if (keepParent == null) {
+      const first = await query(
+        `SELECT parent_work_id, relation_type FROM work_relations
+          WHERE child_work_id = $1 ORDER BY id LIMIT 1`,
+        [childId]
+      );
+      if (first.rows.length) {
+        keepParent = Number(first.rows[0].parent_work_id);
+        keepType = first.rows[0].relation_type ?? null;
+      }
+    }
+    await query(
+      `UPDATE works SET parent_work_id = $2, derivation_type = $3, updated_at = now() WHERE id = $1`,
+      [childId, keepParent, keepType]
+    );
+  }
+
+  // GET: この作品の親(派生元)関係と子(派生物)関係を返す。
+  app.get("/api/v3/works/:id/relations", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const parents = await query(
+        `SELECT r.id, r.parent_work_id, r.relation_type, r.created_at,
+                w.work_code, w.title, w.kind
+           FROM work_relations r JOIN works w ON w.id = r.parent_work_id
+          WHERE r.child_work_id = $1 ORDER BY r.id`,
+        [id]
+      );
+      const children = await query(
+        `SELECT r.id, r.child_work_id, r.relation_type, r.created_at,
+                w.work_code, w.title, w.kind
+           FROM work_relations r JOIN works w ON w.id = r.child_work_id
+          WHERE r.parent_work_id = $1 ORDER BY r.id`,
+        [id]
+      );
+      res.json({ parents: parents.rows, children: children.rows });
+    } catch (e) { fail(res, e); }
+  });
+
+  // POST: この作品(child)に派生元(parent)関係を追加。自己参照は拒否。
+  app.post("/api/v3/works/:id/relations", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const b = req.body || {};
+      const parentId = Number(b.parent_work_id);
+      if (!Number.isFinite(id) || !Number.isFinite(parentId))
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      if (parentId === id)
+        return res.status(400).json({ ok: false, error: "自己参照は指定できません" });
+      // 直接の循環(相手が既にこの作品の子)を防ぐ。多段の循環は DQ(WORK-REL-002) で監査。
+      const rev = await query(
+        `SELECT 1 FROM work_relations WHERE child_work_id = $1 AND parent_work_id = $2`,
+        [parentId, id]
+      );
+      if (rev.rows.length)
+        return res.status(409).json({ ok: false, error: "循環になります（相手は既にこの作品の派生物です）" });
+      const r = await query(
+        `INSERT INTO work_relations (child_work_id, parent_work_id, relation_type)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (child_work_id, parent_work_id)
+           DO UPDATE SET relation_type = EXCLUDED.relation_type
+         RETURNING *`,
+        [id, parentId, b.relation_type || null]
+      );
+      await syncPrimaryParent(id);
+      res.status(201).json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // DELETE: 関係を削除（child=この作品のもののみ）。主たる親ミラーを再計算。
+  app.delete("/api/v3/works/:id/relations/:relationId", ...requireWrite, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const relationId = Number(req.params.relationId);
+      if (!Number.isFinite(id) || !Number.isFinite(relationId))
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `DELETE FROM work_relations WHERE id = $1 AND child_work_id = $2 RETURNING id`,
+        [relationId, id]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "relation not found" });
+      await syncPrimaryParent(id);
+      res.json({ ok: true, deleted: relationId });
     } catch (e) { fail(res, e); }
   });
 

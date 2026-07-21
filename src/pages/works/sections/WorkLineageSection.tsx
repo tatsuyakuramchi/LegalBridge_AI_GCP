@@ -1,82 +1,139 @@
 /**
- * ② 作品系譜 — 派生元（親）チェーンと、この作品を親とする派生作品の read ビュー。
- *   8タブ移行 Phase 6。系譜・派生の「編集」は①概要の基本情報フォーム（1 フォーム/1 保存）に
- *   集約し、本タブは既にロード済みのデータ（works / source-ips / uses）から導出する読み取り表示に
- *   徹する（新規 API 呼び出しなし・§20）。派生の正本化（work_relations 複数関係）は別 PR。
+ * ② 作品系譜 — 作品間の派生関係（work_relations, 0138）を多対多で管理。
+ *   派生元（親）を複数追加/削除でき、派生物（子）は読み取り表示。
+ *   works.parent_work_id は backend が「主たる親」ミラーとして自動維持するため、
+ *   receivableMap（分配マップ）/ DQ / ①概要 / 一覧 は従来どおり動く（§20）。
+ *   ①概要の「派生元」編集は主たる親のクイック設定として work_relations にも反映される。
  */
 import * as React from "react"
 import { EmptyState } from "@/components/EmptyState"
+import { NativeSelect } from "@/components/ui/native-select"
+import { EntityCombobox } from "@/src/components/form"
 import { useWorkDetail } from "@/src/pages/works/WorkDetailContext"
-import { DERIV_LABEL } from "./shared"
+import { DERIV_CHOICES, DERIV_LABEL } from "./shared"
 
-const label = (w: any) =>
-  `${w.work_code || w.source_code || `#${w.id}`} ${w.title || ""}`.trim()
+const relLabel = (r: any, idKey: "parent_work_id" | "child_work_id") =>
+  `${r.work_code || `#${r[idKey]}`} ${r.title || ""}`.trim()
 
 export const WorkLineageSection: React.FC = () => {
-  const { work, works, sourceWorks, uses, isSource, navigate } = useWorkDetail()
+  const {
+    work, navigate, isSource, uses,
+    relations, relationsLoading, relForm, setRelForm, addingRelation, relationErr, addRelation, deleteRelation,
+    parentCandidates,
+  } = useWorkDetail()
 
   if (!work) return <EmptyState title="作品を選択してください" />
 
-  const parent =
-    work.parent_work_id != null
-      ? [...works, ...sourceWorks].find((w: any) => String(w.id) === String(work.parent_work_id)) || null
-      : null
-
-  // この作品/原作を親とする派生作品（own 側の parent_work_id 一致）。
-  const children = works.filter((w: any) => work.id != null && String(w.parent_work_id) === String(work.id))
+  const { parents, children } = relations
 
   return (
     <div className="space-y-4">
-      {/* 派生元（親）*/}
-      <section className="rounded-md border border-border p-3 space-y-1.5">
-        <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">派生元（親）</div>
-        {work.parent_work_id == null ? (
+      {/* 派生元（親）関係 — 複数可 */}
+      <section className="rounded-md border border-border p-3 space-y-2">
+        <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          派生元（親）— 複数指定できます
+        </div>
+        {relationsLoading ? (
+          <p className="text-[11px] font-mono text-muted-foreground">読み込み中…</p>
+        ) : parents.length === 0 ? (
           <p className="text-[11px] font-mono text-muted-foreground">原版（派生元なし）</p>
-        ) : parent ? (
-          <button
-            type="button"
-            onClick={() => navigate(`/works/${parent.id}`)}
-            className="block text-left text-[12px] font-mono border border-border/60 rounded px-2 py-1.5 hover:border-foreground/40"
-          >
-            <span className="font-semibold">{label(parent)}</span>
-            {work.derivation_type ? (
-              <span className="ml-1.5 text-[10px] text-primary">
-                （{DERIV_LABEL[work.derivation_type] || work.derivation_type}）
-              </span>
-            ) : null}
-            <span className="ml-1 text-muted-foreground"> ↗</span>
-          </button>
         ) : (
-          <p className="text-[11px] font-mono text-muted-foreground">
-            #{work.parent_work_id}
-            {work.derivation_type ? `（${DERIV_LABEL[work.derivation_type] || work.derivation_type}）` : ""}
-          </p>
+          <div className="space-y-1">
+            {parents.map((r: any) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between gap-2 text-[12px] font-mono border border-border/60 rounded px-2 py-1.5"
+              >
+                <button
+                  type="button"
+                  onClick={() => navigate(`/works/${r.parent_work_id}`)}
+                  className="min-w-0 text-left hover:underline truncate"
+                  title="この作品を開く"
+                >
+                  <span className="font-semibold">{relLabel(r, "parent_work_id")}</span>
+                  {r.relation_type ? (
+                    <span className="ml-1.5 text-[10px] text-primary">
+                      （{DERIV_LABEL[r.relation_type] || r.relation_type}）
+                    </span>
+                  ) : null}
+                  <span className="ml-1 text-muted-foreground"> ↗</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void deleteRelation(r.id)}
+                  className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-destructive/40 text-destructive hover:bg-destructive/10"
+                  title="この派生元を外す"
+                >
+                  外す
+                </button>
+              </div>
+            ))}
+          </div>
         )}
-        <p className="text-[10px] text-muted-foreground/70">
-          系譜・派生の設定（派生元／派生種別）は「① 概要」タブの編集で変更します。
-        </p>
+
+        {/* 派生元を追加 */}
+        <div className="border-t border-dashed border-border pt-2 space-y-1.5">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground">派生元を追加</div>
+          <EntityCombobox
+            items={parentCandidates.map((w) => ({
+              id: w.id,
+              code: w.code,
+              label: w.title,
+              sub: w.sub,
+              raw: w,
+            }))}
+            value={relForm.parent_work_id || null}
+            onSelect={(opt) =>
+              setRelForm((f) => ({ ...f, parent_work_id: opt ? String(opt.id) : "" }))
+            }
+            placeholder="派生元（親作品/原作）を検索"
+          />
+          <div className="flex items-center gap-1.5">
+            <NativeSelect
+              value={relForm.relation_type || ""}
+              onChange={(e) => setRelForm((f) => ({ ...f, relation_type: e.target.value }))}
+              className="h-7 text-[11px] flex-1"
+            >
+              {DERIV_CHOICES.map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </NativeSelect>
+            <button
+              type="button"
+              onClick={() => void addRelation()}
+              disabled={addingRelation || !relForm.parent_work_id}
+              className="text-[11px] font-mono px-2 py-1 rounded border border-success text-success hover:bg-success/10 disabled:opacity-50"
+            >
+              {addingRelation ? "追加中…" : "追加"}
+            </button>
+          </div>
+          {relationErr && <p className="text-[10px] text-destructive">{relationErr}</p>}
+          <p className="text-[10px] text-muted-foreground/70">
+            先頭（最初に登録した派生元）が「主たる親」として①概要・分配マップに反映されます。
+          </p>
+        </div>
       </section>
 
-      {/* この作品を親とする派生作品 */}
+      {/* この作品を派生元とする作品（子） */}
       <section className="rounded-md border border-border p-3 space-y-1.5">
         <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-          この作品を派生元とする作品
+          この作品を派生元とする作品（派生物）
         </div>
         {children.length === 0 ? (
           <p className="text-[11px] font-mono text-muted-foreground">派生作品はありません。</p>
         ) : (
           <div className="space-y-1">
-            {children.map((c: any) => (
+            {children.map((r: any) => (
               <button
-                key={c.id}
+                key={r.id}
                 type="button"
-                onClick={() => navigate(`/works/${c.id}`)}
+                onClick={() => navigate(`/works/${r.child_work_id}`)}
                 className="block w-full text-left text-[12px] font-mono border border-border/60 rounded px-2 py-1.5 hover:border-foreground/40"
               >
-                <span className="font-semibold">{label(c)}</span>
-                {c.derivation_type ? (
+                <span className="font-semibold">{relLabel(r, "child_work_id")}</span>
+                {r.relation_type ? (
                   <span className="ml-1.5 text-[10px] text-primary">
-                    （{DERIV_LABEL[c.derivation_type] || c.derivation_type}）
+                    （{DERIV_LABEL[r.relation_type] || r.relation_type}）
                   </span>
                 ) : null}
                 <span className="ml-1 text-muted-foreground"> ↗</span>
@@ -84,6 +141,9 @@ export const WorkLineageSection: React.FC = () => {
             ))}
           </div>
         )}
+        <p className="text-[10px] text-muted-foreground/70">
+          子作品の登録は、その作品の②系譜で「派生元」にこの作品を追加してください。
+        </p>
       </section>
 
       {/* 原作ビュー: この原作を利用している自社作品（利用関係） */}

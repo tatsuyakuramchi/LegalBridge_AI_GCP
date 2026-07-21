@@ -175,6 +175,17 @@ export interface WorkDetailModel {
   assignRecalled: (mid: number, line: any, assign: boolean) => Promise<void>
   srcMatConds: Record<number, any[]>
 
+  // ② 作品系譜（work_relations 多対多）
+  relations: { parents: any[]; children: any[] }
+  relationsLoading: boolean
+  loadRelations: () => Promise<void>
+  relForm: Record<string, string>
+  setRelForm: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  addingRelation: boolean
+  relationErr: string | null
+  addRelation: () => Promise<void>
+  deleteRelation: (relationId: number) => Promise<void>
+
   // 派生値
   consumedGroups: ConsumedGroup[]
   parentCandidates: WorkPickerItem[]
@@ -244,6 +255,12 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
   const [matRecallLines, setMatRecallLines] = React.useState<any[]>([])
   const [matRecallLoading, setMatRecallLoading] = React.useState(false)
   const [srcMatConds, setSrcMatConds] = React.useState<Record<number, any[]>>({})
+  // ② 作品系譜（work_relations 多対多）
+  const [relations, setRelations] = React.useState<{ parents: any[]; children: any[] }>({ parents: [], children: [] })
+  const [relationsLoading, setRelationsLoading] = React.useState(false)
+  const [relForm, setRelForm] = React.useState<Record<string, string>>({})
+  const [addingRelation, setAddingRelation] = React.useState(false)
+  const [relationErr, setRelationErr] = React.useState<string | null>(null)
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -389,6 +406,77 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
       window.alert(`削除に失敗: ${String(e?.message || e)}`)
     }
   }
+
+  // ② 作品系譜: 派生元(親)/派生物(子)の関係を取得。
+  const loadRelations = React.useCallback(async () => {
+    if (!workId) { setRelations({ parents: [], children: [] }); return }
+    setRelationsLoading(true)
+    try {
+      const r = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/relations`)
+      const d = await r.json()
+      setRelations({
+        parents: Array.isArray(d?.parents) ? d.parents : [],
+        children: Array.isArray(d?.children) ? d.children : [],
+      })
+    } catch {
+      setRelations({ parents: [], children: [] })
+    } finally {
+      setRelationsLoading(false)
+    }
+  }, [workId])
+
+  // ② 派生元(親)関係を追加。追加後は関係とグラフ(主たる親ミラー反映)を再取得。
+  const addRelation = async () => {
+    if (!workId || !relForm.parent_work_id) {
+      setRelationErr("派生元を選択してください")
+      return
+    }
+    setAddingRelation(true)
+    setRelationErr(null)
+    try {
+      const r = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/relations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parent_work_id: Number(relForm.parent_work_id),
+          relation_type: relForm.relation_type || null,
+        }),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as any))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      setRelForm({})
+      await Promise.all([loadRelations(), loadGraph(workId)])
+    } catch (e: any) {
+      setRelationErr(String(e?.message || e))
+    } finally {
+      setAddingRelation(false)
+    }
+  }
+
+  // ② 関係を削除。主たる親ミラーが変わり得るのでグラフも再取得。
+  const deleteRelation = async (relationId: number) => {
+    if (!workId) return
+    try {
+      const r = await fetch(
+        `/api/v3/works/${encodeURIComponent(workId)}/relations/${relationId}`,
+        { method: "DELETE" }
+      )
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as any))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await Promise.all([loadRelations(), loadGraph(workId)])
+    } catch (e: any) {
+      window.alert(`関係の削除に失敗: ${String(e?.message || e)}`)
+    }
+  }
+
+  // graph 変化(作品切替/保存)に追従して関係を再取得。
+  React.useEffect(() => {
+    void loadRelations()
+  }, [loadRelations, graph])
 
   React.useEffect(() => {
     fetch("/api/v3/works")
@@ -860,6 +948,7 @@ function useWorkDetailModel(routeId?: string): WorkDetailModel {
     matCondOpen, setMatCondOpen, toggleMatCond, openMatEditor,
     matEditId, setMatEditId, matEditForm, setMatEditForm, matEditSaving, matEditErr, startEditCond, saveEditCond, deleteCond,
     matRecallDoc, setMatRecallDoc, matRecallLines, matRecallLoading, recallByDoc, assignRecalled, srcMatConds,
+    relations, relationsLoading, loadRelations, relForm, setRelForm, addingRelation, relationErr, addRelation, deleteRelation,
     consumedGroups, parentCandidates,
     loadGraph,
   }
