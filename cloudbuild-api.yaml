@@ -59,7 +59,7 @@ steps:
       - --gate
       - "0"
       - "0"
-      - "2"
+      - "0"
 
   - id: build
     name: gcr.io/cloud-builders/docker
