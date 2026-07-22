@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { DataTableShell } from "@/src/components/form"
 import {
   Dialog,
   DialogContent,
@@ -342,141 +343,143 @@ export function ConditionsPanel() {
         </Button>
       </div>
 
-      {/* テーブル */}
-      <div className="border border-border rounded-lg overflow-x-auto">
-        {error ? (
-          <div className="p-8 text-center text-sm text-destructive">読み込みに失敗しました: {error}</div>
-        ) : rows.length === 0 && !loading ? (
-          <div className="p-12 text-center text-[13px] text-muted-foreground">
-            該当する条件明細がありません
-          </div>
-        ) : (
-          <table className="w-full text-xs">
-            <thead className="bg-muted/40 text-[11px] font-bold text-muted-foreground">
-              <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left [&>th]:whitespace-nowrap">
-                <th className="w-8">
-                  <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />
-                </th>
-                <th>支払日</th>
-                <th>納期</th>
-                <th>種類</th>
-                <th>取引先</th>
-                <th>担当</th>
-                <th>品目</th>
-                <th>計算</th>
-                <th className="text-right">数量</th>
-                <th className="text-right">単価</th>
-                <th className="text-right">発注額(税抜)</th>
-                <th className="text-right">検収額</th>
-                <th>成就/未了</th>
-                <th>文書番号</th>
-                <th>検収書</th>
-                <th>契約名 / 課題</th>
-                <th>紐付け</th>
-                <th>状態</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(fulfill ? rows.filter((r) => (r.fulfillment_status || "open") === fulfill) : rows).map((r) => {
-                const dir =
-                  r.flow_direction === "in" || r.flow_direction === "out"
-                    ? r.flow_direction
-                    : r.is_inbound
-                    ? "out"
-                    : ""
+      {/* テーブル（共通シェル DataTableShell 採用。列描画・行クリック編集は不変） */}
+      {error ? (
+        <div className="border border-border rounded-lg p-8 text-center text-sm text-destructive">読み込みに失敗しました: {error}</div>
+      ) : (
+        <DataTableShell
+          rowKey={(r: any) => Number(r.id)}
+          onRowClick={(r: any) => openEdit(r)}
+          loading={loading}
+          emptyTitle="該当する条件明細がありません"
+          rows={fulfill ? rows.filter((r) => (r.fulfillment_status || "open") === fulfill) : rows}
+          columns={[
+            {
+              key: "sel",
+              header: <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />,
+              className: "w-8",
+              render: (r: any) => (
+                <span onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={selected.has(Number(r.id))} onChange={() => toggle(Number(r.id))} />
+                </span>
+              ),
+            },
+            { key: "payment_date", header: "支払日", className: "whitespace-nowrap", render: (r: any) => r.payment_date || "—" },
+            { key: "delivery_date", header: "納期", className: "whitespace-nowrap", render: (r: any) => r.delivery_date || "—" },
+            {
+              key: "category", header: "種類", className: "whitespace-nowrap",
+              render: (r: any) => {
+                const dir = r.flow_direction === "in" || r.flow_direction === "out" ? r.flow_direction : r.is_inbound ? "out" : ""
+                return (
+                  <>
+                    <Badge className="bg-info/10 text-info hover:bg-info/10">{catLabel(r.contract_category)}</Badge>
+                    {dir === "out" ? (
+                      <Badge className="ml-1 bg-success/10 text-success hover:bg-success/10">アウト(受領)</Badge>
+                    ) : dir === "in" ? (
+                      <Badge variant="outline" className="ml-1">イン(支払)</Badge>
+                    ) : null}
+                    {r.contract_type && <div className="text-[10px] text-muted-foreground mt-0.5">{r.contract_type}</div>}
+                  </>
+                )
+              },
+            },
+            {
+              key: "vendor", header: "取引先", className: "min-w-[120px]",
+              render: (r: any) => (
+                <>
+                  {r.vendor_name || "—"}
+                  {r.vendor_code && <div className="text-[10px] text-muted-foreground">{r.vendor_code}</div>}
+                </>
+              ),
+            },
+            { key: "owner", header: "担当", className: "whitespace-nowrap", render: (r: any) => r.owner_name || "—" },
+            {
+              key: "item", header: "品目", className: "min-w-[140px]",
+              render: (r: any) => (
+                <>
+                  <div>{r.item_name || "—"}</div>
+                  {r.spec && <div className="text-[10px] text-muted-foreground">{r.spec}</div>}
+                </>
+              ),
+            },
+            {
+              key: "calc", header: "計算", className: "whitespace-nowrap",
+              render: (r: any) => (
+                <>
+                  {r.calc_method || ""}
+                  {r.payment_terms && <div className="text-[10px] text-muted-foreground">{r.payment_terms}</div>}
+                </>
+              ),
+            },
+            { key: "qty", header: "数量", align: "right", className: "whitespace-nowrap", render: (r: any) => r.quantity ?? "" },
+            { key: "unit", header: "単価", align: "right", className: "whitespace-nowrap", render: (r: any) => yen(r.unit_price) },
+            { key: "amt", header: "発注額(税抜)", align: "right", className: "whitespace-nowrap font-mono", render: (r: any) => yen(r.amount_ex_tax) },
+            { key: "consumed", header: "検収額", align: "right", className: "whitespace-nowrap text-muted-foreground", render: (r: any) => (r.consumed_amount != null ? yen(r.consumed_amount) : "—") },
+            {
+              key: "fulfill_status", header: "成就/未了", className: "whitespace-nowrap",
+              render: (r: any) => {
+                const fb = fulfillOf(r.fulfillment_status)
+                return <Badge className={fb.cls}>{fb.label}</Badge>
+              },
+            },
+            { key: "docnum", header: "文書番号", className: "whitespace-nowrap", render: (r: any) => r.document_number || "—" },
+            {
+              key: "fulfilldoc", header: "検収書", className: "whitespace-nowrap",
+              render: (r: any) => {
+                const doc = (r as any).fulfilling_doc_number || ""
+                const cnt = Number((r as any).fulfilling_doc_count) || 0
+                if (!doc) return "—"
+                return <span onClick={(e) => e.stopPropagation()}>{cnt > 1 ? `${doc} 他${cnt - 1}件` : doc}</span>
+              },
+            },
+            {
+              key: "contract", header: "契約名 / 課題", className: "min-w-[140px]",
+              render: (r: any) => (
+                <>
+                  {r.contract_title || "—"}
+                  {r.issue_key && <div className="text-[10px] text-muted-foreground">{r.issue_key}</div>}
+                </>
+              ),
+            },
+            {
+              key: "links", header: "紐付け", className: "min-w-[160px]",
+              render: (r: any) => (
+                <div className="flex flex-wrap gap-1">
+                  {r.work_title && <LinkPill tone="work">作 {r.work_title}</LinkPill>}
+                  {r.source_ip_title && <LinkPill tone="ip">原 {r.source_ip_title}</LinkPill>}
+                  {(r.master_contract_title || r.master_contract_number) && (
+                    <LinkPill tone="master">基 {r.master_contract_title || r.master_contract_number}</LinkPill>
+                  )}
+                  {(r.ringi_number || r.ringi_title) && (
+                    <LinkPill tone="ringi">
+                      稟 {r.ringi_number ? `${r.ringi_number}${r.ringi_title ? " " + r.ringi_title : ""}` : r.ringi_title}
+                    </LinkPill>
+                  )}
+                  {!r.work_title && !r.source_ip_title && !r.master_contract_title && !r.master_contract_number && !r.ringi_number && !r.ringi_title && (
+                    <span className="text-muted-foreground">＋ 未設定</span>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "status", header: "状態", className: "min-w-[120px]",
+              render: (r: any) => {
                 const sf = r.status_flags || {}
                 return (
-                  <tr
-                    key={r.id}
-                    className="border-t border-border hover:bg-muted/30 cursor-pointer align-top [&>td]:px-2 [&>td]:py-2"
-                    onClick={() => openEdit(r)}
-                  >
-                    <td onClick={(e) => e.stopPropagation()}>
-                      <input type="checkbox" checked={selected.has(Number(r.id))} onChange={() => toggle(Number(r.id))} />
-                    </td>
-                    <td className="whitespace-nowrap">{r.payment_date || "—"}</td>
-                    <td className="whitespace-nowrap">{r.delivery_date || "—"}</td>
-                    <td className="whitespace-nowrap">
-                      <Badge className="bg-info/10 text-info hover:bg-info/10">{catLabel(r.contract_category)}</Badge>
-                      {dir === "out" ? (
-                        <Badge className="ml-1 bg-success/10 text-success hover:bg-success/10">アウト(受領)</Badge>
-                      ) : dir === "in" ? (
-                        <Badge variant="outline" className="ml-1">イン(支払)</Badge>
-                      ) : null}
-                      {r.contract_type && <div className="text-[10px] text-muted-foreground mt-0.5">{r.contract_type}</div>}
-                    </td>
-                    <td className="min-w-[120px]">
-                      {r.vendor_name || "—"}
-                      {r.vendor_code && <div className="text-[10px] text-muted-foreground">{r.vendor_code}</div>}
-                    </td>
-                    <td className="whitespace-nowrap">{r.owner_name || "—"}</td>
-                    <td className="min-w-[140px]">
-                      <div>{r.item_name || "—"}</div>
-                      {r.spec && <div className="text-[10px] text-muted-foreground">{r.spec}</div>}
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {r.calc_method || ""}
-                      {r.payment_terms && <div className="text-[10px] text-muted-foreground">{r.payment_terms}</div>}
-                    </td>
-                    <td className="text-right whitespace-nowrap">{r.quantity ?? ""}</td>
-                    <td className="text-right whitespace-nowrap">{yen(r.unit_price)}</td>
-                    <td className="text-right whitespace-nowrap font-mono">{yen(r.amount_ex_tax)}</td>
-                    <td className="text-right whitespace-nowrap text-muted-foreground">
-                      {r.consumed_amount != null ? yen(r.consumed_amount) : "—"}
-                    </td>
-                    <td className="whitespace-nowrap">
-                      {(() => {
-                        const fb = fulfillOf(r.fulfillment_status)
-                        return <Badge className={fb.cls}>{fb.label}</Badge>
-                      })()}
-                    </td>
-                    <td className="whitespace-nowrap">{r.document_number || "—"}</td>
-                    <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      {(() => {
-                        const doc = (r as any).fulfilling_doc_number || ""
-                        const cnt = Number((r as any).fulfilling_doc_count) || 0
-                        if (!doc) return "—"
-                        return cnt > 1 ? `${doc} 他${cnt - 1}件` : doc
-                      })()}
-                    </td>
-                    <td className="min-w-[140px]">
-                      {r.contract_title || "—"}
-                      {r.issue_key && <div className="text-[10px] text-muted-foreground">{r.issue_key}</div>}
-                    </td>
-                    <td className="min-w-[160px]">
-                      <div className="flex flex-wrap gap-1">
-                        {r.work_title && <LinkPill tone="work">作 {r.work_title}</LinkPill>}
-                        {r.source_ip_title && <LinkPill tone="ip">原 {r.source_ip_title}</LinkPill>}
-                        {(r.master_contract_title || r.master_contract_number) && (
-                          <LinkPill tone="master">基 {r.master_contract_title || r.master_contract_number}</LinkPill>
-                        )}
-                        {(r.ringi_number || r.ringi_title) && (
-                          <LinkPill tone="ringi">
-                            稟 {r.ringi_number ? `${r.ringi_number}${r.ringi_title ? " " + r.ringi_title : ""}` : r.ringi_title}
-                          </LinkPill>
-                        )}
-                        {!r.work_title && !r.source_ip_title && !r.master_contract_title && !r.master_contract_number && !r.ringi_number && !r.ringi_title && (
-                          <span className="text-muted-foreground">＋ 未設定</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="min-w-[120px]">
-                      <div className="flex flex-wrap gap-1">
-                        {STATUS_DEFS.filter((d) => sf[d.key]).map((d) => (
-                          <React.Fragment key={d.key}>
-                            <LinkPill tone="status">{d.label}</LinkPill>
-                          </React.Fragment>
-                        ))}
-                        {!STATUS_DEFS.some((d) => sf[d.key]) && <span className="text-muted-foreground">—</span>}
-                      </div>
-                    </td>
-                  </tr>
+                  <div className="flex flex-wrap gap-1">
+                    {STATUS_DEFS.filter((d) => sf[d.key]).map((d) => (
+                      <React.Fragment key={d.key}>
+                        <LinkPill tone="status">{d.label}</LinkPill>
+                      </React.Fragment>
+                    ))}
+                    {!STATUS_DEFS.some((d) => sf[d.key]) && <span className="text-muted-foreground">—</span>}
+                  </div>
                 )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+              },
+            },
+          ]}
+        />
+      )}
 
       {/* 紐付け編集モーダル */}
       <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
