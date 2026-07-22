@@ -6,7 +6,7 @@ import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { AppFormField } from "@/src/components/form"
+import { AppFormField, ModuleHeader } from "@/src/components/form"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -507,13 +507,11 @@ export function ContractsPanel() {
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-4">
       {/* UIC-15(設計 v1.4 Phase E): 契約台帳を /contracts へ移設。MasterLayout の chrome を
           離れるため標準ページヘッダを付与する。 */}
-      <header className="border-b border-border pb-5">
-        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">契約台帳</p>
-        <h2 className="text-2xl font-semibold tracking-tight">契約台帳</h2>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          締結済み(紙・既存)契約の登録は文書フォームの「DB登録のみ」、新規発行は「Finalize &amp; Sync」で。
-        </p>
-      </header>
+      <ModuleHeader
+        eyebrow="契約台帳"
+        title="契約台帳"
+        description={<>締結済み(紙・既存)契約の登録は文書フォームの「DB登録のみ」、新規発行は「Finalize &amp; Sync」で。</>}
+      />
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

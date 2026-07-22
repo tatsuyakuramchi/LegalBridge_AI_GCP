@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { NativeSelect } from "@/components/ui/native-select"
 import { cn } from "@/lib/utils"
+import { ModuleHeader } from "@/src/components/form"
 import {
   getIssues,
   getIssueEvents,
@@ -139,22 +140,17 @@ export function DataQualityCenter() {
 
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
-      <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
-        <div>
-          <p className="retro-tag mb-1.5">DQ · CENTER</p>
-          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5" />
-            Data Quality Center
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1.5">
-            データ完全性の不足 Issue を俯瞰し、担当・期限の割当、例外(waive)、修正導線を提供する。
-          </p>
-        </div>
-        <Button variant="outline" size="sm" onClick={doRescan} disabled={rescanning}>
-          <RefreshCw className={cn("h-3.5 w-3.5", rescanning && "animate-spin")} />
-          全件 再評価
-        </Button>
-      </header>
+      <ModuleHeader
+        eyebrow="DQ · CENTER"
+        title={<span className="inline-flex items-center gap-2"><ShieldAlert className="h-5 w-5" /> Data Quality Center</span>}
+        description="データ完全性の不足 Issue を俯瞰し、担当・期限の割当、例外(waive)、修正導線を提供する。"
+        actions={
+          <Button variant="outline" size="sm" onClick={doRescan} disabled={rescanning}>
+            <RefreshCw className={cn("h-3.5 w-3.5", rescanning && "animate-spin")} />
+            全件 再評価
+          </Button>
+        }
+      />
 
       {/* サマリー */}
       <div className="flex flex-wrap items-center gap-2">
