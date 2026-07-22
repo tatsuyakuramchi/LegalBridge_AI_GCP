@@ -1372,15 +1372,20 @@ export function MatterDetailPage() {
               <div className="space-y-1.5 mb-3">
                 {data.documents.length === 0 && <p className="text-[12px] text-muted-foreground">紐付く文書がありません。</p>}
                 {data.documents.map((d: any) => {
-                  const sent = sentDocIds.has(Number(d.id))
+                  // CloudSign(cloudsign_requests)の最新状態を優先し、無ければ手動送信履歴(document_sends)。
+                  const csStatus: string | null = d.cloudsign_status ?? null
+                  const signed = csStatus === "completed"
+                  const declined = csStatus === "declined"
+                  const sent = signed || csStatus === "sent" || sentDocIds.has(Number(d.id))
+                  const sendLabel = signed ? "締結済" : declined ? "却下" : sent ? "送信済" : "未送信"
                   const last = lastSendByDoc[Number(d.id)]
                   return (
                     <div key={d.id} className="border border-border/60 rounded-sm px-2.5 py-2">
                       <div className="flex items-center gap-2 text-[12px]">
                         <span className="font-mono font-medium">{d.document_number || `#${d.id}`}</span>
                         <Badge variant="outline" className="text-[10px]">{ATTACH_KIND_LABEL[d.template_type] || d.template_type}</Badge>
-                        <Badge variant={sent ? "success" : "secondary"} className="text-[10px]">
-                          {sent ? "送信済" : "未送信"}
+                        <Badge variant={signed ? "success" : declined ? "secondary" : sent ? "success" : "secondary"} className="text-[10px]">
+                          {sendLabel}
                         </Badge>
                         {d.contract_status && <span className="text-muted-foreground truncate">{d.contract_status}</span>}
                         <div className="ml-auto flex items-center gap-2 shrink-0">

@@ -244,9 +244,23 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
       const [issues, documents, conditions, sends, tasks] = await Promise.all([
         query(`SELECT * FROM matter_issues WHERE matter_id = $1 ORDER BY relation, backlog_issue_key`, [id]),
         query(
+          // CloudSign の最新状態(cloudsign_requests)を per-document で合流する。
+          //   送信バッジは document_sends(手動送信履歴)だけでは CloudSign 送信/締結を反映
+          //   できないため、文書番号一致の最新 request の status/sent_at/completed_at を返す。
           `SELECT d.id, d.document_number, d.template_type, d.contract_title, d.contract_status,
-                  d.issue_key, d.backlog_issue_key, d.created_at, d.drive_link
-             FROM documents d WHERE d.matter_id = $1 ORDER BY d.created_at DESC`,
+                  d.issue_key, d.backlog_issue_key, d.created_at, d.drive_link,
+                  cs.status       AS cloudsign_status,
+                  cs.sent_at      AS cloudsign_sent_at,
+                  cs.completed_at AS cloudsign_completed_at
+             FROM documents d
+             LEFT JOIN LATERAL (
+               SELECT cr.status, cr.sent_at, cr.completed_at
+                 FROM cloudsign_requests cr
+                WHERE cr.document_number = d.document_number
+                ORDER BY cr.created_at DESC
+                LIMIT 1
+             ) cs ON TRUE
+            WHERE d.matter_id = $1 ORDER BY d.created_at DESC`,
           [id]
         ),
         query(
