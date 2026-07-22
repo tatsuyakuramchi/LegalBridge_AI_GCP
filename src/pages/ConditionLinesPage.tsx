@@ -64,9 +64,9 @@ function StatusBadge({ status }: { status: string | null }) {
   const s = status || "—"
   const cls =
     s === "fulfilled" || s === "expired" // 成就 / 成就（満了）= 完了
-      ? "bg-success text-white"
+      ? "bg-success text-success-foreground"
       : s === "partially_fulfilled" || s === "active"
-        ? "bg-warning text-white"
+        ? "bg-warning text-warning-foreground"
         : s === "cancelled" || s === "closed_short"
           ? "bg-muted text-muted-foreground line-through"
           : ""
@@ -378,7 +378,7 @@ export function ConditionLinesPage() {
             key={b.name}
             type="button"
             onClick={() => setStatusFilter(statusFilter === b.name ? null : b.name)}
-            className={`px-2.5 py-1 rounded-md border ${statusFilter === b.name ? "bg-success text-white border-success" : "border-border text-muted-foreground hover:border-foreground"}`}
+            className={`px-2.5 py-1 rounded-md border ${statusFilter === b.name ? "bg-success text-success-foreground border-success" : "border-border text-muted-foreground hover:border-foreground"}`}
           >
             {STATUS_LABEL[b.name] || b.name} ({b.count})
           </button>
@@ -398,14 +398,14 @@ export function ConditionLinesPage() {
         <button
           type="button"
           onClick={() => setInspectionFilter(inspectionFilter === "pending" ? "all" : "pending")}
-          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "pending" ? "bg-warning text-white border-warning" : "border-border text-muted-foreground hover:border-foreground"}`}
+          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "pending" ? "bg-warning text-warning-foreground border-warning" : "border-border text-muted-foreground hover:border-foreground"}`}
         >
           検収待ち ({inspectionCounts.pending})
         </button>
         <button
           type="button"
           onClick={() => setInspectionFilter(inspectionFilter === "overdue" ? "all" : "overdue")}
-          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "overdue" ? "bg-destructive text-white border-destructive" : inspectionCounts.overdue > 0 ? "border-destructive text-destructive hover:border-destructive" : "border-border text-muted-foreground hover:border-foreground"}`}
+          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "overdue" ? "bg-destructive text-destructive-foreground border-destructive" : inspectionCounts.overdue > 0 ? "border-destructive text-destructive hover:border-destructive" : "border-border text-muted-foreground hover:border-foreground"}`}
         >
           期限超過 ({inspectionCounts.overdue})
         </button>
