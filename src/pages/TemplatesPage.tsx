@@ -15,6 +15,7 @@ import {
 import { useAppData } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { ModuleHeader } from "@/src/components/form"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
@@ -75,40 +76,36 @@ export function TemplatesPage() {
 
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
-      <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
-        <div>
-          <p className="retro-tag mb-1.5">TPL · STUDIO</p>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            Blueprint Studio
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1.5">
-            HTML / Handlebars templates with dynamic variable mapping.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Tabs
-            value={view}
-            onValueChange={(v) => setView(v as any)}
-          >
-            <TabsList>
-              <TabsTrigger value="list">List</TabsTrigger>
-              <TabsTrigger value="matrix">Matrix</TabsTrigger>
-            </TabsList>
-          </Tabs>
-          <Input
-            placeholder="new_template_id"
-            value={newId}
-            onChange={(e) =>
-              setNewId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))
-            }
-            className="w-44"
-          />
-          <Button disabled={!newId} onClick={create}>
-            <Plus />
-            Create
-          </Button>
-        </div>
-      </header>
+      <ModuleHeader
+        eyebrow="TPL · STUDIO"
+        title="Blueprint Studio"
+        description="HTML / Handlebars templates with dynamic variable mapping."
+        actions={
+          <div className="flex items-center gap-2">
+            <Tabs
+              value={view}
+              onValueChange={(v) => setView(v as any)}
+            >
+              <TabsList>
+                <TabsTrigger value="list">List</TabsTrigger>
+                <TabsTrigger value="matrix">Matrix</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            <Input
+              placeholder="new_template_id"
+              value={newId}
+              onChange={(e) =>
+                setNewId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))
+              }
+              className="w-44"
+            />
+            <Button disabled={!newId} onClick={create}>
+              <Plus />
+              Create
+            </Button>
+          </div>
+        }
+      />
 
       {view === "list" ? (
         <div className="space-y-4">

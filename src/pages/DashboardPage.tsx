@@ -16,6 +16,7 @@ import {
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
+import { ModuleHeader } from "@/src/components/form"
 import { Badge } from "@/components/ui/badge"
 import { useSkin } from "@/src/lib/skin"
 import { NervDashboard } from "@/src/components/nerv/NervDashboard"
@@ -73,25 +74,21 @@ export function DashboardPage() {
     <div className="relative">
       <div className="relative px-6 py-8 max-w-[1400px] mx-auto space-y-7">
         {/* Page header */}
-        <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">
-              オペレーション コンソール
-            </p>
-            <h2 className="text-2xl font-semibold tracking-tight">ダッシュボード</h2>
-            <p className="text-sm text-muted-foreground mt-1.5">
-              依頼 → 案件 → 文書・法務レビュー → ステータス変更で終了。ここが業務の起点です。
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => navigate("/documents/new")}>
-              <FilePlus2 /> 文書を作成
-            </Button>
-            <Button variant="outline" size="sm" onClick={refreshDashboardStats} disabled={isRefreshingStats}>
-              <RefreshCw className={isRefreshingStats ? "animate-spin" : ""} /> 更新
-            </Button>
-          </div>
-        </header>
+        <ModuleHeader
+          eyebrow="オペレーション コンソール"
+          title="ダッシュボード"
+          description="依頼 → 案件 → 文書・法務レビュー → ステータス変更で終了。ここが業務の起点です。"
+          actions={
+            <>
+              <Button size="sm" onClick={() => navigate("/documents/new")}>
+                <FilePlus2 /> 文書を作成
+              </Button>
+              <Button variant="outline" size="sm" onClick={refreshDashboardStats} disabled={isRefreshingStats}>
+                <RefreshCw className={isRefreshingStats ? "animate-spin" : ""} /> 更新
+              </Button>
+            </>
+          }
+        />
 
         {/* 業務動線レール */}
         <div>

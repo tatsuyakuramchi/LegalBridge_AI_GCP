@@ -12,6 +12,7 @@ import { matterClient } from "@/src/lib/api/matterClient"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { ModuleHeader } from "@/src/components/form"
 import { Button } from "@/components/ui/button"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 import { QuickCreateIssueModal } from "@/src/components/backlog/QuickCreateIssueModal"
@@ -149,92 +150,89 @@ export function RequestsPage() {
 
   return (
     <div className="px-6 py-6 max-w-[1400px] mx-auto space-y-6">
-      <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
-        <div>
-          <p className="retro-tag mb-1.5">REQ · 一覧</p>
-          <h2 className="text-2xl font-semibold tracking-tight">
-            依頼一覧（Backlog）
-          </h2>
-          <p className="text-[13px] text-muted-foreground mt-1.5">
-            法務対応が必要な依頼をリアルタイムに一覧表示します。
-          </p>
-          {batch.length > 0 && (
-            <div className="mt-3 flex items-center gap-3 flex-wrap">
-              <Badge variant="default" className="h-6 px-2.5">
-                {batch.length} 件選択
-              </Badge>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  // 先頭の課題を開く(簡易一括)
-                  open(batch[0])
-                }}
-              >
-                先頭を開く
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  mergeCart.addMany(
-                    batch
-                      .map((k) => issues.find((i) => i.issueKey === k))
-                      .filter((i): i is NonNullable<typeof i> => i != null)
-                      .map(cartItemOf),
-                    { openPanel: true }
-                  )
-                  setBatch([])
-                }}
-                className="gap-1.5"
-                title="選択した課題を統合カートに入れて、統合先を選んで統合する"
-              >
-                <GitMerge className="h-3.5 w-3.5" />
-                統合カートへ
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setBatch([])}>
-                クリア
-              </Button>
+      <ModuleHeader
+        eyebrow="REQ · 一覧"
+        title="依頼一覧（Backlog）"
+        description="法務対応が必要な依頼をリアルタイムに一覧表示します。"
+        actions={
+          <div className="flex items-center gap-2">
+            {/* Phase 22.6: クイック起案ボタン (口頭/メール依頼トリガー) */}
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => openQuickCreate()}
+              className="gap-1.5"
+              title="口頭/メール依頼を Backlog 課題として登録"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              新規起案
+            </Button>
+            <div className="relative w-72">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="キー / 件名 で検索…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8"
+              />
             </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Phase 22.6: クイック起案ボタン (口頭/メール依頼トリガー) */}
+            {/* 完了/終結/キャンセル の表示切替 (デフォルト: 非表示) */}
+            <label
+              className="flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground cursor-pointer select-none"
+              title="完了・終結・キャンセルの課題を一覧に含めるか"
+            >
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 accent-foreground cursor-pointer"
+                checked={hideDone}
+                onChange={(e) => setHideDone(e.target.checked)}
+              />
+              完了を隠す
+            </label>
+          </div>
+        }
+      />
+
+      {batch.length > 0 && (
+        <div className="flex items-center gap-3 flex-wrap">
+          <Badge variant="default" className="h-6 px-2.5">
+            {batch.length} 件選択
+          </Badge>
           <Button
             size="sm"
-            variant="default"
-            onClick={() => openQuickCreate()}
-            className="gap-1.5"
-            title="口頭/メール依頼を Backlog 課題として登録"
+            variant="outline"
+            onClick={() => {
+              // 先頭の課題を開く(簡易一括)
+              open(batch[0])
+            }}
           >
-            <Plus className="h-3.5 w-3.5" />
-            新規起案
+            先頭を開く
           </Button>
-          <div className="relative w-72">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="キー / 件名 で検索…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-8"
-            />
-          </div>
-          {/* 完了/終結/キャンセル の表示切替 (デフォルト: 非表示) */}
-          <label
-            className="flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-foreground cursor-pointer select-none"
-            title="完了・終結・キャンセルの課題を一覧に含めるか"
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              mergeCart.addMany(
+                batch
+                  .map((k) => issues.find((i) => i.issueKey === k))
+                  .filter((i): i is NonNullable<typeof i> => i != null)
+                  .map(cartItemOf),
+                { openPanel: true }
+              )
+              setBatch([])
+            }}
+            className="gap-1.5"
+            title="選択した課題を統合カートに入れて、統合先を選んで統合する"
           >
-            <input
-              type="checkbox"
-              className="h-3.5 w-3.5 accent-foreground cursor-pointer"
-              checked={hideDone}
-              onChange={(e) => setHideDone(e.target.checked)}
-            />
-            完了を隠す
-          </label>
+            <GitMerge className="h-3.5 w-3.5" />
+            統合カートへ
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setBatch([])}>
+            クリア
+          </Button>
         </div>
-      </header>
+      )}
 
       <QuickCreateIssueModal
         open={quickCreateOpen}

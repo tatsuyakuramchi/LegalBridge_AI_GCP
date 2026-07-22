@@ -10,6 +10,7 @@ import * as React from "react"
 import { Receipt, Network, Coins } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { ModuleHeader } from "@/src/components/form"
 
 const tabs = [
   { to: "/finance/billing", label: "請求・分配", icon: Receipt },
@@ -27,13 +28,11 @@ export function FinanceLayout() {
 
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
-      <header className="border-b border-border pb-5">
-        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Finance</p>
-        <h2 className="text-2xl font-semibold tracking-tight">Finance</h2>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          再許諾の受領・分配、請求ダッシュボード、分配構造マップ。
-        </p>
-      </header>
+      <ModuleHeader
+        eyebrow="Finance"
+        title="Finance"
+        description="再許諾の受領・分配、請求ダッシュボード、分配構造マップ。"
+      />
 
       <nav className="flex items-center gap-1 border-b border-border -mb-px overflow-x-auto">
         {tabs.map((t) => {
