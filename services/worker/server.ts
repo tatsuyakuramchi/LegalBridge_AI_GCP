@@ -10960,6 +10960,42 @@ ${details}
     },
     // LB-08 連動: 案件フォルダ配下の実ファイル一覧(人が直接入れたファイルも含む)。
     listMatterFolderFiles: (folderId) => googleDriveService.listFolderFiles(folderId),
+    // 案件×Slack 連携: 固定「法務相談」チャンネルに案件スレッド。SLACK_BOT_TOKEN 未設定なら無効。
+    slack: slackWebClient
+      ? {
+          legalChannelId: async () => {
+            try {
+              const r = await query(`SELECT value FROM app_settings WHERE key = 'SLACK_LEGAL_CONSULT_CHANNEL'`);
+              const v = String(r.rows[0]?.value || process.env.SLACK_LEGAL_CONSULT_CHANNEL || "").trim();
+              return v || null;
+            } catch {
+              return String(process.env.SLACK_LEGAL_CONSULT_CHANNEL || "").trim() || null;
+            }
+          },
+          postMessage: async (o) => {
+            try {
+              const r: any = await slackWebClient.chat.postMessage({ channel: o.channel, text: o.text, thread_ts: o.thread_ts });
+              return { ok: !!r?.ok, ts: r?.ts ? String(r.ts) : undefined, channel: r?.channel ? String(r.channel) : undefined };
+            } catch (e: any) {
+              return { ok: false, error: String(e?.data?.error || e?.message || e) };
+            }
+          },
+          getReplies: async (o) => {
+            try {
+              const r: any = await slackWebClient.conversations.replies({ channel: o.channel, ts: o.ts, limit: 200 });
+              const msgs: any[] = Array.isArray(r?.messages) ? r.messages : [];
+              return msgs.map((m) => ({
+                ts: String(m.ts),
+                user: m.user || m.username || m.bot_id || undefined,
+                text: String(m.text || ""),
+                bot: !!m.bot_id,
+              }));
+            } catch {
+              return [];
+            }
+          },
+        }
+      : undefined,
   });
 
   // 関連当事者取引 判定 (/rpt/*): RPT.gs の書込 (法人/役員/株主構成/議案)。読取は search-API。

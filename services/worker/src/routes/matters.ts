@@ -64,6 +64,18 @@ export interface MatterDeps {
   listMatterFolderFiles?: (
     folderId: string
   ) => Promise<Array<{ id: string; name: string; link: string; mimeType: string; modifiedTime: string; folder: string; isFolder: boolean }>>;
+  /**
+   * 案件×Slack 連携(固定「法務相談」チャンネルに案件スレッドを立てる)。省略時は Slack 機能無効。
+   *   server.ts 側で WebClient + app_settings/env を注入する(matters.ts は server 非依存を維持)。
+   */
+  slack?: {
+    /** 法務相談チャンネルの ID(app_settings.SLACK_LEGAL_CONSULT_CHANNEL / env)。未設定なら null。 */
+    legalChannelId: () => Promise<string | null>;
+    /** メッセージ投稿(ルート or thread_ts 指定でスレッド返信)。 */
+    postMessage: (opts: { channel: string; text: string; thread_ts?: string }) => Promise<{ ok: boolean; ts?: string; channel?: string; error?: string }>;
+    /** スレッド会話の取得(conversations.replies)。 */
+    getReplies: (opts: { channel: string; ts: string }) => Promise<Array<{ ts: string; user?: string; text: string; bot?: boolean }>>;
+  };
 }
 
 const s = (v: any): string | null =>
@@ -709,6 +721,88 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
       res.json({ ok: true, send: r.rows[0] });
     } catch (e: any) {
       console.error("[matters] record send failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // ── 案件×Slack 連携（固定「法務相談」チャンネルに案件スレッド） ──────────────────
+  //   POST :id/slack/thread    … スレッド作成(冪等。既存なら既存を返す)
+  //   POST :id/slack/messages  … スレッドへメッセージ送信
+  //   GET  :id/slack/replies   … スレッド会話をオンデマンド取得(conversations.replies)
+
+  // スレッド作成: 法務相談チャンネルにルート投稿し (channel_id, thread_ts) を保存。
+  app.post("/api/matters/:id/slack/thread", json, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!deps.slack) return res.status(400).json({ ok: false, error: "Slack 未設定(SLACK_BOT_TOKEN)" });
+    try {
+      const m = await query(`SELECT id, matter_code, title, counterparty FROM matters WHERE id = $1`, [id]);
+      if (!m.rows[0]) return res.status(404).json({ ok: false, error: "案件が見つかりません" });
+      const existing = await query(
+        `SELECT channel_id, thread_ts, root_text, created_at FROM matter_slack_threads WHERE matter_id = $1`,
+        [id]
+      );
+      if (existing.rows[0]) return res.json({ ok: true, thread: existing.rows[0], created: false });
+      const channel = await deps.slack.legalChannelId();
+      if (!channel) return res.status(400).json({ ok: false, error: "法務相談チャンネル未設定(SLACK_LEGAL_CONSULT_CHANNEL)" });
+      const mt = m.rows[0];
+      const createdBy = s(req.body?.created_by) || s(req.headers["x-user-email"] as string);
+      const rootText =
+        `:memo: 法務相談スレッド ${mt.matter_code || `#${id}`}｜*${mt.title || "(無題)"}*` +
+        (mt.counterparty ? `｜相手方: ${mt.counterparty}` : "");
+      const posted = await deps.slack.postMessage({ channel, text: rootText });
+      if (!posted.ok || !posted.ts) {
+        return res.status(502).json({ ok: false, error: posted.error || "Slack 投稿に失敗" });
+      }
+      const ins = await query(
+        `INSERT INTO matter_slack_threads (matter_id, channel_id, thread_ts, root_text, created_by)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (matter_id) DO NOTHING
+         RETURNING channel_id, thread_ts, root_text, created_at`,
+        [id, posted.channel || channel, posted.ts, rootText, createdBy]
+      );
+      const row =
+        ins.rows[0] ||
+        (await query(`SELECT channel_id, thread_ts, root_text, created_at FROM matter_slack_threads WHERE matter_id = $1`, [id])).rows[0];
+      await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [id]);
+      res.json({ ok: true, thread: row, created: true });
+    } catch (e: any) {
+      console.error("[matters] slack thread create failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // スレッドへメッセージ送信。
+  app.post("/api/matters/:id/slack/messages", json, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!deps.slack) return res.status(400).json({ ok: false, error: "Slack 未設定(SLACK_BOT_TOKEN)" });
+    const text = s(req.body?.text);
+    if (!text) return res.status(400).json({ ok: false, error: "本文が空です" });
+    try {
+      const t = await query(`SELECT channel_id, thread_ts FROM matter_slack_threads WHERE matter_id = $1`, [id]);
+      if (!t.rows[0]) return res.status(400).json({ ok: false, error: "スレッド未作成です。先に「法務相談スレッドを立てる」を実行してください" });
+      const posted = await deps.slack.postMessage({ channel: t.rows[0].channel_id, text, thread_ts: t.rows[0].thread_ts });
+      if (!posted.ok) return res.status(502).json({ ok: false, error: posted.error || "Slack 送信に失敗" });
+      res.json({ ok: true, ts: posted.ts });
+    } catch (e: any) {
+      console.error("[matters] slack message failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // スレッド会話の取得(オンデマンド)。未作成なら thread=null / messages=[] を返す。
+  app.get("/api/matters/:id/slack/replies", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!deps.slack) return res.json({ ok: true, enabled: false, thread: null, messages: [] });
+    try {
+      const t = await query(
+        `SELECT channel_id, thread_ts, root_text, created_at FROM matter_slack_threads WHERE matter_id = $1`,
+        [id]
+      );
+      if (!t.rows[0]) return res.json({ ok: true, enabled: true, thread: null, messages: [] });
+      const messages = await deps.slack.getReplies({ channel: t.rows[0].channel_id, ts: t.rows[0].thread_ts });
+      res.json({ ok: true, enabled: true, thread: t.rows[0], messages });
+    } catch (e: any) {
+      console.error("[matters] slack replies failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
