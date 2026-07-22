@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { AppFormField } from "@/src/components/form"
+import { AppFormField, ModuleHeader } from "@/src/components/form"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -43,15 +43,11 @@ export function SettingsPage() {
 
   return (
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
-      <header className="border-b border-border pb-5">
-        <p className="retro-tag mb-1.5">SYS · CONFIG</p>
-        <h2 className="text-2xl font-semibold tracking-tight">
-          System Settings
-        </h2>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          Environment variables, integrations, and notification templates.
-        </p>
-      </header>
+      <ModuleHeader
+        eyebrow="SYS · CONFIG"
+        title="System Settings"
+        description="Environment variables, integrations, and notification templates."
+      />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>

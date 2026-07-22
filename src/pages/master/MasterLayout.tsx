@@ -5,6 +5,7 @@ import { RefreshCw, Building2, Users, GitBranch, ClipboardCheck } from "lucide-r
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { ModuleHeader } from "@/src/components/form"
 
 // UIC-19(設計 v1.4 §5.3 / Phase E): /master は「参照マスターのランディング」。4 項目に限定。
 //   契約=/contracts(UIC-15) / 金銭=/finance(UIC-16) / 保守=/data-maintenance(UIC-17) /
@@ -34,21 +35,17 @@ export function MasterLayout() {
 
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
-      <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">参照マスター</p>
-          <h2 className="text-2xl font-semibold tracking-tight">参照マスター</h2>
-          <p className="text-xs text-muted-foreground mt-1.5">
-            取引先・担当者・稟議・ルーティングの参照データ。契約は /contracts、金銭は /finance、保守は /data-maintenance へ移設済み。
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+      <ModuleHeader
+        eyebrow="参照マスター"
+        title="参照マスター"
+        description="取引先・担当者・稟議・ルーティングの参照データ。契約は /contracts、金銭は /finance、保守は /data-maintenance へ移設済み。"
+        actions={
           <Button variant="outline" size="sm" onClick={refreshAll}>
             <RefreshCw />
             Sync all
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <nav className="flex items-center gap-1 border-b border-border -mb-px overflow-x-auto">
         {tabs.map((t) => {
