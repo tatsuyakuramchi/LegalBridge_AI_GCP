@@ -15,6 +15,7 @@ import {
   ExternalLink,
   GitMerge,
   Mail,
+  MessagesSquare,
   Pencil,
   History,
   StickyNote,
@@ -59,6 +60,7 @@ import {
   STAGE_LABEL,
   stageLabel,
 } from "@/src/components/matter/matterStages"
+import { MatterSlackPanel } from "@/src/components/matter/MatterSlackPanel"
 
 const RELATION_LABEL: Record<string, string> = {
   primary: "代表",
@@ -1534,6 +1536,44 @@ export function MatterDetailPage() {
                   </div>
                 )}
               </div>
+            </CardContent>
+          </Card>
+
+          {/* 法務相談(Slack) + メール履歴 */}
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <SectionHead icon={MessagesSquare} label="法務相談・連絡" />
+              <MatterSlackPanel matterId={Number(matterId)} />
+              {(() => {
+                const emails = (data.sends || []).filter((x: any) => (x.channel || "email") === "email")
+                return (
+                  <div className="border border-border/60 rounded-sm p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-[13px] font-semibold">メール履歴</span>
+                      <span className="text-[11px] text-muted-foreground">{emails.length}件</span>
+                    </div>
+                    {emails.length === 0 ? (
+                      <p className="text-[11px] text-muted-foreground">送信メールはまだありません。</p>
+                    ) : (
+                      <ul className="space-y-1.5">
+                        {emails.map((x: any) => (
+                          <li key={x.id} className="text-[12px] border-b border-border/30 pb-1.5 last:border-0 last:pb-0">
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className="text-[10px]">{x.status || "sent"}</Badge>
+                              <span className="truncate">{x.subject || "(件名なし)"}</span>
+                              <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                                {x.sent_at ? String(x.sent_at).slice(0, 16).replace("T", " ") : ""}
+                              </span>
+                            </div>
+                            {x.recipient && <div className="text-[10px] text-muted-foreground truncate">→ {x.recipient}</div>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )
+              })()}
             </CardContent>
           </Card>
         </div>)}

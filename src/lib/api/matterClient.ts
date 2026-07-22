@@ -122,4 +122,18 @@ export const matterClient = {
   absorb(matterId: number | string, body: Record<string, unknown>) {
     return apiSend("POST", `/api/matters/${matterId}/absorb`, body);
   },
+
+  // 案件×Slack: 固定「法務相談」チャンネルに案件スレッド。
+  /** スレッド作成(冪等。既存なら既存を返す)。 */
+  slackCreateThread(matterId: number | string) {
+    return apiSend("POST", `/api/matters/${matterId}/slack/thread`);
+  },
+  /** スレッドへメッセージ送信。 */
+  slackSendMessage(matterId: number | string, text: string) {
+    return apiSend("POST", `/api/matters/${matterId}/slack/messages`, { text });
+  },
+  /** スレッド会話をオンデマンド取得(conversations.replies)。 */
+  slackReplies(matterId: number | string) {
+    return apiGet(`/api/matters/${matterId}/slack/replies`);
+  },
 };
