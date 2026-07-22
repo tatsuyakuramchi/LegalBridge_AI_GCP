@@ -21,6 +21,12 @@ export type { FormHeaderProps, FormHeaderMetadata } from "./FormHeader";
 export { ModuleHeader } from "./ModuleHeader";
 export type { ModuleHeaderProps, ModuleHeaderMetric } from "./ModuleHeader";
 
+export { FacetPanel } from "./FacetPanel";
+export type { FacetPanelProps, FacetGroup, FacetOption } from "./FacetPanel";
+
+export { WorkflowStepper } from "./WorkflowStepper";
+export type { WorkflowStepperProps, WorkflowStep, WorkflowStepStatus } from "./WorkflowStepper";
+
 export { RelatedDataPanel } from "./RelatedDataPanel";
 export type { RelatedDataPanelProps, RelatedDataItem } from "./RelatedDataPanel";
 
