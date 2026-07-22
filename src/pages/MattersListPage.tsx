@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { NativeSelect } from "@/components/ui/native-select"
-import { AppFormField, CompactFormGrid } from "@/src/components/form"
+import { AppFormField, CompactFormGrid, ModuleHeader } from "@/src/components/form"
 import { useToast } from "@/components/ui/toast"
 import {
   Dialog,
@@ -139,27 +139,23 @@ export function MattersListPage() {
 
   return (
     <div className="px-6 py-6 max-w-[1400px] mx-auto space-y-5">
-      {/* Header */}
-      <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">案件管理</p>
-          <h2 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <FolderKanban className="h-6 w-6 text-muted-foreground" /> 案件管理
-          </h2>
-          <p className="text-[13px] text-muted-foreground mt-1.5">
-            重複・部分発生した Backlog 課題を1案件に束ね、文書・送信履歴・条件明細を総合管理します。
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={refresh} disabled={loading} title="更新">
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            <span className="ml-1">更新</span>
-          </Button>
-          <Button size="sm" onClick={() => setOpenCreate(true)}>
-            <Plus className="h-3.5 w-3.5 mr-1" /> 新規案件
-          </Button>
-        </div>
-      </header>
+      {/* Header (共通シェル ModuleHeader) */}
+      <ModuleHeader
+        eyebrow="案件管理"
+        title={<span className="inline-flex items-center gap-2"><FolderKanban className="h-6 w-6 text-muted-foreground" /> 案件管理</span>}
+        description="重複・部分発生した Backlog 課題を1案件に束ね、文書・送信履歴・条件明細を総合管理します。"
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={refresh} disabled={loading} title="更新">
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              <span className="ml-1">更新</span>
+            </Button>
+            <Button size="sm" onClick={() => setOpenCreate(true)}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> 新規案件
+            </Button>
+          </>
+        }
+      />
 
       {/* Filter bar */}
       <div className="flex items-center gap-2">

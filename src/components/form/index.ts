@@ -18,6 +18,9 @@ export type { StickyActionBarProps } from "./StickyActionBar";
 export { FormHeader } from "./FormHeader";
 export type { FormHeaderProps, FormHeaderMetadata } from "./FormHeader";
 
+export { ModuleHeader } from "./ModuleHeader";
+export type { ModuleHeaderProps, ModuleHeaderMetric } from "./ModuleHeader";
+
 export { RelatedDataPanel } from "./RelatedDataPanel";
 export type { RelatedDataPanelProps, RelatedDataItem } from "./RelatedDataPanel";
 
