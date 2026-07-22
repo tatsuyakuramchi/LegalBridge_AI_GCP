@@ -25,7 +25,8 @@
 | **E-code** | **ledgers write/read のコード付替（write 7→0 / read 16→2）** | worker/api | ✅ 済 |
 | E-verify | 本番で `documents.ledger_ref_id` に ledgers.id 残存が無いことを確認 | prod SQL | ✅ 0 件 |
 | E-final-① | resolver フォールバック撤去（read 2→0・コードから ledgers 参照 0） | worker | ✅ 済 |
-| E-final-② | `DROP source_ips` / `DROP ledgers`（migration） | migration | ⏸ 要人間承認（破壊的） |
+| E-final-② | `DROP ledgers`（migration 0143・CASCADE なし） | migration | 🔶 作成済／worker `:36ec2d0` live 化後に merge+deploy |
+| （保留）| `DROP source_ips`（condition_lines 等コア FK 撤去が前提） | migration | ⏸ 別途・見送り |
 
 デプロイ順の制約: B は後方互換のため A と同時か先に。A 単独先行は degrade 窓を作る。
 
