@@ -10,6 +10,7 @@ import * as React from "react"
 import { FileUp, GitMerge, Unlink, FileEdit } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { ModuleHeader } from "@/src/components/form"
 
 const tabs = [
   { to: "/data-maintenance/bulk-import", label: "一括インポート", icon: FileUp },
@@ -30,13 +31,11 @@ export function DataMaintenanceLayout() {
 
   return (
     <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-6">
-      <header className="border-b border-border pb-5">
-        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground mb-1.5">Data Maintenance</p>
-        <h2 className="text-2xl font-semibold tracking-tight">Data Maintenance</h2>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          一括インポート、ID統合(マージ)、未リンクCL 棚卸し、下書きの掃除。
-        </p>
-      </header>
+      <ModuleHeader
+        eyebrow="Data Maintenance"
+        title="Data Maintenance"
+        description="一括インポート、ID統合(マージ)、未リンクCL 棚卸し、下書きの掃除。"
+      />
 
       <nav className="flex items-center gap-1 border-b border-border -mb-px overflow-x-auto">
         {tabs.map((t) => {
