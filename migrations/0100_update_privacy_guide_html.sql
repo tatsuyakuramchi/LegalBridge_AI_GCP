@@ -1,4 +1,16 @@
-<!DOCTYPE html><html lang="ja"><head>
+-- 0100_update_privacy_guide_html.sql  (GENERATED — do not edit by hand)
+-- 生成元: services/api/guides/privacy.html
+-- 個人情報 運用ガイド(privacy)に「個人情報管理台帳」ガイドの要素を追記した再構築版を
+-- 新しい版として投入し、portal_guides.current_version_id を貼り替える(公開)。
+-- 冪等: 現行版が本ファイルと同一なら何もしない。sync-guides-to-db.mjs と整合。
+
+DO $upd_privacy$
+DECLARE
+  gid INTEGER;
+  vid INTEGER;
+  cur TEXT;
+  nextver INTEGER;
+  newhtml TEXT := $g_privacy$<!DOCTYPE html><html lang="ja"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>個人情報 運用ガイド｜事業部向け</title>
@@ -802,4 +814,34 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 </div>
 </main>
 
-</body></html>
+</body></html>$g_privacy$;
+BEGIN
+  SELECT id INTO gid FROM portal_guides WHERE guide_key = 'privacy';
+  IF gid IS NULL THEN
+    RAISE NOTICE 'skip privacy: portal_guides にメタ行なし(0094 を先に適用)';
+    RETURN;
+  END IF;
+
+  SELECT pv.html_source INTO cur
+    FROM portal_guides g
+    LEFT JOIN portal_guide_versions pv ON pv.id = g.current_version_id
+   WHERE g.id = gid;
+
+  IF cur IS NOT DISTINCT FROM newhtml THEN
+    RETURN; -- 既に現行版が同一。再適用しない(冪等)。
+  END IF;
+
+  SELECT COALESCE(MAX(version_no), 0) + 1 INTO nextver
+    FROM portal_guide_versions WHERE guide_id = gid;
+
+  INSERT INTO portal_guide_versions (guide_id, version_no, html_source, comment, created_by)
+    VALUES (gid, nextver, newhtml, '個人情報管理台帳ガイドの要素を追記(現場向けフロー再構築)', 'migration-0100')
+    RETURNING id INTO vid;
+
+  UPDATE portal_guides
+     SET current_version_id = vid, status = 'published', updated_at = now()
+   WHERE id = gid;
+
+  RAISE NOTICE 'privacy updated to v% (published)', nextver;
+END
+$upd_privacy$;
