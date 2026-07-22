@@ -1,0 +1,24 @@
+-- 0143_drop_legacy_ledgers.sql
+-- WM-01 Phase E-final-②: 旧原作台帳 ledgers を撤去する。
+--
+--   原作の正準モデルは works(kind='licensed_in') へ一本化済。ledgers は
+--   work_code = ledger_code の互換ミラーとして残置していたが、
+--     - コードからの read/write 参照は 0（E-code / E-final-① で works へ付替、CI ラチェット 0/0/0）
+--     - documents.ledger_ref_id は 0101 で REFERENCES works(id)。E-verify で works 非在の
+--       値（旧 ledgers.id）が本番 0 件と確認済
+--     - ledgers(id) を参照する FK は materials.ledger_id のみで、materials は 0090 で DROP 済
+--     - ledgers を参照する VIEW は無し
+--   のため、依存ゼロで安全に撤去できる。
+--
+--   安全設計: CASCADE は付けない。万一 想定外の FK/VIEW が ledgers に残っていれば
+--   この DROP は失敗し、migrate ジョブが止まる（＝データを巻き込まず build が中断する）。
+--   その場合は依存を先に解消してから再実行する。
+--
+--   前提: 本 migration を適用する worker ビルドの時点で、コードは ledgers を一切参照しない
+--   （E-final-① = resolver フォールバック撤去 が先に live 化済であること）。
+--
+--   ロールバック: ledgers は works の派生ミラーであり、works から再構成可能
+--   （CREATE TABLE ledgers ... + INSERT SELECT work_code, title, ... FROM works WHERE kind='licensed_in'）。
+--   source_ips は本 migration では撤去しない（condition_lines 等コア表の source_ip_id FK が残るため別途）。
+
+DROP TABLE IF EXISTS ledgers;
