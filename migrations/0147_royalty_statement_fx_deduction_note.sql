@@ -1,4 +1,18 @@
-<!DOCTYPE html>
+-- 0147_royalty_statement_fx_deduction_note.sql
+-- 利用許諾料計算書(royalty_statement) 多明細モードの調整:
+--   ・明細から「外貨売上」列を削除(算定基礎額=円のみ表示)。
+--   ・外貨入金時の備考を4項目(実受領額の定義/日本源泉徴収前/外国源泉税と日本源泉税は
+--     別建て/異議申立)に差し替え。single / JPY 入金は従来文で不変。
+--   ・A案: 明細を親契約(イン側)ごとにグループ化し, 契約見出し(計算方式付) + 契約小計 → 総合計。
+--   ・計算方式の混在対応: 契約グループごとに 製造ベース(基準価格×課金数量×料率) と
+--     売上ベース(実受領額×料率) を1枚にまとめて表示できる(方式ラベル + 製造ベースは内訳注記)。
+--
+--   本番 worker/search-api は TEMPLATE_SOURCE=db のため DB 版 current を貼替。
+--   disk: services/worker/templates/royalty_statement.html と同一内容。冪等。0146 を踏襲。
+
+DO $mig_rs_note$
+DECLARE
+  tid INTEGER; cur_html TEXT; cur_schema JSONB; new_html TEXT := $rs_tpl_0147$<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -587,3 +601,21 @@
 
 </body>
 </html>
+$rs_tpl_0147$; vid INTEGER;
+BEGIN
+  SELECT dt.id, v.html_source, v.field_schema INTO tid, cur_html, cur_schema
+    FROM document_templates dt
+    LEFT JOIN document_template_versions v ON v.id = dt.current_version_id
+   WHERE dt.template_key = 'royalty_statement';
+  IF tid IS NULL THEN RAISE NOTICE '0147: royalty_statement template not found, skipping'; RETURN; END IF;
+  IF cur_html IS NOT NULL AND cur_html = new_html THEN RAISE NOTICE '0147: already up to date, skipping'; RETURN; END IF;
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  VALUES (tid,
+          COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = tid),0)+1,
+          new_html, cur_schema,
+          '0147: 利用許諾料計算書 多明細 外貨列削除＋控除注意書き4項目＋親契約グループ化＋計算方式混在',
+          'migration-0147')
+  RETURNING id INTO vid;
+  UPDATE document_templates SET current_version_id = vid, updated_at = now() WHERE id = tid;
+  RAISE NOTICE '0147: royalty_statement applied (new version_id=%)', vid;
+END $mig_rs_note$;
