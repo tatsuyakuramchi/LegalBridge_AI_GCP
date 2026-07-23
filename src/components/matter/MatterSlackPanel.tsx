@@ -26,6 +26,7 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
   const [candidates, setCandidates] = React.useState<MentionCandidate[]>([])
   const [mentions, setMentions] = React.useState<MentionCandidate[]>([])
   const [pickerOpen, setPickerOpen] = React.useState(false)
+  const [mentionQuery, setMentionQuery] = React.useState("")
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -164,7 +165,10 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
               <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => setPickerOpen((v) => !v)}
+                  onClick={() => {
+                    setPickerOpen((v) => !v)
+                    setMentionQuery("")
+                  }}
                   className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/50"
                 >
                   <AtSign className="h-3 w-3" />
@@ -183,25 +187,43 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
                 ))}
               </div>
               {pickerOpen && (
-                <div className="flex flex-wrap gap-1 rounded-md border border-border/60 bg-muted/20 p-1.5">
-                  {candidates.map((c) => {
-                    const on = mentions.some((m) => m.id === c.id)
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => toggleMention(c)}
-                        className={
-                          "rounded-full px-2 py-0.5 text-[11px] border " +
-                          (on
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "border-input text-muted-foreground hover:bg-muted/50")
-                        }
-                      >
-                        @{c.name}
-                      </button>
-                    )
-                  })}
+                <div className="space-y-1.5 rounded-md border border-border/60 bg-muted/20 p-1.5">
+                  <input
+                    type="text"
+                    value={mentionQuery}
+                    onChange={(e) => setMentionQuery(e.target.value)}
+                    placeholder="名前で検索…"
+                    autoFocus
+                    className="w-full rounded-md border border-input bg-transparent px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto">
+                    {(() => {
+                      const q = mentionQuery.trim().toLowerCase()
+                      const filtered = q
+                        ? candidates.filter((c) => c.name.toLowerCase().includes(q))
+                        : candidates
+                      if (filtered.length === 0)
+                        return <p className="text-[11px] text-muted-foreground px-1 py-0.5">該当なし</p>
+                      return filtered.map((c) => {
+                        const on = mentions.some((m) => m.id === c.id)
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => toggleMention(c)}
+                            className={
+                              "rounded-full px-2 py-0.5 text-[11px] border " +
+                              (on
+                                ? "bg-primary text-primary-foreground border-primary"
+                                : "border-input text-muted-foreground hover:bg-muted/50")
+                            }
+                          >
+                            @{c.name}
+                          </button>
+                        )
+                      })
+                    })()}
+                  </div>
                 </div>
               )}
             </div>
