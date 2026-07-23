@@ -167,11 +167,12 @@ const LINE_ITEM_FIELDS: Record<string, { label: string; fields: LineItemField[] 
   },
   license_calc: {
     label: "計算明細",
+    // 一旦すべて任意で送信可能にする(必須ゲートを撤廃)。
     fields: [
-      { key: "product_name", label: "対象製品・作品", kind: "text", placeholder: "例: ボードゲーム「〇〇」" },
-      { key: "period", label: "対象期間", kind: "text", placeholder: "例: 2026年4月〜2026年6月" },
-      { key: "sales", label: "販売数・売上高", kind: "text", placeholder: "例: 1,200個 / ¥1,980,000" },
-      { key: "royalty_terms", label: "料率・単価", kind: "text", placeholder: "例: 料率5% / 単価100円" },
+      { key: "product_name", label: "対象製品・作品", kind: "text", placeholder: "例: ボードゲーム「〇〇」", optional: true },
+      { key: "period", label: "対象期間", kind: "text", placeholder: "例: 2026年4月〜2026年6月", optional: true },
+      { key: "sales", label: "販売数・売上高", kind: "text", placeholder: "例: 1,200個 / ¥1,980,000", optional: true },
+      { key: "royalty_terms", label: "料率・単価", kind: "text", placeholder: "例: 料率5% / 単価100円", optional: true },
       { key: "remarks", label: "備考", kind: "text", optional: true },
     ],
   },
@@ -1895,41 +1896,24 @@ export function registerSlackGateway(app: express.Express, deps: SlackGatewayDep
     }
 
     // 利用許諾計算書: 契約番号で対象を特定 (in-process lookup)
+    //   一旦すべて任意で送信可能にする: 契約番号が空でも submit を通す。
+    //   番号が入力されていれば contract を引いて補完するが、見つからない/エラーでも
+    //   ブロックせず入力値をそのまま保持して送信を継続する。
     if (submission.request_type === "license_calc") {
       const targetDocNo = String(submission.target_doc_number || "").trim();
-      if (!targetDocNo) {
-        return res.json({
-          response_action: "errors",
-          errors: {
-            target_doc_number_block:
-              "対象の発注書番号 / 契約書番号を入力してください（上の候補から選択した場合は不要です）。",
-          },
-        });
+      if (targetDocNo) {
+        const looked = await lookupContractNumber(targetDocNo);
+        if (looked && !looked.__error && looked.found === true) {
+          submission.target_doc_number = looked.documentNumber || targetDocNo;
+          submission.target_contract_title = looked.contractTitle || "";
+          submission.counterparty = looked.vendorName || "";
+          if (looked.vendorCode) submission.entity_id = looked.vendorCode;
+          if (looked.entityType === "individual") submission.entity_type = "individual";
+        } else {
+          // 見つからない/エラーでも送信は継続(入力値を保持)。
+          submission.target_doc_number = targetDocNo;
+        }
       }
-      const looked = await lookupContractNumber(targetDocNo);
-      if (!looked || looked.__error) {
-        return res.json({
-          response_action: "errors",
-          errors: {
-            target_doc_number_block:
-              "番号の確認中にエラーが発生しました。時間をおいて再度お試しください。",
-          },
-        });
-      }
-      if (looked.found !== true) {
-        return res.json({
-          response_action: "errors",
-          errors: {
-            target_doc_number_block:
-              "この番号の契約が見つかりません。「支払対象契約検索」ページで番号をご確認ください。",
-          },
-        });
-      }
-      submission.target_doc_number = looked.documentNumber || targetDocNo;
-      submission.target_contract_title = looked.contractTitle || "";
-      submission.counterparty = looked.vendorName || "";
-      if (looked.vendorCode) submission.entity_id = looked.vendorCode;
-      if (looked.entityType === "individual") submission.entity_type = "individual";
     }
 
     // 検収書: 明細ごとの契約番号に対応 (Phase 28.1)
