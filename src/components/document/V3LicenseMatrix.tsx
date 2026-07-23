@@ -11,6 +11,32 @@
  * - LC は原作(selectedLedger)の素材から選択(material_code/name/権利者を補完) or 手入力。
  */
 import * as React from 'react';
+import { RegionLanguageSelect } from './RegionLanguageSelect';
+import {
+  COUNTRIES,
+  LANGUAGES,
+  WORLD,
+  ALL_LANG,
+  REGION_PRESETS,
+  composeNames,
+  type Opt,
+} from '@/src/lib/regionLanguageMaster';
+
+// 既存文字列(reg/lang)→ Opt[] の逆引き(初期化フォールバック)。
+const NAME_TO_COUNTRY = new Map<string, Opt>([...COUNTRIES, WORLD].map((o) => [o.name, o]));
+const NAME_TO_LANGUAGE = new Map<string, Opt>([...LANGUAGES, ALL_LANG].map((o) => [o.name, o]));
+// regions[]/languages[](構造化) を優先。無ければ既存文字列を区切り分解して名前一致で Opt 化
+//   (一致しない語は code=null の name-only Opt として尊重)。
+function strToOpts(arr: Opt[] | undefined, s: string | undefined, nameMap: Map<string, Opt>): Opt[] {
+  if (Array.isArray(arr) && arr.length > 0) return arr;
+  const raw = String(s ?? '').trim();
+  if (!raw) return [];
+  return raw
+    .split(/[・、,\/／]/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((name) => nameMap.get(name) || ({ code: '', name } as Opt));
+}
 
 export interface V3Cond {
   id: number;
@@ -24,6 +50,10 @@ export interface V3Cond {
   fixedRate?: string;
   reg?: string;
   lang?: string;
+  /** 選択式・国名単位・複数選択(1対N)。保存は 0133 子テーブル(code付き)、
+   *  reg/lang は name を '・' 連結して合成し互換維持。修正時は再選択で構造化が正。 */
+  regions?: Opt[];
+  languages?: Opt[];
   qty?: string;
   ag?: string;
   mg?: string;
@@ -133,6 +163,21 @@ export function V3LicenseMatrix({
   // 取引形態は固定3種のため追加/削除はしない。値の更新のみ。
   const updCond = (id: number, k: keyof V3Cond, v: any) =>
     onChangeConds(conds.map((c) => (c.id === id ? { ...c, [k]: v } : c)));
+
+  // 選択式(複数国/言語)の更新: 構造化 regions/languages を保持しつつ、
+  //   互換の reg/lang(name 連結)も合成する。修正時はこの再選択が「正」。
+  const updCondRegions = (id: number, opts: Opt[]) =>
+    onChangeConds(
+      conds.map((c) =>
+        c.id === id ? { ...c, regions: opts, reg: composeNames(opts) } : c
+      )
+    );
+  const updCondLanguages = (id: number, opts: Opt[]) =>
+    onChangeConds(
+      conds.map((c) =>
+        c.id === id ? { ...c, languages: opts, lang: composeNames(opts) } : c
+      )
+    );
 
   // 構成要素LC(=原作マテリアル)は「3. マスター条件」で選択する。ここでは
   //   その LC 行に対し加算型取引形態ごとの料率のみインライン編集する。
@@ -317,8 +362,25 @@ export function V3LicenseMatrix({
                       <span className="text-[9px] font-bold">{c.addon ? '加算型' : '非加算型'}</span>
                       <div className="text-[8px] text-success">{calcModelShort(c.calc_type)}</div>
                     </td>
-                    <td className={tdCls}><input className={cellInput} value={c.reg || ''} onChange={(e) => updCond(c.id, 'reg', e.target.value)} placeholder="全世界" /></td>
-                    <td className={tdCls}><input className={cellInput} value={c.lang || ''} onChange={(e) => updCond(c.id, 'lang', e.target.value)} placeholder="全言語" /></td>
+                    <td className={`${tdCls} min-w-[150px]`}>
+                      <RegionLanguageSelect
+                        value={strToOpts(c.regions, c.reg, NAME_TO_COUNTRY)}
+                        onChange={(opts) => updCondRegions(c.id, opts)}
+                        options={COUNTRIES}
+                        presets={REGION_PRESETS}
+                        special={WORLD}
+                        placeholder="国を追加（全世界=特別値）"
+                      />
+                    </td>
+                    <td className={`${tdCls} min-w-[130px]`}>
+                      <RegionLanguageSelect
+                        value={strToOpts(c.languages, c.lang, NAME_TO_LANGUAGE)}
+                        onChange={(opts) => updCondLanguages(c.id, opts)}
+                        options={LANGUAGES}
+                        special={ALL_LANG}
+                        placeholder="言語を追加（全言語=特別値）"
+                      />
+                    </td>
                     <td className={`${tdCls} text-center`}>
                       {c.addon ? (
                         <span className="text-primary font-bold">{appliedRate(c, lcs)}</span>

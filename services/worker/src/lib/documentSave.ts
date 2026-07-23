@@ -129,6 +129,11 @@ export function mapV3MatrixToConditions(
       base_price_label: s(c?.basePrice),
       region_territory: s(c?.reg),
       region_language: s(c?.lang),
+      // 0133: 選択式(国名code単位)の複数選択があれば子テーブルへ code 付きで書く。
+      //   配列が無い(旧データ)ときは undefined のままにし、region_territory/language の
+      //   文字列分解フォールバック(name-only)に委ねる。
+      regions: rlArr(c?.regions),
+      languages: rlArr(c?.languages),
       currency: s(c?.cur) || "JPY",
       manufacturer: s(c?.manufacturer),
       seller: s(c?.seller),
@@ -169,6 +174,21 @@ export function mapV3MatrixToConditions(
 
 const s = (v: any): string | null =>
   v == null || String(v).trim() === "" ? null : String(v);
+
+// 選択式 regions/languages(Opt[]) を子テーブル書込み用に正規化。
+//   name 空は除外、code 空文字は null(=name-only) に落とす。配列以外は undefined。
+const rlArr = (
+  arr: any
+): Array<{ code: string | null; name: string }> | undefined => {
+  if (!Array.isArray(arr)) return undefined;
+  const out = arr
+    .map((o: any) => ({
+      code: o?.code ? String(o.code) : null,
+      name: String(o?.name ?? "").trim(),
+    }))
+    .filter((o: { name: string }) => o.name !== "");
+  return out;
+};
 
 /** flow_direction(in/out) → CL.direction(payable/receivable)。out=収益受取=receivable。 */
 function dirFromFlow(flow: string | null | undefined): string {
