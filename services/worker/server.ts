@@ -18724,6 +18724,79 @@ ${details}
             "calculated",
           ]
         );
+
+        // 監査#1: 多明細(multi)を royalty_statement_lines へ正規化保存(投影)。
+        //   form_data を正とし、発行時の確定値(computeLine の結果)を明細ごとに投影する。
+        //   document 単位で置換(DELETE→INSERT)。非致命: 失敗しても発行は止めない。
+        const rlines: any[] = Array.isArray(formData.lines) ? formData.lines : [];
+        if (isMultiStmt && rlines.length > 0) {
+          try {
+            const numOrNull = (v: any) => {
+              if (v == null || String(v).trim() === "") return null;
+              const n = Number(String(v).replace(/[^0-9.\-]/g, ""));
+              return Number.isFinite(n) ? n : null;
+            };
+            const docRow = await query(
+              `SELECT id FROM documents WHERE document_number = $1
+                ORDER BY is_primary DESC NULLS LAST, id DESC LIMIT 1`,
+              [docNumber]
+            );
+            const rslDocId =
+              docRow.rows.length > 0 ? Number(docRow.rows[0].id) : null;
+            await query(
+              `DELETE FROM royalty_statement_lines
+                WHERE document_number = $1
+                   OR (document_id IS NOT NULL AND document_id = $2)`,
+              [docNumber, rslDocId]
+            );
+            const groupOrder: Record<string, number> = {};
+            let gseq = 0;
+            for (let i = 0; i < rlines.length; i++) {
+              const l = rlines[i] || {};
+              const gkey = String(l.contractId || "") || "__none__";
+              if (!(gkey in groupOrder)) groupOrder[gkey] = ++gseq;
+              await query(
+                `INSERT INTO royalty_statement_lines (
+                   document_id, document_number, backlog_issue_key, line_no, group_no,
+                   contract_id, contract_title, contract_number, calc_method, product_name,
+                   intake_currency, fx_rate, sales_input, unit_price, quantity, sample_quantity,
+                   sales_jpy, rate_pct, payment_jpy
+                 ) VALUES (
+                   $1,$2,$3,$4,$5, $6,$7,$8,$9,$10, $11,$12,$13,$14,$15,$16, $17,$18,$19
+                 )`,
+                [
+                  rslDocId,
+                  docNumber,
+                  issueKey,
+                  i + 1,
+                  groupOrder[gkey],
+                  numOrNull(l.contractId),
+                  l.contractTitle || null,
+                  l.contractNumber || null,
+                  l.calcMethod || "revenue",
+                  l.productName || null,
+                  formData.intakeCurrency || null,
+                  numOrNull(formData.fxRate),
+                  numOrNull(l.salesInput),
+                  numOrNull(l.unitPrice),
+                  numOrNull(l.qty),
+                  numOrNull(l.sample),
+                  numOrNull(l.salesJpy),
+                  numOrNull(l.ratePctResolved ?? l.ratePct),
+                  numOrNull(l.paymentJpy),
+                ]
+              );
+            }
+            console.log(
+              `[royalty_statement_lines] saved ${rlines.length} lines for ${docNumber}`
+            );
+          } catch (rslErr) {
+            console.warn(
+              `[royalty_statement_lines] persist failed for ${docNumber}:`,
+              rslErr
+            );
+          }
+        }
       }
 
       // 再発行(isReissue)時: 旧版明細に紐づく実績(検収/計算)を新版明細へ引き継ぐ。
