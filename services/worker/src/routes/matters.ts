@@ -807,6 +807,24 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
     }
   });
 
+  // メンション候補: staff のうち Slack ユーザーID を持つ人。送信フォームの @選択に使う。
+  app.get("/api/matters/slack/mention-candidates", async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT staff_name, slack_user_id
+           FROM staff
+          WHERE slack_user_id IS NOT NULL AND btrim(slack_user_id) <> ''
+          ORDER BY staff_name`
+      );
+      res.json({
+        ok: true,
+        candidates: r.rows.map((x: any) => ({ name: x.staff_name || x.slack_user_id, id: x.slack_user_id })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // ── 統合（重複案件の取り込み） ────────────────────────────────────────────────
   //   fromMatterId の 課題/タスク/文書/ファイル/送信履歴 を :id へ移し、Drive フォルダも
   //   統合したうえで、空になった from を削除する。
