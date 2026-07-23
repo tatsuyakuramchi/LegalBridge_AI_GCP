@@ -396,6 +396,18 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
   const fmtYen = (n: number) =>
     new Intl.NumberFormat("ja-JP").format(Math.round(Number(n) || 0))
 
+  // 条件ラベル: 取引形態名(region_language_label)に 地域／言語 を併記する。
+  //   リスト/詳細どちらの payload でも region_territory/region_language が入るよう
+  //   統一済み(server.ts / contractsV2.ts)。両方空なら取引形態名のみ。
+  const condLabel = (c: any): string => {
+    const terr = String(c?.region_territory || "").trim()
+    const lang = String(c?.region_language || "").trim()
+    const base = String(c?.region_language_label || "").trim()
+    const rl = [terr, lang].filter(Boolean).join("／")
+    if (base && rl) return `${base}（${rl}）`
+    return base || rl || ""
+  }
+
   // 計算方式ラベル。manufacturing=製造ベース(基準価格×数量×料率)、
   //   revenue=売上/受領額ベース(実受領額×料率)。
   const methodLabelOf = (m: string) =>
@@ -837,9 +849,9 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                             MG {Number(c.mg_amount).toLocaleString("ja-JP")}
                           </span>
                         ) : null}
-                        {c.region_language_label && (
+                        {condLabel(c) && (
                           <span className="opacity-60 ml-auto text-[11px]">
-                            {c.region_language_label}
+                            {condLabel(c)}
                           </span>
                         )}
                       </label>
