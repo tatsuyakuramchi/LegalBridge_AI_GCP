@@ -1012,6 +1012,16 @@ export function registerWorkModelRoutes(
 
   // POST: 作品に条件明細を追加(契約レス)
   app.post("/api/v3/works/:id/conditions", ...requireWrite, express.json(), async (req, res) => {
+    // 監査#6 / 方針X: 条件の直接作成は廃止。condition_lines は文書 form_data の投影のため、
+    //   直接作成すると文書の再保存(upsertDocumentConditions の置換)で上書き消失する。
+    //   条件の作成は文書フォーム(利用許諾条件書/再許諾条件書)へ一本化する。
+    return res.status(410).json({
+      ok: false,
+      code: "CONDITION_DIRECT_EDIT_DISABLED",
+      error:
+        "条件の作成は文書フォーム(利用許諾条件書/再許諾条件書)から行ってください。直接作成は文書の再保存で上書きされるため無効化されています。",
+    });
+    // eslint-disable-next-line no-unreachable
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
@@ -1103,6 +1113,14 @@ export function registerWorkModelRoutes(
 
   // PUT: 条件明細を更新(契約レス条件 = work_id 紐付き想定)
   app.put("/api/v3/work-conditions/:cid", ...requireWrite, express.json(), async (req, res) => {
+    // 監査#6 / 方針X: 条件の直接編集は廃止(文書フォームへ一本化)。上記 POST と同旨。
+    return res.status(410).json({
+      ok: false,
+      code: "CONDITION_DIRECT_EDIT_DISABLED",
+      error:
+        "条件の編集は文書フォーム(利用許諾条件書/再許諾条件書)から行ってください。直接編集は文書の再保存で上書きされるため無効化されています。",
+    });
+    // eslint-disable-next-line no-unreachable
     try {
       const cid = Number(req.params.cid);
       if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
@@ -1180,6 +1198,14 @@ export function registerWorkModelRoutes(
 
   // DELETE: 条件明細を削除
   app.delete("/api/v3/work-conditions/:cid", ...requireWrite, async (req, res) => {
+    // 監査#6 / 方針X: 条件の直接削除は廃止(文書フォームへ一本化)。上記 POST と同旨。
+    return res.status(410).json({
+      ok: false,
+      code: "CONDITION_DIRECT_EDIT_DISABLED",
+      error:
+        "条件の削除は文書フォーム(利用許諾条件書/再許諾条件書)から行ってください。直接削除は文書の再保存で復活し得るため無効化されています。",
+    });
+    // eslint-disable-next-line no-unreachable
     try {
       const cid = Number(req.params.cid);
       if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
