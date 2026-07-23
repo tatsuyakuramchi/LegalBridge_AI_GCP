@@ -1,4 +1,16 @@
-<!DOCTYPE html>
+-- 0148_license_master_pagination_corp_individual.sql
+-- ライセンス利用許諾基本契約書(license_master)テンプレを更新:
+--   (1) ページ送り: orphans/widows を本文条項(.clause/.sub-clause/.article/.preamble)へ拡張、
+--       頭書き表を行単位の改ページ保護に、.no-break ユーティリティ追加。
+--   (2) 法人/個人 出し分け(A案): 甲(許諾者)の代表者行を {{#if (or VENDOR_IS_CORPORATION VENDOR_REP)}}
+--       で条件表示。個人は氏名のみ、押印枠は残し「印」は任意。頭書き・署名欄の2箇所。
+--
+--   本番 worker/search-api は TEMPLATE_SOURCE=db のため DB 版 current を貼替。
+--   disk: services/worker/templates/license_master.html と同一内容。冪等。0146/0147 を踏襲。
+
+DO $mig_lm_0148$
+DECLARE
+  tid INTEGER; cur_html TEXT; cur_schema JSONB; new_html TEXT := $lm_tpl_0148$<!DOCTYPE html>
 <html lang="ja">
 <head>
   <base target="_top">
@@ -627,3 +639,21 @@
 
 </body>
 </html>
+$lm_tpl_0148$; vid INTEGER;
+BEGIN
+  SELECT dt.id, v.html_source, v.field_schema INTO tid, cur_html, cur_schema
+    FROM document_templates dt
+    LEFT JOIN document_template_versions v ON v.id = dt.current_version_id
+   WHERE dt.template_key = 'license_master';
+  IF tid IS NULL THEN RAISE NOTICE '0148: license_master template not found, skipping'; RETURN; END IF;
+  IF cur_html IS NOT NULL AND cur_html = new_html THEN RAISE NOTICE '0148: already up to date, skipping'; RETURN; END IF;
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  VALUES (tid,
+          COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = tid),0)+1,
+          new_html, cur_schema,
+          '0148: license_master ページ送り修正＋法人個人出し分け(A案)',
+          'migration-0148')
+  RETURNING id INTO vid;
+  UPDATE document_templates SET current_version_id = vid, updated_at = now() WHERE id = tid;
+  RAISE NOTICE '0148: license_master applied (new version_id=%)', vid;
+END $mig_lm_0148$;
