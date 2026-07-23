@@ -83,7 +83,7 @@ import {
 import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
 // スキーマ単純化 Phase 2: Master(契約マスタ)保存を documents 統合＋CL直接書き込みで行う。
 import { upsertMasterContract, mapV3MatrixToConditions } from "./src/lib/documentSave.ts";
-import { upsertDocumentConditions } from "./src/lib/conditionWrite.ts";
+import { upsertDocumentConditions, writeRegionLanguageChildren } from "./src/lib/conditionWrite.ts";
 // 再発行時に旧版明細の実績を新版明細へ引き継ぐ(一意対応できる場合のみ)。
 import { carryOverReissueConsumption } from "./src/lib/reissueCarryover.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
@@ -6621,7 +6621,7 @@ ${details}
       //   region_language_label はトリガ無視のため除去(condition_name が正)。
       //   copied_from_condition_id は 0083 の実列だが 0101 ビューが NULL 計算列に
       //   していたため保存されていなかった(休眠) → 実列へ直書きで復元。
-      await query(
+      const fcIns = await query(
         `INSERT INTO condition_lines (
            document_id, capability_id, line_no, legacy_role, line_code, direction, payment_scheme,
            status_flags, is_inbound, is_addon, transaction_kind, condition_name,
@@ -6660,7 +6660,8 @@ ${details}
            guarantee_type=EXCLUDED.guarantee_type, region_territory=EXCLUDED.region_territory,
            region_language=EXCLUDED.region_language, applies_scope=EXCLUDED.applies_scope,
            copied_from_condition_id=EXCLUDED.copied_from_condition_id,
-           source_work_id=EXCLUDED.source_work_id, amount_ex_tax=EXCLUDED.amount_ex_tax, updated_at=now()`,
+           source_work_id=EXCLUDED.source_work_id, amount_ex_tax=EXCLUDED.amount_ex_tax, updated_at=now()
+         RETURNING id`,
         [
           capabilityId,
           condNo,
@@ -6696,6 +6697,23 @@ ${details}
           c.work_id != null && c.work_id !== "" ? Number(c.work_id) : null,
         ]
       );
+      // 監査 PR-I: 許諾地域/言語を 0133 子表(condition_line_regions/languages)へも展開。
+      //   選択式(code付き) regions/languages 配列を優先し、無ければ region_territory/
+      //   region_language の文字列を name のみで分解する。従来 cfc 経路(国内発注書の
+      //   利用許諾条件・pub_license_terms 等)は子表へ到達せず、国コード単位の集計/照合が
+      //   できなかった(自由文字列のみ)。upsertDocumentConditions と同じ子表書きに一本化。
+      const fcLineId = Number(fcIns.rows?.[0]?.id);
+      if (Number.isFinite(fcLineId) && fcLineId > 0) {
+        await safeSync("CL(region/lang 0133)", async () => {
+          await writeRegionLanguageChildren({ query }, fcLineId, {
+            regions: Array.isArray(c.regions) ? c.regions : undefined,
+            languages: Array.isArray(c.languages) ? c.languages : undefined,
+            region_territory: regionTerritory,
+            region_language: regionLanguage,
+          } as any);
+          return 0;
+        });
+      }
     }
     // Phase C-5: 旧金銭条件(capability_financial_conditions)書き込み後、
     //   condition_lines にも非致命で二重書き込み(冪等)。
@@ -17047,7 +17065,7 @@ ${details}
           docNumber,
           issue.summary,
           templateType.includes("purchase_order") ? "individual" : "contract",
-          formData.VENDOR_NAME || formData.PARTY_B_NAME || "Internal",
+          formData.VENDOR_NAME || formData.PARTY_B_NAME || formData.counterparty || "Internal",
           driveLink,
           issueKey,
         ]
@@ -17064,7 +17082,12 @@ ${details}
         //   どれも当たらなければ vendor_id=null で INSERT (warn ログを残す)。
         let vendorId: number | null = null;
         const vendorCode = String(
-          formData.VENDOR_CODE || formData.vendorCode || ""
+          formData.VENDOR_CODE ||
+            formData.vendorCode ||
+            // 監査 PR-H: 検収書(inspection_certificate)の取引先はピッカーで
+            //   counterparty_vendor_code に入る。親PO非連動(自由入力)でも解決可能に。
+            formData.counterparty_vendor_code ||
+            ""
         ).trim();
         const vendorName = String(
           formData.VENDOR_NAME ||
@@ -17076,13 +17099,20 @@ ${details}
             formData["許諾者法人名"] ||
             formData["許諾者氏名"] ||
             formData["許諾者"] ||
+            // 監査 PR-H: 検収書は受託者名を counterparty に保持。id 未取得の
+            //   旧データでも名称照合で救済する。
+            formData.counterparty ||
             ""
         ).trim();
 
         // フォームでピッカー選択した場合は vendor_id を直接確定(名称/コード照合に優先)。
         //   取引先マスタ改名・表記ゆれに影響されないソフトリンク解消。
+        //   検収書は counterparty_vendor_id で確定する(監査 PR-H)。
         const pickedVendorId = Number(
-          formData.VENDOR_ID || formData.vendor_id || 0
+          formData.VENDOR_ID ||
+            formData.vendor_id ||
+            formData.counterparty_vendor_id ||
+            0
         );
         if (pickedVendorId > 0) {
           const vRes = await query(
@@ -17884,6 +17914,9 @@ ${details}
               region_territory: c.region_territory || null,
               region_language: c.region_language || null,
               region_language_label: c.region_language_label || null,
+              // 0133: 選択式(code付き)地域/言語配列を透過し、cfc 書込みで子表へ展開(PR-I)。
+              regions: Array.isArray(c.regions) ? c.regions : undefined,
+              languages: Array.isArray(c.languages) ? c.languages : undefined,
               calc_type: c.calc_type || null,
               calc_method: c.calc_method || deriveCalcMethod(c.calc_type, null),
               rate_pct: c.rate_pct ?? null,
@@ -17917,6 +17950,9 @@ ${details}
               region_territory: it.region_territory || null,
               region_language: it.region_language || null,
               region_language_label: it.region_language_label || null,
+              // 0133: 明細側にも選択式配列があれば透過(PR-I)。
+              regions: Array.isArray(it.regions) ? it.regions : undefined,
+              languages: Array.isArray(it.languages) ? it.languages : undefined,
               calc_type: it.calc_type || null,
               // 利用許諾条件の calc_method は計算式タイプから導出(業務報酬の FIXED とは別)。
               calc_method: deriveCalcMethod(it.calc_type, it.calc_method),
