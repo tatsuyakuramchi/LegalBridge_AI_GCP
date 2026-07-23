@@ -83,6 +83,7 @@ import {
 import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
 // スキーマ単純化 Phase 2: Master(契約マスタ)保存を documents 統合＋CL直接書き込みで行う。
 import { upsertMasterContract, mapV3MatrixToConditions } from "./src/lib/documentSave.ts";
+import { upsertDocumentConditions } from "./src/lib/conditionWrite.ts";
 // 再発行時に旧版明細の実績を新版明細へ引き継ぐ(一意対応できる場合のみ)。
 import { carryOverReissueConsumption } from "./src/lib/reissueCarryover.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
@@ -17412,6 +17413,62 @@ ${details}
             console.warn(
               "⚠️ Failed to persist publication financial conditions:",
               pubFcErr
+            );
+          }
+        }
+
+        // 監査#3: 追加利用許諾条件書(pub_additional_terms)を condition_lines へ接続。
+        //   従来は保存分岐が無く generic documents INSERT のみで、対価が構造化・集計不能
+        //   だった。ON の利用類型(商品化/映像化/ゲーム化/その他)ごとに最小条件を組み、
+        //   文書レベルの追加利用許諾地域/言語＋対価計算式を載せて upsertDocumentConditions
+        //   で書く(0133子表も文字列分解で name-only 到達)。フォーム改修は不要(方針X)。
+        if (templateType === "pub_additional_terms") {
+          try {
+            const capRes = await query(
+              `SELECT id FROM documents WHERE document_number = $1 LIMIT 1`,
+              [docNumber]
+            );
+            const capId = Number(capRes.rows[0]?.id);
+            if (capId) {
+              const region_territory = formData["追加利用許諾地域"] || null;
+              const region_language = formData["追加利用許諾言語"] || null;
+              const types: Array<{ on: boolean; name: string; formula: any }> = [
+                { on: !!formData["商品化"], name: "商品化", formula: formData["商品化対価計算式"] },
+                { on: !!formData["映像化"], name: "映像化", formula: formData["映像化対価計算式"] },
+                { on: !!formData["デジタルゲーム化"], name: "デジタルゲーム化", formula: formData["ゲーム化対価計算式"] },
+                {
+                  on: !!formData["その他追加利用"],
+                  name: formData["その他利用類型"] || "その他追加利用",
+                  formula: formData["その他追加利用条件"],
+                },
+              ];
+              const addConds = types
+                .filter((t) => t.on)
+                .map((t, i) => ({
+                  line_no: 5000 + i,
+                  condition_no: i + 1,
+                  transaction_kind: "license",
+                  direction: "payable",
+                  condition_kind: "additional_license",
+                  category: "publication",
+                  condition_name: t.name,
+                  region_territory,
+                  region_language,
+                  formula_text: t.formula || null,
+                  payment_scheme: "royalty",
+                  currency: "JPY",
+                }));
+              if (addConds.length > 0) {
+                await upsertDocumentConditions({ query }, capId, addConds);
+                console.log(
+                  `✅ Saved ${addConds.length} additional-license condition(s) for: ${docNumber}`
+                );
+              }
+            }
+          } catch (addErr) {
+            console.warn(
+              "⚠️ Failed to persist additional-license conditions:",
+              addErr
             );
           }
         }
