@@ -140,4 +140,11 @@ export const matterClient = {
   slackMentionCandidates() {
     return apiGet(`/api/matters/slack/mention-candidates`);
   },
+  /** ひな形送信(1:クラウドサイン送信 / 2:文書作成完了 / 3:評価完了)。 */
+  slackTemplate(
+    matterId: number | string,
+    body: { template: 1 | 2 | 3; mentions: string[]; cc?: string[]; documentId?: number | null; driveLink?: string | null }
+  ) {
+    return apiSend("POST", `/api/matters/${matterId}/slack/template`, body);
+  },
 };

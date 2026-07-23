@@ -76,6 +76,11 @@ export interface MatterDeps {
     /** スレッド会話の取得(conversations.replies)。 */
     getReplies: (opts: { channel: string; ts: string }) => Promise<Array<{ ts: string; user?: string; text: string; bot?: boolean }>>;
   };
+  /**
+   * ひな形送信(テンプレ2/3)で、メンション先へ対象文書の Drive 閲覧権限を付与する。
+   *   server.ts 側で googleDriveService.grantViewPermission を注入。省略時は権限付与をスキップ。
+   */
+  grantDriveView?: (driveLink: string, email: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const s = (v: any): string | null =>
@@ -821,6 +826,80 @@ export function registerMatters(app: Express, deps: MatterDeps): void {
         candidates: r.rows.map((x: any) => ({ name: x.staff_name || x.slack_user_id, id: x.slack_user_id })),
       });
     } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // ひな形送信: 定型文＋メンションをスレッドへ投稿する。
+  //   template 1: クラウドサイン送信通知 … TO メンション「→」連結＋「相手方」＋CC メンション
+  //   template 2: 文書作成完了通知      … メンション＋対象文書の閲覧リンク(メンション先へ閲覧権限付与)
+  //   template 3: 評価完了通知          … 同上
+  //   body: { template:1|2|3, mentions:string[](slack id), cc?:string[], documentId?:number, driveLink?:string }
+  app.post("/api/matters/:id/slack/template", json, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!deps.slack) return res.status(400).json({ ok: false, error: "Slack 未設定(SLACK_BOT_TOKEN)" });
+    const tpl = Number(req.body?.template);
+    if (![1, 2, 3].includes(tpl)) return res.status(400).json({ ok: false, error: "template が不正です" });
+    const toIds: string[] = Array.isArray(req.body?.mentions)
+      ? req.body.mentions.map((x: any) => s(x)).filter(Boolean) as string[]
+      : [];
+    const ccIds: string[] = Array.isArray(req.body?.cc)
+      ? req.body.cc.map((x: any) => s(x)).filter(Boolean) as string[]
+      : [];
+    try {
+      const t = await query(`SELECT channel_id, thread_ts FROM matter_slack_threads WHERE matter_id = $1`, [id]);
+      if (!t.rows[0]) return res.status(400).json({ ok: false, error: "スレッド未作成です。先に「法務相談スレッドを立てる」を実行してください" });
+
+      const tok = (ids: string[]) => ids.map((x) => `<@${x}>`);
+      let text = "";
+      const grantResult: { granted: string[]; failed: string[] } = { granted: [], failed: [] };
+
+      if (tpl === 1) {
+        const toPart = tok(toIds).join(" → ");
+        const ccPart = ccIds.length ? `  CC: ${tok(ccIds).join(" ")}` : "";
+        text = `クラウドサインで送信しました。 ${toPart}${toPart ? " → " : ""}相手方${ccPart}`.trim();
+      } else {
+        const lead = tpl === 2 ? "文書作成が完了しました。" : "評価が完了しました。";
+        // 対象文書の drive_link を解決: documentId 指定 > driveLink 直指定 > 案件の最新文書。
+        let driveLink = s(req.body?.driveLink) || "";
+        const docId = Number(req.body?.documentId);
+        if (docId) {
+          const d = await query(`SELECT drive_link FROM documents WHERE id = $1 AND matter_id = $2`, [docId, id]);
+          driveLink = s(d.rows[0]?.drive_link) || driveLink;
+        } else if (!driveLink) {
+          const d = await query(
+            `SELECT drive_link FROM documents WHERE matter_id = $1 AND drive_link <> '' ORDER BY created_at DESC LIMIT 1`,
+            [id]
+          );
+          driveLink = s(d.rows[0]?.drive_link) || "";
+        }
+        // メンション先(staff.email)へ閲覧権限を付与。email 未登録者はスキップ。best-effort。
+        if (driveLink && deps.grantDriveView && toIds.length) {
+          const em = await query(
+            `SELECT slack_user_id, email FROM staff
+              WHERE slack_user_id = ANY($1::text[]) AND email IS NOT NULL AND btrim(email) <> ''`,
+            [toIds]
+          );
+          for (const row of em.rows) {
+            const email = String(row.email).trim();
+            try {
+              const g = await deps.grantDriveView(driveLink, email);
+              if (g.ok) grantResult.granted.push(email);
+              else grantResult.failed.push(email);
+            } catch {
+              grantResult.failed.push(email);
+            }
+          }
+        }
+        const linkLine = driveLink ? `\n閲覧リンク: ${driveLink}` : "";
+        text = `${lead} ${tok(toIds).join(" ")}${linkLine}`.trim();
+      }
+
+      const posted = await deps.slack.postMessage({ channel: t.rows[0].channel_id, text, thread_ts: t.rows[0].thread_ts });
+      if (!posted.ok) return res.status(502).json({ ok: false, error: posted.error || "Slack 送信に失敗" });
+      res.json({ ok: true, ts: posted.ts, text, grant: grantResult });
+    } catch (e: any) {
+      console.error("[matters] slack template failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
