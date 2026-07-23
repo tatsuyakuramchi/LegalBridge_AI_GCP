@@ -86,7 +86,7 @@ function normalizeRL(
     .filter(Boolean)
     .map((name) => ({ code: null, name }));
 }
-async function writeRegionLanguageChildren(db: CondDb, lineId: number, c: ConditionInput): Promise<void> {
+export async function writeRegionLanguageChildren(db: CondDb, lineId: number, c: ConditionInput): Promise<void> {
   if (c.regions !== undefined || (c.region_territory !== undefined && c.region_territory !== null)) {
     const regions = normalizeRL(c.regions, c.region_territory);
     await db.query(`DELETE FROM condition_line_regions WHERE condition_line_id = $1`, [lineId]);

@@ -73,6 +73,10 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     setFormData({
       ...formData,
       counterparty: v.vendor_name || "",
+      // 取引先マスタ参照を id で確定(サーバ保存の名称照合フォールバックに依存しない)。
+      //   親PO非連動(自由入力)でも documents.vendor_id が NULL にならないようにする。
+      counterparty_vendor_id: v.id ?? "",
+      counterparty_vendor_code: v.vendor_code || "",
       COUNTERPARTY_IS_CORPORATION: isCorporation ? "法人" : "個人",
       counterpartyRep: repName,
       // Legacy フィールドも残しておく (旧テンプレ・既存生成済み doc の form_data 互換)
@@ -292,6 +296,10 @@ const InspectionCertificateForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               spec: firstLine?.spec || formData.spec || "",
               ...(v.vendor_name && {
                 counterparty: formData.counterparty || v.vendor_name,
+                // 取引先マスタ参照を id で確定(名称照合に依存しない)。既存の手動値は尊重。
+                counterparty_vendor_id: formData.counterparty_vendor_id || v.id || "",
+                counterparty_vendor_code:
+                  formData.counterparty_vendor_code || v.vendor_code || "",
                 COUNTERPARTY_IS_CORPORATION: isCorp ? "法人" : "個人",
                 counterpartyRep: formData.counterpartyRep || repName,
                 counterpartyRepresentativeSama:
