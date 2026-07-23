@@ -18664,11 +18664,26 @@ ${details}
           }
         );
       } else if (templateType === "royalty_statement") {
+        // total_amount: 従来 formData.royaltyTotal を見ていたが同キーはフォームで
+        //   設定されず常に 0 になっていた。実際の税込お支払予定額を採用する。
+        //   多明細(multi) … linesTotalIncTaxStr、単票 … totalPaymentStr。
+        //   いずれも欠落時は税抜側/旧キーへフォールバックし、最後は 0。
+        const isMultiStmt = String(formData.statementMode || "") === "multi";
+        const totalRaw = isMultiStmt
+          ? formData.linesTotalIncTaxStr ||
+            formData.linesTotalPaymentStr ||
+            formData.royaltyTotal
+          : formData.totalPaymentStr ||
+            formData.actualRoyaltyStr ||
+            formData.royaltyTotal;
+        const totalAmount = parseFloat(
+          String(totalRaw || "0").replace(/,/g, "")
+        );
         await query(
           "INSERT INTO royalty_payments (backlog_issue_key, total_amount, period, status) VALUES ($1, $2, $3, $4)",
           [
             issueKey,
-            parseFloat((formData.royaltyTotal || "0").replace(/,/g, "")),
+            Number.isFinite(totalAmount) ? totalAmount : 0,
             formData.period || new Date().toISOString().slice(0, 7),
             "calculated",
           ]
