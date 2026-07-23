@@ -6713,6 +6713,28 @@ ${details}
       return Number.isFinite(n) ? n : null;
     };
     const payDay = formData["許諾者種別"] === "法人" ? "末日" : "20日";
+    // 条件表(FinancialConditionTable, division=PUB, 条件1=紙/2=電子)で入力した
+    //   許諾地域/言語を condition_no で引く。従来はここを一切コピーせず地域言語が消失
+    //   していた。テーブル未入力時は文書レベルの 許諾地域/許諾言語 を既定にする。
+    const fcs: any[] = Array.isArray(formData.financial_conditions)
+      ? formData.financial_conditions
+      : [];
+    const rlOf = (no: number) => {
+      const fc = fcs.find((f) => Number(f?.condition_no) === no);
+      return {
+        region_territory:
+          (fc?.region_territory && String(fc.region_territory).trim()) ||
+          formData["許諾地域"] ||
+          null,
+        region_language:
+          (fc?.region_language && String(fc.region_language).trim()) ||
+          formData["許諾言語"] ||
+          null,
+        // 選択式(code付き)配列があれば透過(将来 upsertDocumentConditions 経路で 0133 化)。
+        regions: Array.isArray(fc?.regions) ? fc.regions : undefined,
+        languages: Array.isArray(fc?.languages) ? fc.languages : undefined,
+      };
+    };
     const conds: any[] = [
       {
         // 紙媒体出版 (常に独占的に許諾)
@@ -6730,6 +6752,7 @@ ${details}
         payment_terms: `都度払い（刊行日を含む月の翌々月${payDay}払い）`,
         mg_amount: 0,
         ag_amount: 0,
+        ...rlOf(1),
       },
     ];
     if (formData["電子書籍配信許諾有無"] === "許諾する") {
@@ -6748,6 +6771,7 @@ ${details}
         payment_terms: `年1回・6月${payDay}払い`,
         mg_amount: 0,
         ag_amount: 0,
+        ...rlOf(2),
       });
     }
     // 翻訳版・海外版は二次的著作物として本条件書の対象外(別途)。海外はテリトリー(許諾地域)で制御。
