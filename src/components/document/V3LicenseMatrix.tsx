@@ -68,6 +68,12 @@ export interface V3Lc {
   rates?: Record<string, string>;
   /** マテリアルの根拠文書番号(利用許諾条件書/発注書、または「この条件書(新規)」)。フォーム表示用。 */
   source_doc?: string;
+  /** 構成要素(素材)の許諾地域/言語。work_materials マスタから既定取込みしつつ、
+   *  ここで上書き編集できる(選択式・複数国)。region/language は互換の name 連結文字列。 */
+  region?: string;
+  language?: string;
+  regions?: Opt[];
+  languages?: Opt[];
 }
 
 /** 計算モデル(calc_type)の選択肢。取引形態(1-3A/2-1)の計算モデル選択で共用。 */
@@ -188,6 +194,21 @@ export function V3LicenseMatrix({
       )
     );
 
+  // 構成要素(素材)の地域/言語を選択式で上書き編集。構造化 regions/languages を保持し
+  //   互換の region/language(name 連結)も合成する(修正時はこの再選択が「正」)。
+  const updLcRegions = (i: number, opts: Opt[]) =>
+    onChangeLcs(
+      lcs.map((l, idx) =>
+        idx === i ? { ...l, regions: opts, region: composeNames(opts) } : l
+      )
+    );
+  const updLcLanguages = (i: number, opts: Opt[]) =>
+    onChangeLcs(
+      lcs.map((l, idx) =>
+        idx === i ? { ...l, languages: opts, language: composeNames(opts) } : l
+      )
+    );
+
   const addonConds = conds.filter((c) => c.addon);
 
   // テンプレ 1-3/2-1 の表構成に合わせるためのセル用スタイル。
@@ -284,6 +305,8 @@ export function V3LicenseMatrix({
                   <th className={`${thCls} min-w-[130px]`}>区分 / 根拠文書</th>
                   <th className={`${thCls} min-w-[120px]`}>構成要素</th>
                   <th className={`${thCls} min-w-[100px]`}>権利元</th>
+                  <th className={`${thCls} min-w-[140px]`}>許諾地域</th>
+                  <th className={`${thCls} min-w-[120px]`}>許諾言語</th>
                   {conds.map((c, i) => (
                     <th key={c.id} className={`${thCls} min-w-[80px] text-center`}>
                       {c.name || `条件${i + 1}`}
@@ -301,6 +324,25 @@ export function V3LicenseMatrix({
                     </td>
                     <td className={`${tdCls} font-bold`}>{l.name || '(構成要素)'}</td>
                     <td className={`${tdCls} text-muted-foreground`}>{l.holder || '—'}</td>
+                    <td className={`${tdCls} min-w-[140px]`}>
+                      <RegionLanguageSelect
+                        value={strToOpts(l.regions, l.region, NAME_TO_COUNTRY)}
+                        onChange={(opts) => updLcRegions(i, opts)}
+                        options={COUNTRIES}
+                        presets={REGION_PRESETS}
+                        special={WORLD}
+                        placeholder="国を追加"
+                      />
+                    </td>
+                    <td className={`${tdCls} min-w-[120px]`}>
+                      <RegionLanguageSelect
+                        value={strToOpts(l.languages, l.language, NAME_TO_LANGUAGE)}
+                        onChange={(opts) => updLcLanguages(i, opts)}
+                        options={LANGUAGES}
+                        special={ALL_LANG}
+                        placeholder="言語を追加"
+                      />
+                    </td>
                     {conds.map((c) =>
                       c.addon ? (
                         <td key={c.id} className={`${tdCls} text-center`}>
