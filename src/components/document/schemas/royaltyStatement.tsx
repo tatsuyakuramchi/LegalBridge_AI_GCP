@@ -74,6 +74,9 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     const patch: Record<string, any> = {}
     if (!formData.taxRate) patch.taxRate = "10"
     if (!formData.documentDate) patch.documentDate = new Date().toISOString().slice(0, 10)
+    // Phase 29: 計算書タイプ (single=従来1件 / multi=サブライセンス受領→支払の多明細)。
+    if (!formData.statementMode) patch.statementMode = "single"
+    if (!formData.intakeCurrency) patch.intakeCurrency = "JPY"
     if (Object.keys(patch).length > 0) setFormData({ ...formData, ...patch })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -358,6 +361,94 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     setFormData({ ...next, billableQuantity: String(billable) })
   }
 
+  // ---- Phase 29: 多明細 (サブライセンス受領 → イン側料率で支払) --------
+  // アウト側入金額を明細ごとの base とし、イン側条件の料率で支払額を計算する。
+  //   入金通貨が JPY 以外なら fxRate で外貨売上 → 円 base に換算。
+  //   各行 支払 = ceil(base × 料率/100)。RevenueTerms(売上報告ベース)と同じ ceil。
+  const statementMode = String(formData.statementMode || "single")
+  const isMulti = statementMode === "multi"
+  const intakeCurrency = String(formData.intakeCurrency || "JPY")
+  const isForeignIntake = intakeCurrency !== "JPY"
+  const fxRate = Number(formData.fxRate) || 0
+  const fmtYen = (n: number) =>
+    new Intl.NumberFormat("ja-JP").format(Math.round(Number(n) || 0))
+
+  // 1 明細を計算 (render 時に live 表示するためにも使う)。
+  const computeLine = (raw: any) => {
+    const salesInput = Number(raw?.salesInput) || 0
+    const ratePct =
+      raw?.ratePct !== undefined && raw?.ratePct !== ""
+        ? Number(raw.ratePct)
+        : Number(formData.royaltyRatePct) || 0
+    const salesJpy = isForeignIntake
+      ? Math.round(salesInput * fxRate)
+      : Math.round(salesInput)
+    const paymentJpy = Math.ceil((salesJpy * ratePct) / 100)
+    return {
+      productName: raw?.productName || "",
+      salesInput: raw?.salesInput ?? "",
+      ratePct: raw?.ratePct ?? "",
+      // 派生 (テンプレ用)
+      salesInputStr: fmtYen(salesInput),
+      salesJpy,
+      salesJpyStr: fmtYen(salesJpy),
+      ratePctResolved: ratePct,
+      paymentJpy,
+      paymentJpyStr: fmtYen(paymentJpy),
+    }
+  }
+
+  const rawLines = (): any[] =>
+    Array.isArray(formData.lines) ? formData.lines : []
+
+  // 明細配列を計算し, 合計/税/税込を formData へ確定する。
+  const recalcAndSet = (
+    nextRawLines: any[],
+    extraPatch: Record<string, any> = {}
+  ) => {
+    const computed = nextRawLines.map(computeLine)
+    const totalSales = computed.reduce((s, l) => s + (l.salesJpy || 0), 0)
+    const totalPayment = computed.reduce((s, l) => s + (l.paymentJpy || 0), 0)
+    const taxRate = Number(formData.taxRate) || 10
+    const tax = Math.ceil((totalPayment * taxRate) / 100)
+    setFormData({
+      ...formData,
+      ...extraPatch,
+      lines: computed,
+      linesCount: computed.length,
+      linesTotalSalesJpy: totalSales,
+      linesTotalSalesStr: fmtYen(totalSales),
+      linesTotalPaymentJpy: totalPayment,
+      linesTotalPaymentStr: fmtYen(totalPayment),
+      linesTaxStr: fmtYen(tax),
+      linesTotalIncTaxStr: fmtYen(totalPayment + tax),
+    })
+  }
+
+  const addLine = () =>
+    recalcAndSet([...rawLines(), { productName: "", salesInput: "", ratePct: "" }])
+  const updateLine = (i: number, patch: Record<string, any>) =>
+    recalcAndSet(
+      rawLines().map((l: any, idx: number) => (idx === i ? { ...l, ...patch } : l))
+    )
+  const removeLine = (i: number) =>
+    recalcAndSet(rawLines().filter((_: any, idx: number) => idx !== i))
+
+  // レート/通貨/税率/既定料率が変わったら既存明細を再計算 (合計を同期)。
+  React.useEffect(() => {
+    if (!isMulti) return
+    const raw = rawLines()
+    if (raw.length === 0) return
+    recalcAndSet(raw)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    formData.fxRate,
+    formData.intakeCurrency,
+    formData.taxRate,
+    formData.royaltyRatePct,
+    isMulti,
+  ])
+
   // ---- 入力状況サマリ ---------------------------------------------
   const billableQty = Math.max(
     0,
@@ -385,7 +476,39 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
   return (
     <div className="space-y-6">
-      {/* 進捗バナー */}
+      {/* Phase 29: 計算書タイプ切替 — 単票 / 多明細(サブライセンス受領→支払) */}
+      <div className="flex flex-wrap items-center gap-2 px-4 py-2.5 rounded-sm border border-input bg-muted/20">
+        <span className="text-[11px] font-mono opacity-70">計算書タイプ:</span>
+        {[
+          { v: "single", label: "単票 (1件計算)" },
+          { v: "multi", label: "多明細 (受領→支払)" },
+        ].map((opt) => {
+          const active = statementMode === opt.v
+          return (
+            <button
+              key={opt.v}
+              type="button"
+              onClick={() => setFormData({ ...formData, statementMode: opt.v })}
+              className={cn(
+                "text-[11px] font-mono px-3 py-1 rounded-sm border transition-colors",
+                active
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-input hover:bg-muted"
+              )}
+            >
+              {opt.label}
+            </button>
+          )
+        })}
+        <span className="text-[10px] font-mono opacity-60 ml-auto">
+          {isMulti
+            ? "サブライセンス受領額を明細ごとの base とし、イン側料率で支払を計算"
+            : "従来の 1 件計算 (製造/売上/受領額ベース)"}
+        </span>
+      </div>
+
+      {/* 進捗バナー (単票のみ) */}
+      {!isMulti && (
       <div
         className={cn(
           "flex items-center justify-between gap-3 px-4 py-2.5 rounded-sm border",
@@ -411,6 +534,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           発行日: {formData.documentDate || "未設定"}
         </div>
       </div>
+      )}
 
       {/* ─── STEP 1 ─ 契約と条件 ──────────────────────────── */}
       <FormSection
@@ -744,7 +868,211 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         </div>
       </FormSection>
 
-      {/* ─── STEP 2 ─ 製造内容 ──────────────────────────── */}
+      {/* ─── 多明細モード ─ 受領情報 + 明細テーブル (multi のみ) ─── */}
+      {isMulti && (
+        <>
+          <FormSection
+            title="受領情報（アウト側入金）"
+            variant="emerald"
+            icon={<Coins className="w-4 h-4" />}
+          >
+            <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-[11px] font-mono">入金企業（サブライセンシー）</Label>
+                <Input
+                  value={formData.payerCompany || ""}
+                  onChange={(e) => setFormData({ ...formData, payerCompany: e.target.value })}
+                  placeholder="例: Don't Panic"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-mono">カテゴリー</Label>
+                <Input
+                  value={formData.royaltyCategory || ""}
+                  onChange={(e) => setFormData({ ...formData, royaltyCategory: e.target.value })}
+                  placeholder="例: 2026Q1ロイヤリティ"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-mono">デザイナー / 権利者</Label>
+                <Input
+                  value={formData.designerName || ""}
+                  onChange={(e) => setFormData({ ...formData, designerName: e.target.value })}
+                  placeholder="例: 今野隼史"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-mono">希望納期</Label>
+                <Input
+                  type="date"
+                  value={formData.desiredDeadline || ""}
+                  onChange={(e) => setFormData({ ...formData, desiredDeadline: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[11px] font-mono">入金通貨</Label>
+                <select
+                  value={intakeCurrency}
+                  onChange={(e) => setFormData({ ...formData, intakeCurrency: e.target.value })}
+                  className="w-full text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-background focus:outline-none focus:border-foreground"
+                >
+                  <option value="JPY">JPY（円で入金 — レート不要）</option>
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                  <option value="CNY">CNY</option>
+                </select>
+              </div>
+              {isForeignIntake && (
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-mono">
+                    入金日レート（1 {intakeCurrency} = ? 円）{" "}
+                    <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.0001"
+                    value={formData.fxRate || ""}
+                    onChange={(e) => setFormData({ ...formData, fxRate: e.target.value })}
+                    placeholder="例: 184.83"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    外貨売上 × レート = 円換算売上（base）。この base × 料率で支払額を計算します。
+                  </p>
+                </div>
+              )}
+            </div>
+          </FormSection>
+
+          <FormSection
+            title="明細（製品ごと 売上 × 料率 = 支払額）"
+            variant="indigo"
+            icon={<Scale className="w-4 h-4" />}
+          >
+            <div className="col-span-full space-y-3">
+              <p className="text-[10px] text-muted-foreground">
+                料率はステップ 1 で選んだ<strong>イン側条件</strong>の値（{formData.royaltyRatePct || "—"}%）を
+                各行の初期値にします。行ごとに上書き可。
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px] font-mono border border-input">
+                  <thead>
+                    <tr className="bg-muted/40">
+                      <th className="p-1.5 text-left">製品名</th>
+                      <th className="p-1.5 text-right">売上（{intakeCurrency}）</th>
+                      {isForeignIntake && <th className="p-1.5 text-right">売上（円）</th>}
+                      <th className="p-1.5 text-right">料率%</th>
+                      <th className="p-1.5 text-right">支払額（円）</th>
+                      <th className="p-1.5 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rawLines().length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={isForeignIntake ? 6 : 5}
+                          className="p-3 text-center text-muted-foreground"
+                        >
+                          明細がありません。「＋ 明細を追加」で行を追加してください。
+                        </td>
+                      </tr>
+                    )}
+                    {rawLines().map((l: any, i: number) => {
+                      const c = computeLine(l)
+                      return (
+                        <tr key={i} className="border-t border-input">
+                          <td className="p-1">
+                            <Input
+                              value={l.productName || ""}
+                              onChange={(e) => updateLine(i, { productName: e.target.value })}
+                              className="text-[11px] h-7"
+                              placeholder="製品 / 版"
+                            />
+                          </td>
+                          <td className="p-1">
+                            <Input
+                              type="number"
+                              min="0"
+                              value={l.salesInput ?? ""}
+                              onChange={(e) => updateLine(i, { salesInput: e.target.value })}
+                              className="text-[11px] h-7 text-right"
+                              placeholder={isForeignIntake ? "外貨売上" : "円売上"}
+                            />
+                          </td>
+                          {isForeignIntake && (
+                            <td className="p-1 text-right whitespace-nowrap">¥{c.salesJpyStr}</td>
+                          )}
+                          <td className="p-1">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={l.ratePct ?? ""}
+                              onChange={(e) => updateLine(i, { ratePct: e.target.value })}
+                              className="text-[11px] h-7 text-right"
+                              placeholder={String(formData.royaltyRatePct || "")}
+                            />
+                          </td>
+                          <td className="p-1 text-right font-bold whitespace-nowrap">
+                            ¥{c.paymentJpyStr}
+                          </td>
+                          <td className="p-1 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeLine(i)}
+                              className="text-destructive px-1 hover:opacity-70"
+                              title="この明細を削除"
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={addLine}
+                  className="text-[11px] font-mono px-3 py-1.5 border border-input rounded-sm hover:bg-muted"
+                >
+                  ＋ 明細を追加
+                </button>
+                {isForeignIntake && !fxRate && (
+                  <span className="text-[10px] font-mono text-warning">
+                    ⚠ 入金日レート未入力 — 円換算売上が 0 のままです。
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-4 justify-end text-[12px] font-mono px-3 py-2 bg-muted/30 rounded-sm border border-input">
+                <span>
+                  売上合計（円）:{" "}
+                  <strong>¥{formData.linesTotalSalesStr || "0"}</strong>
+                </span>
+                <span>
+                  支払合計（税抜）:{" "}
+                  <strong>¥{formData.linesTotalPaymentStr || "0"}</strong>
+                </span>
+                <span>
+                  消費税（{formData.taxRate || "10"}%）:{" "}
+                  <strong>¥{formData.linesTaxStr || "0"}</strong>
+                </span>
+                <span>
+                  お支払予定額（税込）:{" "}
+                  <strong className="text-sm">¥{formData.linesTotalIncTaxStr || "0"}</strong>
+                </span>
+              </div>
+            </div>
+          </FormSection>
+        </>
+      )}
+
+      {/* ─── STEP 2 ─ 製造内容 (単票のみ) ─────────────────── */}
+      {!isMulti && (
+        <>
       <FormSection
         title="ステップ 2 — 製造内容"
         variant="emerald"
@@ -966,6 +1294,8 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           />
         </div>
       </FormSection>
+        </>
+      )}
 
       {/* ─── STEP 4 ─ 担当者 (連絡先) ──────────────────────────
           Phase 22.21.98: PDF 右上「発行元 (ライセンシー)」と備考「※ 連絡先:」に出力。

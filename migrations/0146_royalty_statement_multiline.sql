@@ -1,4 +1,21 @@
-<!DOCTYPE html>
+-- 0146_royalty_statement_multiline.sql
+-- 利用許諾料計算書(royalty_statement)テンプレを「多明細モード」対応に更新する。
+--   Phase 29: サブライセンス受領(アウト側入金)を明細ごとの base とし、イン側条件の
+--   料率で支払額を計算する多明細(statementMode="multi")を追加。単票(single)は従来不変。
+--   ・入金通貨が JPY 以外なら fxRate(入金日レート)で外貨売上→円 base に換算し列を出す。
+--   ・入金企業/カテゴリー/デザイナー/希望納期のヘッダ、明細テーブル、合計/税/税込を描画。
+--
+--   本番 worker/search-api は TEMPLATE_SOURCE=db のため DB 版 current を貼替。
+--   disk: services/worker/templates/royalty_statement.html と同一内容(バイト等価)。冪等。
+--   実装方式は 0144 を踏襲(full html_source を新版 INSERT→current 差替)。全面改稿のため
+--   anchor REPLACE ではなくファイル全文で置換する。
+
+DO $mig_rs_ml$
+DECLARE
+  tid        INTEGER;
+  cur_html   TEXT;
+  cur_schema JSONB;
+  new_html   TEXT := $rs_tpl_0146$<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -555,3 +572,35 @@
 
 </body>
 </html>
+$rs_tpl_0146$;
+  vid        INTEGER;
+BEGIN
+  SELECT dt.id, v.html_source, v.field_schema
+    INTO tid, cur_html, cur_schema
+    FROM document_templates dt
+    LEFT JOIN document_template_versions v ON v.id = dt.current_version_id
+   WHERE dt.template_key = 'royalty_statement';
+
+  IF tid IS NULL THEN
+    RAISE NOTICE '0146: royalty_statement template not found, skipping';
+    RETURN;
+  END IF;
+
+  -- 既に同一内容(=再適用)ならスキップ(冪等・重複版を作らない)。
+  IF cur_html IS NOT NULL AND cur_html = new_html THEN
+    RAISE NOTICE '0146: royalty_statement already up to date, skipping';
+    RETURN;
+  END IF;
+
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  VALUES (tid,
+          COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = tid), 0) + 1,
+          new_html,
+          cur_schema,
+          '0146: 利用許諾料計算書 多明細(サブライセンス受領→支払)モード対応',
+          'migration-0146')
+  RETURNING id INTO vid;
+
+  UPDATE document_templates SET current_version_id = vid, updated_at = now() WHERE id = tid;
+  RAISE NOTICE '0146: royalty_statement multiline template applied (new version_id=%)', vid;
+END $mig_rs_ml$;
