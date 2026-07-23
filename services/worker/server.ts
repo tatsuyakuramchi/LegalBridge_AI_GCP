@@ -1710,6 +1710,20 @@ async function startServer() {
     }
   }
 
+  // 個人宛の文書通知DM(作成/完了/ステータス確定)の送信可否。既定は無効。
+  //   案件Slackスレッド(法務相談)からの手動通知で代替するため、通常はDMを送らない。
+  //   app_settings.INDIVIDUAL_DOC_DM_ENABLED を '1'/true にすると従来どおりDMを送る。
+  //   ※ エラー(生成失敗)DMはこのフラグの対象外で、常に送る。
+  async function individualDocDmEnabled(): Promise<boolean> {
+    try {
+      const r = await query(`SELECT value FROM app_settings WHERE key = 'INDIVIDUAL_DOC_DM_ENABLED'`);
+      const v = r.rows[0]?.value;
+      return v === true || v === 1 || v === "1" || v === "true";
+    } catch {
+      return false;
+    }
+  }
+
   async function notifyIssueEvent(
     issueKey: string,
     event: IssueNotifyEvent
@@ -1838,17 +1852,22 @@ async function startServer() {
       ...lines,
     ].join("\n");
 
-    // DM 送信
-    try {
-      await slackWebClient.chat.postMessage({
-        channel: slackUserId,
-        text: dmText,
-      });
-    } catch (e: any) {
-      console.warn(
-        `[notify] DM send failed (${issueKey} → ${slackUserId}):`,
-        e?.message || e
-      );
+    // DM 送信 (文書の作成/ステータス確定は既定で抑止。案件Slackスレッドで代替)
+    const suppressDm =
+      (event.type === "created" || event.type === "status_changed") &&
+      !(await individualDocDmEnabled());
+    if (!suppressDm) {
+      try {
+        await slackWebClient.chat.postMessage({
+          channel: slackUserId,
+          text: dmText,
+        });
+      } catch (e: any) {
+        console.warn(
+          `[notify] DM send failed (${issueKey} → ${slackUserId}):`,
+          e?.message || e
+        );
+      }
     }
 
     // 部署チャンネル投稿 (設定があれば)
@@ -4682,17 +4701,19 @@ ${details}
               );
             }
           }
-          try {
-            await slackWebClient.chat.postMessage({
-              channel: String(input.slack_user_id),
-              text:
-                "✅ *既存課題への紐付け起票が完了しました*\n\n" +
-                "*対象課題:* " + childKey + "\n" +
-                (result?.docNumber ? "*文書番号:* " + result.docNumber + "\n" : "") +
-                (result?.driveLink ? "*ドキュメント:* " + result.driveLink + "\n" : ""),
-            });
-          } catch (e) {
-            console.warn(`[link-trigger] completion DM failed:`, e);
+          if (await individualDocDmEnabled()) {
+            try {
+              await slackWebClient.chat.postMessage({
+                channel: String(input.slack_user_id),
+                text:
+                  "✅ *既存課題への紐付け起票が完了しました*\n\n" +
+                  "*対象課題:* " + childKey + "\n" +
+                  (result?.docNumber ? "*文書番号:* " + result.docNumber + "\n" : "") +
+                  (result?.driveLink ? "*ドキュメント:* " + result.driveLink + "\n" : ""),
+              });
+            } catch (e) {
+              console.warn(`[link-trigger] completion DM failed:`, e);
+            }
           }
         }
         res.json({ ok: true, ...result });
@@ -4748,19 +4769,21 @@ ${details}
           const uploadUrl = uploadBase
             ? `${uploadBase}${uploadBase.includes("?") ? "&" : "?"}issue=${encodeURIComponent(result.issueKey)}`
             : "";
-          try {
-            await slackWebClient.chat.postMessage({
-              channel: userId,
-              text:
-                "✅ Backlog 課題を作成しました: *" + result.issueKey + "*\n" +
-                (result.docNumber ? "*文書番号:* " + result.docNumber + "\n" : "") +
-                (uploadUrl
-                  ? "📎 レビュー対象文書・参考資料の添付は <" + uploadUrl +
-                    "|資料アップロードページ> からお願いします (課題番号は入力済みで開きます)。"
-                  : ""),
-            });
-          } catch (e) {
-            console.warn("[intake/create-run] DM failed:", e);
+          if (await individualDocDmEnabled()) {
+            try {
+              await slackWebClient.chat.postMessage({
+                channel: userId,
+                text:
+                  "✅ Backlog 課題を作成しました: *" + result.issueKey + "*\n" +
+                  (result.docNumber ? "*文書番号:* " + result.docNumber + "\n" : "") +
+                  (uploadUrl
+                    ? "📎 レビュー対象文書・参考資料の添付は <" + uploadUrl +
+                      "|資料アップロードページ> からお願いします (課題番号は入力済みで開きます)。"
+                    : ""),
+              });
+            } catch (e) {
+              console.warn("[intake/create-run] DM failed:", e);
+            }
           }
         }
         res.json({ ok: true, ...result });
@@ -10996,6 +11019,8 @@ ${details}
           },
         }
       : undefined,
+    // ひな形送信(テンプレ2/3)のメンション先への閲覧権限付与。
+    grantDriveView: (driveLink, email) => googleDriveService.grantViewPermission(driveLink, email),
   });
 
   // 関連当事者取引 判定 (/rpt/*): RPT.gs の書込 (法人/役員/株主構成/議案)。読取は search-API。

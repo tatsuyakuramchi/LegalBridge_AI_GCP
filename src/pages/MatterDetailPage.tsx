@@ -1543,7 +1543,7 @@ export function MatterDetailPage() {
           <Card>
             <CardContent className="p-4 space-y-3">
               <SectionHead icon={MessagesSquare} label="法務相談・連絡" />
-              <MatterSlackPanel matterId={Number(matterId)} />
+              <MatterSlackPanel matterId={Number(matterId)} documents={data.documents || []} />
               {(() => {
                 const emails = (data.sends || []).filter((x: any) => (x.channel || "email") === "email")
                 return (
