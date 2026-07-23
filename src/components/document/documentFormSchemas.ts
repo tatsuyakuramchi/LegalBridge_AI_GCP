@@ -189,6 +189,9 @@ const serviceMaster: SchemaBuilder = (metadata) => ({
             BANK_NAME: "bank_name", BRANCH_NAME: "branch_name", ACCOUNT_TYPE: "account_type",
             ACCOUNT_NUMBER: "account_number", ACCOUNT_HOLDER_KANA: "account_holder_kana",
           }),
+          // 取引先マスタ参照を id で確定(名称照合フォールバックに依存しない)。
+          VENDOR_ID: opt.raw?.id ?? "",
+          VENDOR_CODE: opt.raw?.vendor_code || "",
           VENDOR_REP: opt.raw?.vendor_rep || opt.raw?.contact_name || "",
           VENDOR_IS_CORPORATION: (opt.raw?.entity_type || "").toLowerCase() === "corporate",
           IS_INVOICE_ISSUER: !!opt.raw?.is_invoice_issuer,
@@ -215,6 +218,11 @@ const nda: SchemaBuilder = (metadata) => ({
           PARTY_A_NAME: opt.raw?.vendor_name || "",
           PARTY_A_ADDRESS: opt.raw?.address || "",
           PARTY_A_REP: opt.raw?.vendor_rep || opt.raw?.contact_name || "",
+          // 取引先を PARTY_A に入れるため、保存側の vendor_id 解決が名称照合で
+          //   取りこぼす(PARTY_A_NAME は未参照)。id/名称/コードを直接確定して連結する。
+          VENDOR_ID: opt.raw?.id ?? "",
+          VENDOR_NAME: opt.raw?.vendor_name || "",
+          VENDOR_CODE: opt.raw?.vendor_code || "",
         }),
       }],
       ...groupFields(metadata, "II. 甲 (取引先側)"),
@@ -247,6 +255,9 @@ const salesMaster: SchemaBuilder = (metadata) => {
             PARTY_B_NAME: opt.raw?.vendor_name || "",
             PARTY_B_ADDRESS: opt.raw?.address || "",
             PARTY_B_REPRESENTATIVE: opt.raw?.vendor_rep || opt.raw?.contact_name || "",
+            // 取引先マスタ参照を id で確定(名称照合フォールバックに依存しない)。
+            VENDOR_ID: opt.raw?.id ?? "",
+            VENDOR_CODE: opt.raw?.vendor_code || "",
           }),
         }],
         ...groupFields(metadata, partyGroup),
@@ -273,6 +284,10 @@ const intlPurchaseOrder: SchemaBuilder = (metadata) => ({
               CONTRACTOR_NAME: isCorp ? (opt.raw?.vendor_name || "") : (opt.raw?.vendor_name || opt.raw?.pen_name || opt.raw?.trade_name || ""),
               CONTRACTOR_ADDRESS: opt.raw?.address || "",
               CONTRACTOR_EMAIL: opt.raw?.email || "",
+              // 保存側 vendor_id 解決は CONTRACTOR_* を見ないため、id/名称/コードを確定して連結。
+              VENDOR_ID: opt.raw?.id ?? "",
+              VENDOR_NAME: opt.raw?.vendor_name || "",
+              VENDOR_CODE: opt.raw?.vendor_code || "",
             };
           },
         },

@@ -104,7 +104,12 @@ export function maintenanceSpecBuilder(metadata: any): DocFormSchema {
             onPick: (opt) => {
               const v = opt.raw || {}
               const isCorp = String(v.entity_type || "").toLowerCase() === "corporate" || v.entity_type === "法人"
-              return { VENDOR_NAME: isCorp ? v.vendor_name || "" : v.vendor_name || v.pen_name || v.trade_name || "" }
+              return {
+                VENDOR_NAME: isCorp ? v.vendor_name || "" : v.vendor_name || v.pen_name || v.trade_name || "",
+                // 取引先マスタ参照を id で確定(名称照合フォールバックに依存しない)。
+                VENDOR_ID: v.id ?? "",
+                VENDOR_CODE: v.vendor_code || "",
+              }
             },
           },
         ],
