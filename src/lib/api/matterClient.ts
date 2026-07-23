@@ -136,4 +136,8 @@ export const matterClient = {
   slackReplies(matterId: number | string) {
     return apiGet(`/api/matters/${matterId}/slack/replies`);
   },
+  /** メンション候補(staff のうち slack_user_id を持つ人)。 */
+  slackMentionCandidates() {
+    return apiGet(`/api/matters/slack/mention-candidates`);
+  },
 };

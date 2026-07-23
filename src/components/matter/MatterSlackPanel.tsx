@@ -1,5 +1,5 @@
 import * as React from "react"
-import { MessagesSquare, Send, RefreshCw, Loader2, Hash } from "lucide-react"
+import { MessagesSquare, Send, RefreshCw, Loader2, Hash, AtSign, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/components/ui/toast"
@@ -7,6 +7,7 @@ import { matterClient } from "@/src/lib/api/matterClient"
 
 type SlackMessage = { ts: string; user?: string; text: string; bot?: boolean }
 type SlackThread = { channel_id: string; thread_ts: string; root_text?: string; created_at?: string }
+type MentionCandidate = { id: string; name: string }
 
 /**
  * 案件×Slack パネル — 固定「法務相談」チャンネルに案件スレッドを立て、
@@ -22,6 +23,9 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
   const [creating, setCreating] = React.useState(false)
   const [sending, setSending] = React.useState(false)
   const [text, setText] = React.useState("")
+  const [candidates, setCandidates] = React.useState<MentionCandidate[]>([])
+  const [mentions, setMentions] = React.useState<MentionCandidate[]>([])
+  const [pickerOpen, setPickerOpen] = React.useState(false)
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -42,6 +46,26 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
     void load()
   }, [load])
 
+  // メンション候補(staff の slack_user_id 保有者)を一度だけ取得。失敗は無視。
+  React.useEffect(() => {
+    let alive = true
+    matterClient
+      .slackMentionCandidates()
+      .then((r: any) => {
+        if (alive && Array.isArray(r?.candidates)) setCandidates(r.candidates)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  const toggleMention = (c: MentionCandidate) => {
+    setMentions((prev) =>
+      prev.some((m) => m.id === c.id) ? prev.filter((m) => m.id !== c.id) : [...prev, c]
+    )
+  }
+
   const createThread = async () => {
     setCreating(true)
     try {
@@ -61,12 +85,18 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
 
   const send = async () => {
     const body = text.trim()
-    if (!body) return
+    if (!body && mentions.length === 0) return
+    // 選択したメンションを本文冒頭に <@ID> として前置。
+    const prefix = mentions.map((m) => `<@${m.id}>`).join(" ")
+    const composed = prefix ? (body ? `${prefix} ${body}` : prefix) : body
+    if (!composed) return
     setSending(true)
     try {
-      const r: any = await matterClient.slackSendMessage(matterId, body)
+      const r: any = await matterClient.slackSendMessage(matterId, composed)
       if (r?.ok) {
         setText("")
+        setMentions([])
+        setPickerOpen(false)
         await load()
       } else {
         push(r?.error || "送信に失敗しました", "error")
@@ -128,6 +158,54 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
               ))
             )}
           </div>
+          {/* メンション選択: staff の slack_user_id 保有者から選び、送信時に <@ID> を本文冒頭へ付与。 */}
+          {candidates.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen((v) => !v)}
+                  className="inline-flex items-center gap-1 rounded-md border border-input px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted/50"
+                >
+                  <AtSign className="h-3 w-3" />
+                  メンション
+                </button>
+                {mentions.map((m) => (
+                  <span
+                    key={m.id}
+                    className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[11px]"
+                  >
+                    @{m.name}
+                    <button type="button" onClick={() => toggleMention(m)} title="外す">
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              {pickerOpen && (
+                <div className="flex flex-wrap gap-1 rounded-md border border-border/60 bg-muted/20 p-1.5">
+                  {candidates.map((c) => {
+                    const on = mentions.some((m) => m.id === c.id)
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => toggleMention(c)}
+                        className={
+                          "rounded-full px-2 py-0.5 text-[11px] border " +
+                          (on
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "border-input text-muted-foreground hover:bg-muted/50")
+                        }
+                      >
+                        @{c.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex items-end gap-2">
             <textarea
               value={text}
@@ -139,7 +217,7 @@ export function MatterSlackPanel({ matterId }: { matterId: number }) {
               rows={2}
               className="flex-1 resize-y rounded-md border border-input bg-transparent px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-ring"
             />
-            <Button size="sm" onClick={send} disabled={sending || !text.trim()}>
+            <Button size="sm" onClick={send} disabled={sending || (!text.trim() && mentions.length === 0)}>
               {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
             </Button>
           </div>
