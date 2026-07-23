@@ -19376,6 +19376,105 @@ ${details}
         details: {},
       };
     }
+    // 利用許諾料計算書: 多明細(統合)モードのサンプル。ひな形プレビューで
+    //   親契約グループ化＋計算方式混在(製造/売上ベース)＋控除注意書きを表示するため、
+    //   statementMode="multi" + lineGroups を持たせる(単票の [var] 描画にならないよう)。
+    if (type === "royalty_statement") {
+      const fmt = (n: number) =>
+        new Intl.NumberFormat("ja-JP").format(Math.round(n));
+      // 製造ベース group
+      const unit = 3000,
+        qty = 5000,
+        smpl = 200,
+        mrate = 8;
+      const mbill = qty - smpl;
+      const mbase = unit * mbill;
+      const mpay = Math.ceil((unit * mbill * mrate) / 100);
+      const gA = {
+        contractTitle: "サンプル製造ライセンス",
+        contractNumber: "LIC-SAMPLE-0001",
+        methodLabel: "製造ベース",
+        lines: [
+          {
+            productName: "サンプル製品A（通常版）",
+            salesJpyStr: fmt(mbase),
+            basisNote: `¥${fmt(unit)} × ${fmt(mbill)}個`,
+            ratePctResolved: mrate,
+            paymentJpyStr: fmt(mpay),
+          },
+        ],
+        subtotalSalesStr: fmt(mbase),
+        subtotalPaymentStr: fmt(mpay),
+      };
+      // 売上(受領額)ベース group（外貨→円換算済みの実受領額）
+      const rev: Array<[string, number, number]> = [
+        ["サンプル作品_フランス語版", 15054, 50],
+        ["サンプル作品_英語版", 8206, 50],
+      ];
+      let rSales = 0,
+        rPay = 0;
+      const rLines = rev.map(([n, base, r]) => {
+        const p = Math.ceil((base * r) / 100);
+        rSales += base;
+        rPay += p;
+        return {
+          productName: n,
+          salesJpyStr: fmt(base),
+          basisNote: "",
+          ratePctResolved: r,
+          paymentJpyStr: fmt(p),
+        };
+      });
+      const gB = {
+        contractTitle: "サンプル海外サブライセンス",
+        contractNumber: "LIC-SAMPLE-0044",
+        methodLabel: "売上ベース",
+        lines: rLines,
+        subtotalSalesStr: fmt(rSales),
+        subtotalPaymentStr: fmt(rPay),
+      };
+      const totSales = mbase + rSales;
+      const totPay = mpay + rPay;
+      const tax = Math.ceil(totPay * 0.1);
+      return {
+        issueKey: "SAMPLE-1",
+        documentNumber: "RY-SAMPLE-0001",
+        summary: "利用許諾料計算書 サンプル",
+        requester: "LegalBridge Sample",
+        date: new Date().toLocaleDateString("ja-JP"),
+        details: {
+          statementMode: "multi",
+          DOC_NO: "RY-SAMPLE-0001",
+          documentDate: new Date().toISOString().slice(0, 10),
+          linked_contract_number: "LIC-SAMPLE-0001",
+          licensor: "サンプル権利者",
+          LICENSOR_SUFFIX: "様",
+          licensee: "サンプル自社株式会社",
+          originalWork: "サンプル原作シリーズ",
+          STAFF_NAME: "サンプル 担当",
+          STAFF_DEPARTMENT: "法務部",
+          STAFF_EMAIL: "legal@example.com",
+          STAFF_PHONE: "03-0000-0000",
+          payerCompany: "Sample Overseas Ltd.",
+          royaltyCategory: "2026Q1ロイヤリティ",
+          designerName: "サンプル権利者",
+          desiredDeadline: "2026-08-20",
+          intakeCurrency: "GBP",
+          fxRate: "184.83",
+          currency: "JPY",
+          taxRate: "10",
+          lineGroups: [gA, gB],
+          linesTotalSalesStr: fmt(totSales),
+          linesTotalPaymentStr: fmt(totPay),
+          linesTaxStr: fmt(tax),
+          linesTotalIncTaxStr: fmt(totPay + tax),
+          paymentConditionSummary: "四半期報告後の翌月末日払い",
+          reportingDeadline: "2026-08-10",
+          paymentDueDate: "2026-08-31",
+        },
+      };
+    }
+
     const metadata = loadTemplateMetadata();
     const vars = metadata[type]?.vars || {};
     const templateVars = documentService.getTemplateVariables(type as any);

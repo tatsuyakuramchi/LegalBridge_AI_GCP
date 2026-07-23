@@ -183,6 +183,96 @@ async function ensurePreviewPartials(): Promise<void> {
   previewPartialsLoaded = true;
 }
 // TEMPLATE_SOURCE=db のとき、DB のテンプレ + サンプルデータでローカルレンダリング。
+// 利用許諾料計算書のひな形プレビュー用サンプル(多明細/統合モード)。
+//   汎用 buildSampleData は statementMode="multi"/lineGroups を生成できず単票側を
+//   描画してしまうため、worker の buildSampleDocumentData と同等の多明細サンプルを
+//   トップレベルで渡す(親契約グループ化＋計算方式混在＋控除注意書きを表示)。
+function royaltyStatementSampleFlat(): Record<string, any> {
+  const fmt = (n: number) => new Intl.NumberFormat("ja-JP").format(Math.round(n));
+  const unit = 3000,
+    qty = 5000,
+    smpl = 200,
+    mrate = 8;
+  const mbill = qty - smpl;
+  const mbase = unit * mbill;
+  const mpay = Math.ceil((unit * mbill * mrate) / 100);
+  const gA = {
+    contractTitle: "サンプル製造ライセンス",
+    contractNumber: "LIC-SAMPLE-0001",
+    methodLabel: "製造ベース",
+    lines: [
+      {
+        productName: "サンプル製品A（通常版）",
+        salesJpyStr: fmt(mbase),
+        basisNote: `¥${fmt(unit)} × ${fmt(mbill)}個`,
+        ratePctResolved: mrate,
+        paymentJpyStr: fmt(mpay),
+      },
+    ],
+    subtotalSalesStr: fmt(mbase),
+    subtotalPaymentStr: fmt(mpay),
+  };
+  const rev: Array<[string, number, number]> = [
+    ["サンプル作品_フランス語版", 15054, 50],
+    ["サンプル作品_英語版", 8206, 50],
+  ];
+  let rSales = 0,
+    rPay = 0;
+  const rLines = rev.map(([n, base, r]) => {
+    const p = Math.ceil((base * r) / 100);
+    rSales += base;
+    rPay += p;
+    return {
+      productName: n,
+      salesJpyStr: fmt(base),
+      basisNote: "",
+      ratePctResolved: r,
+      paymentJpyStr: fmt(p),
+    };
+  });
+  const gB = {
+    contractTitle: "サンプル海外サブライセンス",
+    contractNumber: "LIC-SAMPLE-0044",
+    methodLabel: "売上ベース",
+    lines: rLines,
+    subtotalSalesStr: fmt(rSales),
+    subtotalPaymentStr: fmt(rPay),
+  };
+  const totSales = mbase + rSales;
+  const totPay = mpay + rPay;
+  const tax = Math.ceil(totPay * 0.1);
+  return {
+    statementMode: "multi",
+    DOC_NO: "RY-SAMPLE-0001",
+    documentDate: new Date().toISOString().slice(0, 10),
+    linked_contract_number: "LIC-SAMPLE-0001",
+    licensor: "サンプル権利者",
+    LICENSOR_SUFFIX: "様",
+    licensee: "サンプル自社株式会社",
+    originalWork: "サンプル原作シリーズ",
+    STAFF_NAME: "サンプル 担当",
+    STAFF_DEPARTMENT: "法務部",
+    STAFF_EMAIL: "legal@example.com",
+    STAFF_PHONE: "03-0000-0000",
+    payerCompany: "Sample Overseas Ltd.",
+    royaltyCategory: "2026Q1ロイヤリティ",
+    designerName: "サンプル権利者",
+    desiredDeadline: "2026-08-20",
+    intakeCurrency: "GBP",
+    fxRate: "184.83",
+    currency: "JPY",
+    taxRate: "10",
+    lineGroups: [gA, gB],
+    linesTotalSalesStr: fmt(totSales),
+    linesTotalPaymentStr: fmt(totPay),
+    linesTaxStr: fmt(tax),
+    linesTotalIncTaxStr: fmt(totPay + tax),
+    paymentConditionSummary: "四半期報告後の翌月末日払い",
+    reportingDeadline: "2026-08-10",
+    paymentDueDate: "2026-08-31",
+  };
+}
+
 async function renderSamplePreviewFromDb(type: string): Promise<string | null> {
   const r = await query(
     `SELECT dt.label, v.html_source, v.field_schema
@@ -200,6 +290,10 @@ async function renderSamplePreviewFromDb(type: string): Promise<string | null> {
     const sample = v3SampleFormData();
     const v3Data = { ...sample, ...buildIndividualLicenseV3Context(sample) };
     return renderSharedTemplate(previewHb, row.html_source, v3Data);
+  }
+  // 利用許諾料計算書は多明細(統合)サンプルで描画(単票 [var] 化を回避)。
+  if (type === "royalty_statement") {
+    return renderSharedTemplate(previewHb, row.html_source, royaltyStatementSampleFlat());
   }
   const data = buildSampleData(row.field_schema || [], row.html_source, row.label || type);
   return renderSharedTemplate(previewHb, row.html_source, data);
