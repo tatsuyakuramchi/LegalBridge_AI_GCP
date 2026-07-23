@@ -220,6 +220,29 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     ? (allLedgers || []).find((l: any) => l.ledger_code === selectedContract.ledger_code)
     : null
 
+  // A案: 明細行に親契約(イン側)を割り当てる。選んだ契約の第1金銭条件の料率を
+  //   その行の初期料率にし, 契約タイトル/番号も記録する(行ごとに上書き可)。
+  const setLineContract = (i: number, contractId: string) => {
+    const c = (licenseMasters || []).find(
+      (x: any) => String(x.id) === String(contractId)
+    )
+    const firstCond =
+      c && Array.isArray(c.financial_conditions) && c.financial_conditions.length > 0
+        ? c.financial_conditions[0]
+        : null
+    const rate =
+      firstCond && firstCond.rate_pct != null ? String(firstCond.rate_pct) : ""
+    const method = firstCond ? methodFromCalc(firstCond.calc_method) : undefined
+    updateLine(i, {
+      contractId: contractId || "",
+      contractTitle: c?.contract_title || "",
+      contractNumber: c?.document_number || "",
+      // 契約選択時は料率・計算方式をその契約の条件で上書き(未取得なら現状維持)。
+      ...(rate !== "" ? { ratePct: rate } : {}),
+      ...(method ? { calcMethod: method } : {}),
+    })
+  }
+
   // ---- イベントハンドラ -------------------------------------------
   // 契約マスタを選ぶと、当事者 / 原作 / 金銭条件配列 / デフォルト通貨を一括 auto-fill。
   // インボイス番号の先頭 T を除去(表示は T 無しで統一。テンプレ側で付す)。
@@ -373,25 +396,71 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
   const fmtYen = (n: number) =>
     new Intl.NumberFormat("ja-JP").format(Math.round(Number(n) || 0))
 
-  // 1 明細を計算 (render 時に live 表示するためにも使う)。
+  // 計算方式ラベル。manufacturing=製造ベース(基準価格×数量×料率)、
+  //   revenue=売上/受領額ベース(実受領額×料率)。
+  const methodLabelOf = (m: string) =>
+    m === "manufacturing" ? "製造ベース" : "売上ベース"
+  // 契約条件の calc_method から方式を推定 (QTY/製造/業績連動 → manufacturing)。
+  const methodFromCalc = (cm: any): "manufacturing" | "revenue" => {
+    const s = String(cm || "").toUpperCase()
+    if (
+      s.includes("QTY") ||
+      s.includes("MANUF") ||
+      s.includes("PERFORM") ||
+      s.includes("製造")
+    )
+      return "manufacturing"
+    return "revenue"
+  }
+
+  // 1 明細を計算 (render 時に live 表示するためにも使う)。方式で算式を切替える。
+  //   manufacturing: 支払 = ceil(基準価格 × 課金数量 × 料率/100)  (PerformanceTerms)
+  //   revenue      : 支払 = ceil(実受領額 × 料率/100)             (RevenueTerms)
+  //   算定基礎額(base) は小計・帳票表示に使う。
   const computeLine = (raw: any) => {
-    const salesInput = Number(raw?.salesInput) || 0
+    const method = String(raw?.calcMethod || "revenue")
     const ratePct =
       raw?.ratePct !== undefined && raw?.ratePct !== ""
         ? Number(raw.ratePct)
         : Number(formData.royaltyRatePct) || 0
-    const salesJpy = isForeignIntake
-      ? Math.round(salesInput * fxRate)
-      : Math.round(salesInput)
-    const paymentJpy = Math.ceil((salesJpy * ratePct) / 100)
+    let base = 0
+    let paymentJpy = 0
+    let basisNote = ""
+    if (method === "manufacturing") {
+      const unitPrice = Number(raw?.unitPrice) || 0
+      const qty = Number(raw?.qty) || 0
+      const sample = Number(raw?.sample) || 0
+      const billable = Math.max(0, qty - sample)
+      base = Math.round(unitPrice * billable)
+      paymentJpy = Math.ceil((unitPrice * billable * ratePct) / 100)
+      basisNote =
+        unitPrice > 0 && billable > 0
+          ? `¥${fmtYen(unitPrice)} × ${fmtYen(billable)}個`
+          : ""
+    } else {
+      const salesInput = Number(raw?.salesInput) || 0
+      base = isForeignIntake
+        ? Math.round(salesInput * fxRate)
+        : Math.round(salesInput)
+      paymentJpy = Math.ceil((base * ratePct) / 100)
+    }
     return {
+      calcMethod: method,
       productName: raw?.productName || "",
       salesInput: raw?.salesInput ?? "",
+      unitPrice: raw?.unitPrice ?? "",
+      qty: raw?.qty ?? "",
+      sample: raw?.sample ?? "",
       ratePct: raw?.ratePct ?? "",
+      // 親契約(イン側)。行ごとに異なる契約に紐づけられる(A案)。
+      contractId: raw?.contractId ?? "",
+      contractTitle: raw?.contractTitle || "",
+      contractNumber: raw?.contractNumber || "",
       // 派生 (テンプレ用)
-      salesInputStr: fmtYen(salesInput),
-      salesJpy,
-      salesJpyStr: fmtYen(salesJpy),
+      methodLabel: methodLabelOf(method),
+      basisNote,
+      salesJpy: base,
+      salesJpyStr: fmtYen(base),
       ratePctResolved: ratePct,
       paymentJpy,
       paymentJpyStr: fmtYen(paymentJpy),
@@ -411,10 +480,49 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     const totalPayment = computed.reduce((s, l) => s + (l.paymentJpy || 0), 0)
     const taxRate = Number(formData.taxRate) || 10
     const tax = Math.ceil((totalPayment * taxRate) / 100)
+
+    // A案: 親契約(イン側)ごとにグループ化し, 契約単位の小計を持たせる。
+    //   contractId 未指定の行は「契約未指定」グループにまとめる。出現順を保つ。
+    const groupOrder: string[] = []
+    const groupMap: Record<string, any> = {}
+    for (const l of computed) {
+      const key = String(l.contractId || "") || "__none__"
+      if (!groupMap[key]) {
+        groupMap[key] = {
+          contractId: l.contractId || "",
+          contractTitle: l.contractTitle || "",
+          contractNumber: l.contractNumber || "",
+          methodLabel: l.methodLabel || "",
+          lines: [],
+          subtotalSales: 0,
+          subtotalPayment: 0,
+        }
+        groupOrder.push(key)
+      }
+      const g = groupMap[key]
+      g.lines.push(l)
+      g.subtotalSales += l.salesJpy || 0
+      g.subtotalPayment += l.paymentJpy || 0
+    }
+    const lineGroups = groupOrder.map((k) => {
+      const g = groupMap[k]
+      return {
+        contractId: g.contractId,
+        contractTitle: g.contractTitle,
+        contractNumber: g.contractNumber,
+        methodLabel: g.methodLabel,
+        lines: g.lines,
+        subtotalSalesStr: fmtYen(g.subtotalSales),
+        subtotalPaymentStr: fmtYen(g.subtotalPayment),
+      }
+    })
+
     setFormData({
       ...formData,
       ...extraPatch,
       lines: computed,
+      lineGroups,
+      lineGroupsCount: lineGroups.length,
       linesCount: computed.length,
       linesTotalSalesJpy: totalSales,
       linesTotalSalesStr: fmtYen(totalSales),
@@ -426,7 +534,10 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
   }
 
   const addLine = () =>
-    recalcAndSet([...rawLines(), { productName: "", salesInput: "", ratePct: "" }])
+    recalcAndSet([
+      ...rawLines(),
+      { productName: "", calcMethod: "revenue", salesInput: "", ratePct: "" },
+    ])
   const updateLine = (i: number, patch: Record<string, any>) =>
     recalcAndSet(
       rawLines().map((l: any, idx: number) => (idx === i ? { ...l, ...patch } : l))
@@ -952,17 +1063,31 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           >
             <div className="col-span-full space-y-3">
               <p className="text-[10px] text-muted-foreground">
-                料率はステップ 1 で選んだ<strong>イン側条件</strong>の値（{formData.royaltyRatePct || "—"}%）を
-                各行の初期値にします。行ごとに上書き可。
+                各行で<strong>親契約（イン側）</strong>を選ぶと、その契約の料率・
+                <strong>計算方式</strong>が初期セットされ、契約タイトル・番号が記録されます
+                （行ごとに上書き可）。方式は<strong>売上ベース</strong>（実受領額×料率）と
+                <strong>製造ベース</strong>（基準価格×課金数量×料率）から選べます。
+                帳票は契約ごとにグループ化し、契約単位の小計→総合計を表示します。
+                {(licenseMasters || []).length === 0 && (
+                  <span className="text-warning">
+                    {" "}⚠ 候補となるライセンス契約がありません。ステップ 1 で契約を選ぶか、
+                    契約マスタに金銭条件を登録してください。
+                  </span>
+                )}
               </p>
               <div className="overflow-x-auto">
                 <table className="w-full text-[11px] font-mono border border-input">
                   <thead>
                     <tr className="bg-muted/40">
+                      <th className="p-1.5 text-left">親契約（イン側）</th>
                       <th className="p-1.5 text-left">製品名</th>
+                      <th className="p-1.5">方式</th>
                       <th className="p-1.5 text-right">売上（{intakeCurrency}）</th>
-                      {isForeignIntake && <th className="p-1.5 text-right">売上（円）</th>}
+                      <th className="p-1.5 text-right">基準価格</th>
+                      <th className="p-1.5 text-right">製造数</th>
+                      <th className="p-1.5 text-right">サンプル</th>
                       <th className="p-1.5 text-right">料率%</th>
+                      <th className="p-1.5 text-right">算定基礎額（円）</th>
                       <th className="p-1.5 text-right">支払額（円）</th>
                       <th className="p-1.5 w-8"></th>
                     </tr>
@@ -970,39 +1095,110 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                   <tbody>
                     {rawLines().length === 0 && (
                       <tr>
-                        <td
-                          colSpan={isForeignIntake ? 6 : 5}
-                          className="p-3 text-center text-muted-foreground"
-                        >
+                        <td colSpan={11} className="p-3 text-center text-muted-foreground">
                           明細がありません。「＋ 明細を追加」で行を追加してください。
                         </td>
                       </tr>
                     )}
                     {rawLines().map((l: any, i: number) => {
                       const c = computeLine(l)
+                      const isMfg = c.calcMethod === "manufacturing"
+                      const muted = (
+                        <span className="text-muted-foreground/50">—</span>
+                      )
                       return (
                         <tr key={i} className="border-t border-input">
+                          <td className="p-1">
+                            <select
+                              value={String(l.contractId || "")}
+                              onChange={(e) => setLineContract(i, e.target.value)}
+                              className="text-[11px] h-7 w-full min-w-[150px] border border-input rounded-sm bg-background px-1 focus:outline-none focus:border-foreground"
+                            >
+                              <option value="">（契約を選択）</option>
+                              {(licenseMasters || []).map((mc: any) => (
+                                <option key={mc.id} value={String(mc.id)}>
+                                  {mc.contract_title || "(無題)"}
+                                  {mc.document_number ? ` [${mc.document_number}]` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
                           <td className="p-1">
                             <Input
                               value={l.productName || ""}
                               onChange={(e) => updateLine(i, { productName: e.target.value })}
-                              className="text-[11px] h-7"
+                              className="text-[11px] h-7 min-w-[120px]"
                               placeholder="製品 / 版"
                             />
                           </td>
                           <td className="p-1">
-                            <Input
-                              type="number"
-                              min="0"
-                              value={l.salesInput ?? ""}
-                              onChange={(e) => updateLine(i, { salesInput: e.target.value })}
-                              className="text-[11px] h-7 text-right"
-                              placeholder={isForeignIntake ? "外貨売上" : "円売上"}
-                            />
+                            <select
+                              value={c.calcMethod}
+                              onChange={(e) => updateLine(i, { calcMethod: e.target.value })}
+                              className="text-[11px] h-7 border border-input rounded-sm bg-background px-1 focus:outline-none focus:border-foreground"
+                            >
+                              <option value="revenue">売上ベース</option>
+                              <option value="manufacturing">製造ベース</option>
+                            </select>
                           </td>
-                          {isForeignIntake && (
-                            <td className="p-1 text-right whitespace-nowrap">¥{c.salesJpyStr}</td>
-                          )}
+                          {/* 売上（売上ベースのみ入力） */}
+                          <td className="p-1 text-right">
+                            {isMfg ? (
+                              muted
+                            ) : (
+                              <Input
+                                type="number"
+                                min="0"
+                                value={l.salesInput ?? ""}
+                                onChange={(e) => updateLine(i, { salesInput: e.target.value })}
+                                className="text-[11px] h-7 text-right min-w-[90px]"
+                                placeholder={isForeignIntake ? "外貨売上" : "円売上"}
+                              />
+                            )}
+                          </td>
+                          {/* 基準価格 / 製造数 / サンプル（製造ベースのみ入力） */}
+                          <td className="p-1 text-right">
+                            {isMfg ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                value={l.unitPrice ?? ""}
+                                onChange={(e) => updateLine(i, { unitPrice: e.target.value })}
+                                className="text-[11px] h-7 text-right min-w-[80px]"
+                                placeholder="円"
+                              />
+                            ) : (
+                              muted
+                            )}
+                          </td>
+                          <td className="p-1 text-right">
+                            {isMfg ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                value={l.qty ?? ""}
+                                onChange={(e) => updateLine(i, { qty: e.target.value })}
+                                className="text-[11px] h-7 text-right min-w-[70px]"
+                                placeholder="数量"
+                              />
+                            ) : (
+                              muted
+                            )}
+                          </td>
+                          <td className="p-1 text-right">
+                            {isMfg ? (
+                              <Input
+                                type="number"
+                                min="0"
+                                value={l.sample ?? ""}
+                                onChange={(e) => updateLine(i, { sample: e.target.value })}
+                                className="text-[11px] h-7 text-right min-w-[60px]"
+                                placeholder="0"
+                              />
+                            ) : (
+                              muted
+                            )}
+                          </td>
                           <td className="p-1">
                             <Input
                               type="number"
@@ -1010,9 +1206,17 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                               step="0.01"
                               value={l.ratePct ?? ""}
                               onChange={(e) => updateLine(i, { ratePct: e.target.value })}
-                              className="text-[11px] h-7 text-right"
+                              className="text-[11px] h-7 text-right min-w-[60px]"
                               placeholder={String(formData.royaltyRatePct || "")}
                             />
+                          </td>
+                          <td className="p-1 text-right whitespace-nowrap">
+                            ¥{c.salesJpyStr}
+                            {c.basisNote && (
+                              <div className="text-[9px] text-muted-foreground/70">
+                                {c.basisNote}
+                              </div>
+                            )}
                           </td>
                           <td className="p-1 text-right font-bold whitespace-nowrap">
                             ¥{c.paymentJpyStr}
@@ -1049,7 +1253,7 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               </div>
               <div className="flex flex-wrap gap-4 justify-end text-[12px] font-mono px-3 py-2 bg-muted/30 rounded-sm border border-input">
                 <span>
-                  売上合計（円）:{" "}
+                  算定基礎額合計（円）:{" "}
                   <strong>¥{formData.linesTotalSalesStr || "0"}</strong>
                 </span>
                 <span>
