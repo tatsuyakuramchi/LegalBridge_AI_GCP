@@ -95,6 +95,19 @@ const vpick = (raw: any, map: Record<string, string>): Record<string, any> => {
   }
   return p;
 };
+// 取引先の法人/個人 判定(発注書 fillVendorFrom / 印税明細と同一ロジックを共通化)。
+//   entity_type(表記揺れ) → 法人番号 → 社名の法人格 の順で判定。
+const isCorporationVendor = (v: any): boolean => {
+  const et = String(v?.entity_type || v?.vendor_entity_type || "")
+    .trim()
+    .toLowerCase();
+  if (et === "individual" || et === "個人") return false;
+  if (et.includes("corp") || et.includes("法人")) return true;
+  if (String(v?.corporate_number || "").trim()) return true;
+  return /株式会社|有限会社|合同会社|合名会社|合資会社|相互会社|社団法人|財団法人|学校法人|医療法人|宗教法人|協同組合|（株）|（有）|㈱|㈲|株式會社/.test(
+    String(v?.vendor_name || "")
+  );
+};
 const invoiceT = (raw: any) =>
   raw?.invoice_registration_number
     ? `T${String(raw.invoice_registration_number).replace(/^[TtＴｔ]\s*/, "").trim()}`
@@ -116,18 +129,31 @@ const licenseMaster: SchemaBuilder = (metadata) => ({
       searches: [{
         entity: "vendor",
         label: "許諾者(取引先)を検索して充填",
-        help: "取引先マスタから選ぶと氏名・住所・代表者・口座・インボイスまで一括充填。",
-        onPick: (opt) => ({
-          ...vpick(opt.raw, {
-            VENDOR_CODE: "vendor_code", VENDOR_NAME: "vendor_name", VENDOR_ADDRESS: "address",
-            VENDOR_REP: "vendor_rep", VENDOR_PHONE: "phone", VENDOR_EMAIL: "email",
-            BANK_NAME: "bank_name", BRANCH_NAME: "branch_name", ACCOUNT_TYPE: "account_type",
-            ACCOUNT_NUMBER: "account_number", ACCOUNT_HOLDER_KANA: "account_holder_kana",
-          }),
-          VENDOR_REP: opt.raw?.vendor_rep || opt.raw?.contact_name || "",
-          IS_INVOICE_ISSUER: !!opt.raw?.is_invoice_issuer,
-          invoiceRegistrationDisplay: invoiceT(opt.raw),
-        }),
+        help: "取引先マスタから選ぶと氏名/法人名・住所・代表者・口座・インボイス・通知先まで一括充填。法人/個人も自動判定。",
+        onPick: (opt) => {
+          const raw = opt.raw || {};
+          const isCorp = isCorporationVendor(raw);
+          return {
+            ...vpick(raw, {
+              VENDOR_CODE: "vendor_code", VENDOR_NAME: "vendor_name", VENDOR_ADDRESS: "address",
+              VENDOR_PHONE: "phone", VENDOR_EMAIL: "email",
+              BANK_NAME: "bank_name", BRANCH_NAME: "branch_name", ACCOUNT_TYPE: "account_type",
+              ACCOUNT_NUMBER: "account_number", ACCOUNT_HOLDER_KANA: "account_holder_kana",
+            }),
+            // 取引先マスタ参照を id で確定(名称照合フォールバックに依存しない)。
+            VENDOR_ID: raw.id ?? "",
+            VENDOR_CORPORATE_NUMBER: raw.corporate_number || "",
+            // 法人/個人 → テンプレの代表者行・署名の出し分け。個人は代表者を空に。
+            VENDOR_IS_CORPORATION: isCorp,
+            VENDOR_REP: isCorp ? (raw.vendor_rep || raw.contact_name || "") : "",
+            // 通知先(甲)を取引先の連絡先から補完。
+            NOTICE_CONTACT_NAME: raw.contact_name || raw.vendor_rep || "",
+            NOTICE_CONTACT_PHONE: raw.phone || "",
+            NOTICE_CONTACT_EMAIL: raw.email || "",
+            IS_INVOICE_ISSUER: !!raw.is_invoice_issuer,
+            invoiceRegistrationDisplay: invoiceT(raw),
+          };
+        },
       }],
       ...groupFields(metadata, "II. ライセンサー (許諾者)"),
     },

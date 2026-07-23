@@ -17054,7 +17054,19 @@ ${details}
             ""
         ).trim();
 
-        if (vendorCode && vendorCode.toUpperCase() !== "UNKNOWN") {
+        // フォームでピッカー選択した場合は vendor_id を直接確定(名称/コード照合に優先)。
+        //   取引先マスタ改名・表記ゆれに影響されないソフトリンク解消。
+        const pickedVendorId = Number(
+          formData.VENDOR_ID || formData.vendor_id || 0
+        );
+        if (pickedVendorId > 0) {
+          const vRes = await query(
+            "SELECT id FROM vendors WHERE id = $1 LIMIT 1",
+            [pickedVendorId]
+          );
+          if (vRes.rows.length > 0) vendorId = Number(vRes.rows[0].id);
+        }
+        if (!vendorId && vendorCode && vendorCode.toUpperCase() !== "UNKNOWN") {
           const vRes = await query(
             "SELECT id FROM vendors WHERE vendor_code = $1 LIMIT 1",
             [vendorCode]
