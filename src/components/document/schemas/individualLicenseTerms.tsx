@@ -53,6 +53,22 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
   const [iltNewSourceTitle, setIltNewSourceTitle] = React.useState("")
   const [iltCreatingSource, setIltCreatingSource] = React.useState(false)
 
+  // 対象製品予定名: 対象作品(自社作品)を選ぶと onSelect で補完されるが、下書き再開など
+  //   onSelect を経ずに linked_work_id が復元されたケースでは空のままになる。
+  //   linked_work_id があり予定名が空なら worksList の名称で自動補完する(方針X: form_data を正、
+  //   プレビュー/生成の両方へ反映)。ユーザーが入力/クリアした値は尊重(空のときだけ)。
+  React.useEffect(() => {
+    const lwId = formData.linked_work_id
+    if (!lwId) return
+    if (String(formData.対象製品予定名 || "").trim()) return
+    const w = (Array.isArray(worksList) ? worksList : []).find(
+      (x: any) => String(x?.id) === String(lwId)
+    )
+    const title = String(w?.title || "").trim()
+    if (title) setFormData({ ...formData, 対象製品予定名: title })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.linked_work_id, worksList])
+
   // group メタ → {group → 全fieldIds}(hidden も含む: 旧 groupedVars と等価)。
   const groupedVars = React.useMemo(() => {
     const groups: Record<string, string[]> = {}
