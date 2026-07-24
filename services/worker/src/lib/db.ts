@@ -652,14 +652,14 @@ async function findExistingPrimaryDocument(
   issueKey: string,
   templateType: string,
   contentHash?: string
-): Promise<{ document_number: string; base_document_number: string; revision: number } | null> {
+): Promise<{ document_number: string; base_document_number: string; revision: number; content_hash: string | null } | null> {
   const ik = (issueKey || '').trim();
   const issueUsable = ik !== '' && !ik.startsWith('MANUAL-');
   // 起票でもハッシュでも引けない場合は判定しない。
   if (!issueUsable && !contentHash) return null;
 
   const withHash = `
-    SELECT document_number, base_document_number, revision
+    SELECT document_number, base_document_number, revision, content_hash
       FROM documents
      WHERE is_primary = TRUE
        AND COALESCE(lifecycle_status, 'final') = 'final'
@@ -671,7 +671,7 @@ async function findExistingPrimaryDocument(
      ORDER BY revision DESC, created_at DESC
      LIMIT 1`;
   const noHash = `
-    SELECT document_number, base_document_number, revision
+    SELECT document_number, base_document_number, revision, NULL::text AS content_hash
       FROM documents
      WHERE is_primary = TRUE
        AND COALESCE(lifecycle_status, 'final') = 'final'
@@ -703,14 +703,21 @@ export async function getDocumentNumberForGenerate(opts: {
   reissue?: boolean;
   /** 重複検出用の内容ハッシュ(computeFormContentHash)。Case① の再利用判定に使う。 */
   contentHash?: string;
+  /** 「同種・別内容の別文書」として明示的に新規登録する(二重作成ガードを越える)。
+   *  true のとき、起票×種別が一致するだけの既存正本は再利用せず新番号を採番する。
+   *  内容ハッシュ完全一致(=同一内容の保存し直し)のみ従来どおり上書きへ寄せる。 */
+  allowDuplicate?: boolean;
 }): Promise<{
   documentNumber: string;
   baseDocumentNumber: string;
   revision: number;
   isReissue: boolean;
   overwrite: boolean;
+  /** overwrite=true の理由が「起票×種別一致だが内容が異なる」場合に true。
+   *  呼び出し側はこれを見て、黙って上書きせず二重作成の確認(409)を出す。 */
+  contentDiffers: boolean;
 }> {
-  const { issueKey, templateType, issueTypeName, existingDocumentNumber, reissue, contentHash } = opts;
+  const { issueKey, templateType, issueTypeName, existingDocumentNumber, reissue, contentHash, allowDuplicate } = opts;
 
   // === Case ①: 完全新規 (existingDocumentNumber なし) ===
   if (!existingDocumentNumber || !existingDocumentNumber.trim()) {
@@ -724,13 +731,18 @@ export async function getDocumentNumberForGenerate(opts: {
     if (reissue !== true) {
       const dup = await findExistingPrimaryDocument(issueKey, templateType, contentHash);
       if (dup) {
-        return {
-          documentNumber: dup.document_number,
-          baseDocumentNumber: dup.base_document_number || dup.document_number,
-          revision: Number(dup.revision) || 0,
-          isReissue: false,
-          overwrite: true,
-        };
+        const sameContent = !!contentHash && dup.content_hash === contentHash;
+        // allowDuplicate 指定かつ内容が異なる → 既存は再利用せず新番号(別文書)を採番。
+        if (!(allowDuplicate && !sameContent)) {
+          return {
+            documentNumber: dup.document_number,
+            baseDocumentNumber: dup.base_document_number || dup.document_number,
+            revision: Number(dup.revision) || 0,
+            isReissue: false,
+            overwrite: true,
+            contentDiffers: !sameContent,
+          };
+        }
       }
     }
     const newNumber = await getNewDocumentNumber(templateType, issueTypeName);
@@ -740,6 +752,7 @@ export async function getDocumentNumberForGenerate(opts: {
       revision: 0,
       isReissue: false,
       overwrite: false,
+      contentDiffers: false,
     };
   }
 
@@ -770,6 +783,7 @@ export async function getDocumentNumberForGenerate(opts: {
       revision: 0,
       isReissue: false,
       overwrite: false,
+      contentDiffers: false,
     };
   }
 
@@ -783,13 +797,18 @@ export async function getDocumentNumberForGenerate(opts: {
     if (reissue !== true) {
       const dup = await findExistingPrimaryDocument(issueKey, templateType, contentHash);
       if (dup) {
-        return {
-          documentNumber: dup.document_number,
-          baseDocumentNumber: dup.base_document_number || dup.document_number,
-          revision: Number(dup.revision) || 0,
-          isReissue: false,
-          overwrite: true,
-        };
+        const sameContent = !!contentHash && dup.content_hash === contentHash;
+        // allowDuplicate 指定かつ内容が異なる → 既存は再利用せず新番号(別文書)を採番。
+        if (!(allowDuplicate && !sameContent)) {
+          return {
+            documentNumber: dup.document_number,
+            baseDocumentNumber: dup.base_document_number || dup.document_number,
+            revision: Number(dup.revision) || 0,
+            isReissue: false,
+            overwrite: true,
+            contentDiffers: !sameContent,
+          };
+        }
       }
     }
     const newNumber = await getNewDocumentNumber(templateType, issueTypeName);
@@ -799,6 +818,7 @@ export async function getDocumentNumberForGenerate(opts: {
       revision: 0,
       isReissue: false,
       overwrite: false,
+      contentDiffers: false,
     };
   }
 
@@ -817,6 +837,7 @@ export async function getDocumentNumberForGenerate(opts: {
       revision: Number(existing.revision) || 0,
       isReissue: false,
       overwrite: true,
+      contentDiffers: false,
     };
   }
 
@@ -833,6 +854,7 @@ export async function getDocumentNumberForGenerate(opts: {
       revision: nextRev,
       isReissue: true,
       overwrite: false,
+      contentDiffers: false,
     };
   }
 
@@ -846,6 +868,7 @@ export async function getDocumentNumberForGenerate(opts: {
     revision: Number(existing.revision) || 0,
     isReissue: false,
     overwrite: true,
+    contentDiffers: false,
   };
 }
 

@@ -16094,12 +16094,29 @@ ${details}
           reissue: reissue === true,
           // 重複防止: 内容ハッシュで「同一内容の保存し直し」を再採番せず上書きへ寄せる。
           contentHash: computeFormContentHash(formData, templateType),
+          // 「同種・別内容の別文書」を明示的に新規登録する(二重作成ガードを越える)。
+          allowDuplicate: formData?.allowDuplicateDocument === true,
         });
         docNumber = numAssign.documentNumber;
         baseDocumentNumber = numAssign.baseDocumentNumber;
         revision = numAssign.revision;
         isReissue = numAssign.isReissue;
         overwrite = numAssign.overwrite;
+        // 二重作成の確認(409): 完全新規保存で、同一課題×同種の既存正本があり内容が
+        //   異なるケース。黙って上書きするとデータ消失になるため、allowDuplicateDocument
+        //   未指定ならここで止めてフロントに「別の文書として新規登録 or 再発行」を促す。
+        //   (allowDuplicate=true のときは採番側が新番号を返し contentDiffers=false になる)
+        if (numAssign.contentDiffers) {
+          return res.status(409).json({
+            ok: false,
+            error: "duplicate_document",
+            existing_document_number: docNumber,
+            message:
+              `この課題には既に同種の文書(${docNumber})が存在します。` +
+              `内容の異なる別文書として新規登録する場合は許可(allowDuplicateDocument)を付けて、` +
+              `既存を修正する場合は「再発行」で再実行してください。`,
+          });
+        }
         if (isReissue) {
           console.log(
             `📝 [reissue] ${issueKey} ${templateType}: base=${baseDocumentNumber} rev=${revision} → ${docNumber}`
