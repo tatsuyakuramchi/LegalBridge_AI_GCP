@@ -45,6 +45,11 @@ export interface V3Cond {
   seller?: string;
   maxReg?: string;
   maxLang?: string;
+  /** 地域(最大)/言語(最大)=上限スコープ。選択式(複数国/言語)で編集し、maxReg/maxLang は
+   *  name を '・' 連結した互換文字列(保存先は condition_lines.max_region/max_language)。
+   *  ※ 許諾地域/言語(2-1・1-3B)と違い 0133 子表には入らない(上限=1本のスコープ表現)。 */
+  maxRegions?: Opt[];
+  maxLanguages?: Opt[];
   basePrice?: string;
   addon?: boolean;
   fixedRate?: string;
@@ -185,6 +190,21 @@ export function V3LicenseMatrix({
       )
     );
 
+  // 地域(最大)/言語(最大)=上限スコープ。選択式で編集し、互換文字列 maxReg/maxLang も合成。
+  //   保存先は condition_lines.max_region/max_language(0133 子表ではない)。
+  const updCondMaxRegions = (id: number, opts: Opt[]) =>
+    onChangeConds(
+      conds.map((c) =>
+        c.id === id ? { ...c, maxRegions: opts, maxReg: composeNames(opts) } : c
+      )
+    );
+  const updCondMaxLanguages = (id: number, opts: Opt[]) =>
+    onChangeConds(
+      conds.map((c) =>
+        c.id === id ? { ...c, maxLanguages: opts, maxLang: composeNames(opts) } : c
+      )
+    );
+
   // 構成要素LC(=原作マテリアル)は「3. マスター条件」で選択する。ここでは
   //   その LC 行に対し加算型取引形態ごとの料率のみインライン編集する。
   const updRate = (i: number, condId: number, v: string) =>
@@ -266,8 +286,25 @@ export function V3LicenseMatrix({
                     </td>
                     <td className={tdCls}><input className={cellInput} value={c.manufacturer || ''} onChange={(e) => updCond(c.id, 'manufacturer', e.target.value)} placeholder="Licensee / —" /></td>
                     <td className={tdCls}><input className={cellInput} value={c.seller || ''} onChange={(e) => updCond(c.id, 'seller', e.target.value)} placeholder="Licensee" /></td>
-                    <td className={tdCls}><input className={cellInput} value={c.maxReg || ''} onChange={(e) => updCond(c.id, 'maxReg', e.target.value)} placeholder="全世界" /></td>
-                    <td className={tdCls}><input className={cellInput} value={c.maxLang || ''} onChange={(e) => updCond(c.id, 'maxLang', e.target.value)} placeholder="全言語" /></td>
+                    <td className={tdCls}>
+                      <RegionLanguageSelect
+                        value={strToOpts(c.maxRegions, c.maxReg, NAME_TO_COUNTRY)}
+                        onChange={(opts) => updCondMaxRegions(c.id, opts)}
+                        options={COUNTRIES}
+                        presets={REGION_PRESETS}
+                        special={WORLD}
+                        placeholder="全世界"
+                      />
+                    </td>
+                    <td className={tdCls}>
+                      <RegionLanguageSelect
+                        value={strToOpts(c.maxLanguages, c.maxLang, NAME_TO_LANGUAGE)}
+                        onChange={(opts) => updCondMaxLanguages(c.id, opts)}
+                        options={LANGUAGES}
+                        special={ALL_LANG}
+                        placeholder="全言語"
+                      />
+                    </td>
                     <td className={tdCls}><input className={cellInput} value={c.basePrice || ''} onChange={(e) => updCond(c.id, 'basePrice', e.target.value)} placeholder="上代（MSRP）× 数量" /></td>
                     <td className={`${tdCls} text-center`}>
                       {/* 加算型/非加算型 のオン・オフ。加算型=構成要素LCの料率を合算 / 非加算型=実効料率を直接明記。 */}
