@@ -214,6 +214,10 @@ export function V3LicenseMatrix({
   // テンプレ 1-3/2-1 の表構成に合わせるためのセル用スタイル。
   const cellInput =
     'w-full min-w-[64px] text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground';
+  // プルダウン(<select>)は透過だと閉じた値も選択肢も読みづらいので不透明背景＋枠線に。
+  //   ダークテーマでも option が読めるよう option 自体にも背景/文字色を指定する。
+  const cellSelect =
+    'w-full min-w-[64px] text-[11px] font-mono bg-background text-foreground border border-input rounded-sm py-0.5 px-1 focus:outline-none focus:border-foreground [&>option]:bg-background [&>option]:text-foreground';
   const thCls = 'px-2 py-1 font-medium whitespace-nowrap border-b border-border text-left align-bottom';
   const tdCls = 'px-1.5 py-1 align-top border-b border-border/50';
   const condLabel = (c: V3Cond) => c.name || `条件${conds.indexOf(c) + 1}`;
@@ -256,7 +260,7 @@ export function V3LicenseMatrix({
                     <td className={`${tdCls} text-center font-bold`}>条件{i + 1}</td>
                     <td className={tdCls}><input className={cellInput} value={c.name || ''} onChange={(e) => updCond(c.id, 'name', e.target.value)} placeholder="自社製造・自社販売 等" /></td>
                     <td className={tdCls}>
-                      <select className={cellInput} value={c.calc_type || 'BASE_QTY_RATE'} onChange={(e) => updCond(c.id, 'calc_type', e.target.value)}>
+                      <select className={cellSelect} value={c.calc_type || 'BASE_QTY_RATE'} onChange={(e) => updCond(c.id, 'calc_type', e.target.value)}>
                         {V3_CALC_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                       </select>
                     </td>
@@ -267,7 +271,7 @@ export function V3LicenseMatrix({
                     <td className={tdCls}><input className={cellInput} value={c.basePrice || ''} onChange={(e) => updCond(c.id, 'basePrice', e.target.value)} placeholder="上代（MSRP）× 数量" /></td>
                     <td className={`${tdCls} text-center`}>
                       {/* 加算型/非加算型 のオン・オフ。加算型=構成要素LCの料率を合算 / 非加算型=実効料率を直接明記。 */}
-                      <select className={cellInput} value={c.addon ? 'addon' : 'nonaddon'} onChange={(e) => updCond(c.id, 'addon', e.target.value === 'addon')} title="加算型=構成要素LCの料率を合算 / 非加算型=実効料率を2-1に直接明記">
+                      <select className={cellSelect} value={c.addon ? 'addon' : 'nonaddon'} onChange={(e) => updCond(c.id, 'addon', e.target.value === 'addon')} title="加算型=構成要素LCの料率を合算 / 非加算型=実効料率を2-1に直接明記">
                         <option value="addon">加算型</option>
                         <option value="nonaddon">非加算型</option>
                       </select>
@@ -437,7 +441,7 @@ export function V3LicenseMatrix({
                     <td className={tdCls}><input className={cellInput} value={c.ag ?? ''} onChange={(e) => updCond(c.id, 'ag', e.target.value)} placeholder="0" /></td>
                     <td className={tdCls}><input className={cellInput} value={c.mg ?? ''} onChange={(e) => updCond(c.id, 'mg', e.target.value)} placeholder="0" /></td>
                     <td className={tdCls}>
-                      <select className={cellInput} value={c.cur || 'JPY'} onChange={(e) => updCond(c.id, 'cur', e.target.value)}>
+                      <select className={cellSelect} value={c.cur || 'JPY'} onChange={(e) => updCond(c.id, 'cur', e.target.value)}>
                         {CURRENCIES.map((x) => <option key={x} value={x}>{x}</option>)}
                       </select>
                     </td>
