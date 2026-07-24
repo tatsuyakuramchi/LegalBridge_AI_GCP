@@ -126,6 +126,12 @@ export const DEFAULT_CALC_BASE_ROWS: Array<{ edition: string; trigger: string; n
   { edition: "2版以降", trigger: "製造日", note: "" },
 ];
 
+/** 1-1 対象製品の定義（固定文言）。対象製品は「被許諾者が対象作品を利用して製造・販売する
+ *  ボードゲーム製品」と定義で固定する。フォームに項目は無く、v3_productDefinition/対象製品の定義
+ *  が明示指定された場合のみ上書きする。姉妹テンプレ(individual_license_terms.html)の定義と揃える。 */
+export const DEFAULT_PRODUCT_DEFINITION =
+  "被許諾者（Licensee）が本契約に基づき対象作品を利用して企画・開発・製造・販売するボードゲーム製品（以下「対象製品」という。）";
+
 /** 取引形態 c の適用料率: 加算型=各LCの当該料率を合算 / 非加算型=実効料率。 */
 export function computeAppliedRate(cond: V3Cond, lcs: V3Lc[]): string {
   if (!cond.addon) {
@@ -157,7 +163,7 @@ export function v3SampleFormData(): V3FormData {
     許諾開始日: "2026-07-01",
     Licensor_氏名会社名: "株式会社オリジナル（サンプル）",
     Licensee_氏名会社名: "株式会社ライセンシー（サンプル）",
-    対象製品予定名: "コラボフィギュア（サンプル）",
+    対象製品予定名: "コラボボードゲーム（サンプル）",
     独占性: "非独占",
     監修者: "監修部",
     Licensor_担当者: "山田", Licensor_電話: "03-1111-2222", Licensor_メール: "yamada@example.co.jp",
@@ -294,7 +300,9 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     startDate: pick("許諾開始日", "startDate"),
     licensorContact: licensorContact || pick("licensorContact"),
     licenseeContact: pick("Licensee_連絡先", "licenseeContact"),
-    productDefinition: pick("v3_productDefinition", "対象製品の定義", "productDefinition"),
+    productDefinition:
+      pick("v3_productDefinition", "対象製品の定義", "productDefinition") ||
+      DEFAULT_PRODUCT_DEFINITION,
     productName: pick("対象製品予定名", "productName"),
     exclusivity: pick("独占性", "exclusivity"),
     maxRegion: pick("v3_maxRegion", "許諾地域", "maxRegion"),
