@@ -16289,6 +16289,33 @@ ${details}
           formData.work_id = preResolvedWorkId;
           formData.WORK_ID = preResolvedWorkId;
         }
+
+        // 対象製品予定名: 未入力なら対象作品(自社作品)の登録名称から補完する。
+        //   フォームは対象作品ピック時に補完済み(individualLicenseTerms.tsx)だが、
+        //   旧データ/未捕捉のケースを DB(works.title)で救済する(方針X: form_data を正)。
+        //   PDF・DB の両方へ反映されるよう generateDocument より前に書き戻す。
+        if (!String(formData["対象製品予定名"] || "").trim()) {
+          let ownWorkTitle = "";
+          const linkedWorkId = Number(formData.linked_work_id || 0);
+          if (linkedWorkId > 0) {
+            const wr = await query(
+              `SELECT title FROM works WHERE id = $1 LIMIT 1`,
+              [linkedWorkId]
+            );
+            ownWorkTitle = String(wr.rows[0]?.title || "").trim();
+          }
+          // linked_work_id が無い場合は採番済 work_id(作品コード)でフォールバック解決。
+          if (!ownWorkTitle && String(formData.work_id || "").trim()) {
+            const wr = await query(
+              `SELECT title FROM works WHERE work_code = $1 LIMIT 1`,
+              [String(formData.work_id).trim()]
+            );
+            ownWorkTitle = String(wr.rows[0]?.title || "").trim();
+          }
+          if (ownWorkTitle) {
+            formData["対象製品予定名"] = ownWorkTitle;
+          }
+        }
       }
 
       // Phase 7d: individual_license_terms 用に

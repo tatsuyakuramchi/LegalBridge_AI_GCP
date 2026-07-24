@@ -8,7 +8,7 @@
  *   - 特別値(全世界/全言語)は単独選択(選ぶと他をクリア、他を足すと特別値は外れる)。
  */
 import * as React from "react"
-import { X } from "lucide-react"
+import { X, ChevronDown } from "lucide-react"
 import type { Opt } from "@/src/lib/regionLanguageMaster"
 import { presetOptions } from "@/src/lib/regionLanguageMaster"
 
@@ -59,11 +59,14 @@ export function RegionLanguageSelect({
 
   return (
     <div ref={boxRef} className="relative min-w-[180px] flex-1">
-      {/* 選択チップ */}
+      {/* 選択チップ(プルダウンと分かるよう不透明背景＋右端に▾) */}
       <div
-        className={`flex flex-wrap items-center gap-1 rounded-md border border-input bg-transparent px-1.5 py-1 min-h-[30px] ${disabled ? "opacity-60" : "cursor-text"}`}
+        className={`flex flex-wrap items-center gap-1 rounded-md border border-input bg-background px-1.5 py-1 pr-6 min-h-[30px] ${disabled ? "opacity-60" : "cursor-pointer hover:border-foreground/50"}`}
         onClick={() => !disabled && setOpen(true)}
       >
+        <ChevronDown
+          className={`pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+        />
         {value.map((v) => (
           <span
             key={v.code}
@@ -87,7 +90,7 @@ export function RegionLanguageSelect({
             onChange={(e) => { setQ(e.target.value); setOpen(true) }}
             onFocus={() => setOpen(true)}
             placeholder={value.length ? "" : placeholder || "選択…"}
-            className="flex-1 min-w-[70px] bg-transparent text-[11px] py-0.5 px-1 focus:outline-none placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+            className="flex-1 min-w-[70px] bg-transparent text-[11px] py-0.5 px-1 focus:outline-none placeholder:text-muted-foreground/70 placeholder:text-[10.5px]"
           />
         )}
       </div>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { HelpCircle, Lock } from 'lucide-react';
+import { HelpCircle, Lock, ChevronDown } from 'lucide-react';
 import { TemplateVar } from './types';
 
 import { cn } from '@/lib/utils';
@@ -198,33 +198,43 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
         // Phase 23.0.4: select も他要素と同じく「読み取り専用 = フォーカス可能・
         //   操作不可」に揃える。disabled では tab 順から外れスクリーンリーダーで
         //   「使用不可」と読まれるため、aria-disabled + onMouseDown 抑止で表現。
-        <select
-          id={id}
-          value={value || ''}
-          onChange={(e) => {
-            if (isReadOnly) return;
-            onChange(e.target.value);
-          }}
-          aria-required={isRequired || undefined}
-          aria-invalid={error ? true : undefined}
-          aria-readonly={isReadOnly || undefined}
-          aria-disabled={isReadOnly || undefined}
-          aria-describedby={meta.helpText ? `help-${id}` : undefined}
-          onMouseDown={(e) => {
-            if (isReadOnly) e.preventDefault();
-          }}
-          onKeyDown={(e) => {
-            if (isReadOnly && e.key !== 'Tab') e.preventDefault();
-          }}
-          className={cn(baseInput, 'appearance-none pr-4')}
-        >
-          <option value="">— Select —</option>
-          {options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            id={id}
+            value={value || ''}
+            onChange={(e) => {
+              if (isReadOnly) return;
+              onChange(e.target.value);
+            }}
+            aria-required={isRequired || undefined}
+            aria-invalid={error ? true : undefined}
+            aria-readonly={isReadOnly || undefined}
+            aria-disabled={isReadOnly || undefined}
+            aria-describedby={meta.helpText ? `help-${id}` : undefined}
+            onMouseDown={(e) => {
+              if (isReadOnly) e.preventDefault();
+            }}
+            onKeyDown={(e) => {
+              if (isReadOnly && e.key !== 'Tab') e.preventDefault();
+            }}
+            // 透過だとプルダウンと分からず選択肢も読みづらいので不透明背景＋右端に▾。
+            //   option 自体にもテーマ色を当ててダークモードで白背景に埋もれないようにする。
+            className={cn(
+              baseInput,
+              'appearance-none pr-7',
+              !isReadOnly && 'bg-card',
+              '[&>option]:bg-popover [&>option]:text-foreground'
+            )}
+          >
+            <option value="">— Select —</option>
+            {options.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        </div>
       ) : isTextarea ? (
         <textarea
           id={id}
