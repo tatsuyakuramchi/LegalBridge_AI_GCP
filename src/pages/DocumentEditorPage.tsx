@@ -1301,7 +1301,7 @@ export function DocumentEditorPage() {
   //   worker 側は skipPdf フラグで PDF 生成 / Drive アップロードをスキップし、
   //   documents / condition_lines 等への登録は通常発行と同一経路で行う。
   //   未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。
-  const handleGenerate = async (opts?: { dbOnly?: boolean }) => {
+  const handleGenerate = async (opts?: { dbOnly?: boolean; allowDuplicate?: boolean }) => {
     const dbOnly = opts?.dbOnly === true
     // DB登録のみ時の任意ファイルリンク。入れる場合は http(s) URL のみ許可。
     const fileLink = dbOnly ? dbOnlyFileLink.trim() : ""
@@ -1449,6 +1449,9 @@ export function DocumentEditorPage() {
           // DB登録のみ時のレコード区分上書き (単独契約として登録)
           recordType:
             dbOnly && dbOnlyStandalone ? "standalone_contract" : undefined,
+          // 二重作成ガードを明示的に越えて「別内容の同種文書」を新規登録する
+          //   (例: 同一作家で作品名違いの利用許諾条件書)。既定は false。
+          allowDuplicateDocument: opts?.allowDuplicate === true,
         }),
       })
 
@@ -1462,6 +1465,28 @@ export function DocumentEditorPage() {
         data = rawText ? JSON.parse(rawText) : null
       } catch {
         data = { error: rawText }
+      }
+
+      // 二重作成ガード(409): 同一課題 × 同種の正本が既に存在する。内容の異なる別文書
+      //   として登録したい正当ケース(例: 同一作家で作品名違いの利用許諾条件書)に対応し、
+      //   ユーザーに確認のうえ allowDuplicateDocument=true で再実行する。既存の修正は
+      //   「再発行」へ誘導する(二重ガードはそのまま=誤操作の抑止は維持)。
+      if (
+        res.status === 409 &&
+        data?.error === "duplicate_document" &&
+        !opts?.allowDuplicate
+      ) {
+        const existing = data?.existing_document_number || "既存の同種文書"
+        const proceed = window.confirm(
+          `この課題には既に同種の文書（${existing}）があります。\n\n` +
+            `内容の異なる「別の文書」として新規登録しますか？\n` +
+            `（例: 同一作家で作品名違いの利用許諾条件書 など）\n\n` +
+            `※ 既存文書を修正したい場合は［キャンセル］し、その文書を開いて「再発行」で保存してください。`
+        )
+        if (proceed) {
+          await handleGenerate({ dbOnly, allowDuplicate: true })
+        }
+        return
       }
 
       if (!res.ok) {
