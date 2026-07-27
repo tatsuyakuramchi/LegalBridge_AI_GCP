@@ -15027,6 +15027,10 @@ ${details}
                   cc.contract_title, cc.document_number AS contract_number,
                   COALESCE(v.vendor_name, vcp.vendor_name, cd.vendor_name_snapshot) AS vendor_name,
                   COALESCE(v.vendor_code, vcp.vendor_code) AS vendor_code,
+                  -- 対象作品名: cl.work_id(対象作品) を優先、無ければ source_work_id(原作)。
+                  --   利用許諾計算/検収の発行判断のため一覧に出す。
+                  COALESCE(w.title, sw.title) AS work_title,
+                  COALESCE(w.work_code, sw.work_code) AS work_code,
                   sch.has_overdue
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
@@ -15035,6 +15039,8 @@ ${details}
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
              LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
+             LEFT JOIN works w  ON w.id  = cl.work_id
+             LEFT JOIN works sw ON sw.id = cl.source_work_id
              LEFT JOIN (
                SELECT condition_line_id, bool_or(overdue AND NOT issued) AS has_overdue
                  FROM condition_line_schedule_v GROUP BY condition_line_id

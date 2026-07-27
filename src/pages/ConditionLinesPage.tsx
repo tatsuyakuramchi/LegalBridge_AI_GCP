@@ -28,6 +28,12 @@ type ConditionLine = {
   contract_title: string | null
   contract_number: string | null
   vendor_name: string | null
+  // 対象作品名(cl.work_id → works.title、無ければ原作 source_work_id)。利用許諾計算の
+  //   発行判断に必要なため一覧に表示する。サーバが works を JOIN して付与。
+  work_title: string | null
+  work_code: string | null
+  // 親文書(発注書/契約) id。条件明細から検収書を作る際の親PO 事前選択に使う。
+  capability_id: number | null
   has_overdue: boolean | null
   fulfilling_doc_number: string | null
   fulfilling_doc_count: number | null
@@ -287,6 +293,17 @@ export function ConditionLinesPage() {
     if (lineCode) navigate(`/condition-lines/${encodeURIComponent(lineCode)}`)
   }
 
+  // 条件明細から文書作成画面(/documents/new)へ遷移し、テンプレを事前選択する。
+  //   検収書: 親文書(capability_id)を親PO として事前選択(発注書のときに明細も自動展開)。
+  //   利用許諾計算書: テンプレのみ選択して文書作成画面へ(一旦飛ばす運用)。
+  const createInspection = (r: ConditionLine) => {
+    const pp = r.capability_id ? `&parent_po=${r.capability_id}` : ""
+    navigate(`/documents/new?template=inspection_certificate${pp}`)
+  }
+  const createRoyalty = (_r: ConditionLine) => {
+    navigate(`/documents/new?template=royalty_statement`)
+  }
+
   // メール送信(検収書/計算書)。送信対象文書番号を持つ明細のみ。
   const [sendingDoc, setSendingDoc] = React.useState<string | null>(null)
   const sendRow = async (r: ConditionLine) => {
@@ -429,6 +446,7 @@ export function ConditionLinesPage() {
               <tr>
                 <Th sk="line_code" label="line_code" />
                 <Th sk="subject" label="件名" />
+                <Th label="作品名" />
                 <Th sk="contract" label="契約 / 取引先" />
                 <Th sk="payment_scheme" label="方式" />
                 <Th sk="direction" label="向き" />
@@ -437,6 +455,7 @@ export function ConditionLinesPage() {
                 <Th sk="sent_at" label="送信" />
                 <Th sk="remaining" label="残額 / MG残" align="right" />
                 <Th sk="has_overdue" label="当期" align="center" />
+                <Th label="文書作成" align="center" />
                 <th></th>
               </tr>
             </thead>
@@ -449,6 +468,12 @@ export function ConditionLinesPage() {
                 >
                   <td className="px-3 py-2 font-bold">{r.line_code || "—"}</td>
                   <td className="px-3 py-2 max-w-[200px] truncate">{r.subject || "—"}</td>
+                  <td className="px-3 py-2 max-w-[160px]" title={r.work_title || ""}>
+                    <div className="truncate">{r.work_title || "—"}</div>
+                    {r.work_code ? (
+                      <div className="text-[10px] text-muted-foreground truncate">{r.work_code}</div>
+                    ) : null}
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground max-w-[220px]">
                     <div className="truncate">
                       {r.contract_title || "—"}
@@ -551,6 +576,24 @@ export function ConditionLinesPage() {
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )}
+                  </td>
+                  <td className="px-3 py-2 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => createInspection(r)}
+                      title="この条件明細から検収書を作成(文書作成画面へ)"
+                      className="text-[10px] underline text-primary hover:text-primary/80 mr-2"
+                    >
+                      検収書
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => createRoyalty(r)}
+                      title="この条件明細から利用許諾計算書を作成(文書作成画面へ)"
+                      className="text-[10px] underline text-primary hover:text-primary/80"
+                    >
+                      計算書
+                    </button>
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                     {(r.event_count || 0) === 0 ? (
