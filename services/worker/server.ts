@@ -16095,7 +16095,10 @@ ${details}
           // 重複防止: 内容ハッシュで「同一内容の保存し直し」を再採番せず上書きへ寄せる。
           contentHash: computeFormContentHash(formData, templateType),
           // 「同種・別内容の別文書」を明示的に新規登録する(二重作成ガードを越える)。
-          allowDuplicate: formData?.allowDuplicateDocument === true,
+          //   フロントは本文トップレベルで送る。formData 内指定も後方互換で許容。
+          allowDuplicate:
+            req.body?.allowDuplicateDocument === true ||
+            formData?.allowDuplicateDocument === true,
         });
         docNumber = numAssign.documentNumber;
         baseDocumentNumber = numAssign.baseDocumentNumber;
@@ -16134,7 +16137,9 @@ ${details}
       //   (condition_lines)が重複生成される源流(別 capability の二重作成)を抑止する。
       //   formData.allowDuplicateDocument===true で明示的に上書き許可。
       if (!isReissue && !overwrite && !manualOverride) {
-        const allowDup = formData?.allowDuplicateDocument === true;
+        const allowDup =
+          req.body?.allowDuplicateDocument === true ||
+          formData?.allowDuplicateDocument === true;
         const ik = (issueKey || "").trim();
         if (!allowDup && ik && !ik.startsWith("MANUAL-")) {
           const dupCheck = await query(
