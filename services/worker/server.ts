@@ -377,6 +377,18 @@ async function startServer() {
     ? new WebClient(slackBotToken)
     : null;
 
+  // Slack 通知の一時停止スイッチ。文書変更/ステータス連動で飛ぶ Slack 通知
+  //   (notifyIssueEvent 等)を app_settings.SLACK_NOTIFY_DISABLED='1'(or env)で
+  //   まとめて無効化する。既定は有効。再開は値を '0' にして worker 再起動。
+  const slackNotifyDisabled = ["1", "true", "yes", "on"].includes(
+    String(dbSettings.SLACK_NOTIFY_DISABLED ?? process.env.SLACK_NOTIFY_DISABLED ?? "")
+      .trim()
+      .toLowerCase()
+  );
+  if (slackNotifyDisabled) {
+    console.log("[notify] Slack 通知は SLACK_NOTIFY_DISABLED により一時停止中です。");
+  }
+
   const backlogService = new BacklogService({
     host: dbSettings.BACKLOG_HOST || process.env.BACKLOG_HOST,
     apiKey: dbSettings.BACKLOG_API_KEY || process.env.BACKLOG_API_KEY,
@@ -1730,6 +1742,8 @@ async function startServer() {
     event: IssueNotifyEvent
   ): Promise<void> {
     if (!slackWebClient) return;
+    // 一時停止スイッチ: 文書変更/ステータス連動の通知が過剰なため、フラグが立っていれば送らない。
+    if (slackNotifyDisabled) return;
 
     let ctx: any;
     try {
@@ -2285,6 +2299,7 @@ async function startServer() {
     rule: AutoChainRule
   ): Promise<void> {
     if (!slackWebClient) return;
+    if (slackNotifyDisabled) return;
 
     const slackUserId = String(parentLr.slack_user_id || "").trim();
     if (!slackUserId) return;
