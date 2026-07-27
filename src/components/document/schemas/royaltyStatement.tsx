@@ -557,6 +557,30 @@ const RoyaltyStatementForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
   const removeLine = (i: number) =>
     recalcAndSet(rawLines().filter((_: any, idx: number) => idx !== i))
 
+  // 条件明細コックピットからの seed(__seed_royalty_line)を1明細として取り込む。
+  //   親契約・料率・算定方式・作品名(製品名)を投入し、多明細モードへ切替える。
+  //   入金額(売上/受領額)は実データのため空のまま利用者入力。取り込み後はフラグを消す。
+  React.useEffect(() => {
+    const seed = (formData as any).__seed_royalty_line
+    if (!seed) return
+    recalcAndSet(
+      [
+        ...rawLines(),
+        {
+          contractId: seed.contractId || "",
+          contractTitle: seed.contractTitle || "",
+          contractNumber: seed.contractNumber || "",
+          calcMethod: seed.calcMethod === "manufacturing" ? "manufacturing" : "revenue",
+          ratePct: seed.ratePct || "",
+          productName: seed.productName || "",
+          salesInput: "",
+        },
+      ],
+      { statementMode: "multi", __seed_royalty_line: undefined }
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(formData as any).__seed_royalty_line])
+
   // レート/通貨/税率/既定料率が変わったら既存明細を再計算 (合計を同期)。
   React.useEffect(() => {
     if (!isMulti) return
