@@ -470,8 +470,13 @@ export function DocumentEditorPage() {
   //   で開くと、テンプレ=検収書 + 親発注書を事前選択する。
   const templateParam = searchParams.get("template")
   const parentPoParam = searchParams.get("parent_po")
+  // 条件明細コックピットから /documents/new?template=royalty_statement&condition_line=<line_code>
+  //   で開くと、その条件明細の親契約・料率・算定方式・作品名を利用許諾計算書(多明細)の
+  //   1行として自動投入する。入金額(売上/受領額)・レートは実データのため利用者入力のまま。
+  const conditionLineParam = searchParams.get("condition_line")
+  const didConditionSeedRef = React.useRef(false)
   React.useEffect(() => {
-    if (!templateParam && !parentPoParam) return
+    if (!templateParam && !parentPoParam && !conditionLineParam) return
     if (templateParam) setSelectedTemplate(templateParam)
     if (parentPoParam) {
       // DocumentForm の親POピッカーが autoPickContractId として拾い、自動選択する。
@@ -480,13 +485,48 @@ export function DocumentEditorPage() {
         __preselect_parent_po_id: Number(parentPoParam) || undefined,
       }))
     }
+    if (conditionLineParam && !didConditionSeedRef.current) {
+      didConditionSeedRef.current = true
+      // 条件明細の詳細(rate_pct/calc_method/親契約/作品名)を取得して seed を積む。
+      //   失敗しても計算書は空で開く(利用者手入力にフォールバック)。
+      ;(async () => {
+        try {
+          const res = await fetch(
+            `/api/condition-lines/${encodeURIComponent(conditionLineParam)}`
+          )
+          const j = await res.json().catch(() => null)
+          const line = j?.line
+          if (!line) return
+          const calcSrc = String(line.calc_method || line.calc_type || "")
+          const calcMethod = /QTY|MANUF|PERFORM|製造/i.test(calcSrc)
+            ? "manufacturing"
+            : "revenue"
+          setFormData((prev: any) => ({
+            ...(prev || {}),
+            statementMode: "multi",
+            ...(line.rate_pct != null ? { royaltyRatePct: String(line.rate_pct) } : {}),
+            __seed_royalty_line: {
+              contractId: line.capability_id != null ? String(line.capability_id) : "",
+              contractTitle: line.contract_title || "",
+              contractNumber: line.contract_number || "",
+              ratePct: line.rate_pct != null ? String(line.rate_pct) : "",
+              calcMethod,
+              productName: line.work_title || line.subject || "",
+            },
+          }))
+        } catch {
+          /* noop */
+        }
+      })()
+    }
     const sp = searchParams
     sp.delete("template")
     sp.delete("parent_po")
     sp.delete("prefill")
+    sp.delete("condition_line")
     setSearchParams(sp, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateParam, parentPoParam])
+  }, [templateParam, parentPoParam, conditionLineParam])
 
   // LB-F01/F02 (§5.5.1): Matter 詳細の「文書作成」からの直接遷移。
   //   /documents/new?matter_id=<id>[&issue_key=<key>]

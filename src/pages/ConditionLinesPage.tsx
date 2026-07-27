@@ -300,8 +300,11 @@ export function ConditionLinesPage() {
     const pp = r.capability_id ? `&parent_po=${r.capability_id}` : ""
     navigate(`/documents/new?template=inspection_certificate${pp}`)
   }
-  const createRoyalty = (_r: ConditionLine) => {
-    navigate(`/documents/new?template=royalty_statement`)
+  const createRoyalty = (r: ConditionLine) => {
+    // line_code を渡し、文書作成画面側でこの条件明細の親契約・料率・算定方式・作品名を
+    //   多明細の1行として自動投入する(入金額は利用者入力)。
+    const cl = r.line_code ? `&condition_line=${encodeURIComponent(r.line_code)}` : ""
+    navigate(`/documents/new?template=royalty_statement${cl}`)
   }
 
   // メール送信(検収書/計算書)。送信対象文書番号を持つ明細のみ。
