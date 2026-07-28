@@ -167,7 +167,7 @@ export function MaterialSearchSelect({
               </button>
             ))
           )}
-          {onCreate && q.trim() !== '' && !showForm && (
+          {onCreate && !showForm && (
             <>
               <button
                 type="button"
@@ -179,7 +179,9 @@ export function MaterialSearchSelect({
                   openForm();
                 }}
               >
-                {`＋「${q.trim()}」を新規マテリアルとして登録…`}
+                {q.trim()
+                  ? `＋「${q.trim()}」を新規マテリアルとして登録…`
+                  : '＋ 新規マテリアルを登録…'}
               </button>
               {createDisabledReason && (
                 <div className="px-2.5 pb-1.5 text-[9px] text-muted-foreground">
