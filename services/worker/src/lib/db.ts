@@ -339,9 +339,12 @@ export async function ensureMaterialCategory(
 export async function resolveLicensedInWork(
   id: number
 ): Promise<{ work_id: number; ledger_code: string } | null> {
+  // 素材は原作(licensed_in)だけでなく自社作品(own)にも属し得る。
+  //   個別利用許諾で「対象作品=自社作品」を原作(ledger_ref_id)にした場合、materials 登録が
+  //   kind='licensed_in' 限定だと "works licensed_in not found" で弾かれていた(原作 own を許容)。
   const w = await query(
     `SELECT id AS work_id, work_code AS ledger_code
-       FROM works WHERE id = $1 AND kind = 'licensed_in'`,
+       FROM works WHERE id = $1 AND kind IN ('licensed_in', 'own')`,
     [id]
   );
   if (w.rows[0]) return { work_id: Number(w.rows[0].work_id), ledger_code: w.rows[0].ledger_code };
@@ -356,9 +359,10 @@ export async function resolveLicensedInWork(
 export async function resolveLedgerRef(
   id: number
 ): Promise<{ work_id: number | null; ledger_code: string; title: string | null } | null> {
+  // 原作(ledger_ref_id)は原作(licensed_in)に加え、自社作品(own)を原作に据える運用も許容する。
   const w = await query(
     `SELECT id AS work_id, work_code AS ledger_code, title
-       FROM works WHERE id = $1 AND kind = 'licensed_in'`,
+       FROM works WHERE id = $1 AND kind IN ('licensed_in', 'own')`,
     [id]
   );
   if (w.rows[0]) {
