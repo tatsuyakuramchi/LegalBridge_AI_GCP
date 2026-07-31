@@ -7,6 +7,7 @@ import { MatterMergeCartProvider } from "./context/MatterMergeCartContext" // �
 import { AppShell } from "./layout/AppShell"
 import { DashboardPage } from "./pages/DashboardPage"
 import { DocumentEditorPage } from "./pages/DocumentEditorPage"
+import TextSnippetsPage from "./pages/TextSnippetsPage" // 定型文言(ひな形)ライブラリ
 import { RequestsPage } from "./pages/RequestsPage"
 import { IssueDetailPage } from "./pages/IssueDetailPage" // データ構造刷新 Phase A
 import { UnifiedIssuePage } from "./pages/UnifiedIssuePage" // 新課題(統一課題)UI
@@ -60,6 +61,7 @@ export default function App() {
               <Route element={<AppShell />}>
                 <Route index element={<DashboardPage />} />
                 <Route path="documents/new" element={<DocumentEditorPage />} />
+                <Route path="text-snippets" element={<TextSnippetsPage />} />{/* 定型文言(ひな形)ライブラリ */}
                 <Route path="imports" element={<ImportPage />} />
                 <Route path="data-import" element={<GenericImportPage />} />
                 <Route path="excel-batches" element={<ExcelBatchPage />} />
