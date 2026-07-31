@@ -6316,6 +6316,72 @@ ${details}
     }
   });
 
+  // ── 定型文言(ひな形)ライブラリ text_snippets の CRUD(0151) ──────────────
+  //   発注書の「特約・備考」「業務明細」等でよく使う文言を登録し、専用ページで
+  //   一覧表示してコピペする(簡易運用)。category: special_terms / work_item / other。
+  app.get("/api/master/text-snippets", async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT id, category, title, body, sort_order, is_active
+           FROM text_snippets
+          WHERE is_active = TRUE
+          ORDER BY category, sort_order, id`
+      );
+      res.json(r.rows);
+    } catch (error: any) {
+      if (error?.code === "42P01") return res.json([]); // 未マイグレーション → 空
+      console.error("/api/master/text-snippets GET failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 作成 / 更新(body.id があれば UPDATE)。
+  app.post("/api/master/text-snippets", express.json(), async (req, res) => {
+    const { id, category, title, body, sort_order } = req.body || {};
+    const cat = ["special_terms", "work_item", "other"].includes(String(category))
+      ? String(category)
+      : "special_terms";
+    if (!title || String(title).trim() === "") {
+      return res.status(400).json({ ok: false, error: "title は必須です" });
+    }
+    try {
+      if (id != null && Number.isFinite(Number(id))) {
+        const u = await query(
+          `UPDATE text_snippets
+              SET category = $1, title = $2, body = $3,
+                  sort_order = $4, updated_at = now()
+            WHERE id = $5 RETURNING id`,
+          [cat, String(title).trim(), String(body ?? ""), Number(sort_order) || 0, Number(id)]
+        );
+        if (!u.rows.length) return res.status(404).json({ ok: false, error: "not found" });
+        return res.json({ ok: true, id: u.rows[0].id, mode: "update" });
+      }
+      const r = await query(
+        `INSERT INTO text_snippets (category, title, body, sort_order)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [cat, String(title).trim(), String(body ?? ""), Number(sort_order) || 0]
+      );
+      res.json({ ok: true, id: r.rows[0].id, mode: "insert" });
+    } catch (error: any) {
+      console.error("/api/master/text-snippets POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 削除(論理削除: is_active=false)。
+  app.delete("/api/master/text-snippets/:id", async (req, res) => {
+    try {
+      await query(
+        `UPDATE text_snippets SET is_active = FALSE, updated_at = now() WHERE id = $1`,
+        [Number(req.params.id)]
+      );
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/master/text-snippets DELETE failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   // Phase 22.21.46: 文字列 (CSV / 改行区切り) / 配列の入力を JSONB 配列に正規化。
   //   admin-ui が "#legal, #ops" を送ってきても、["#legal","#ops"] を送ってきても
   //   両方を受け付ける。空文字 / null / undefined は [] にする。

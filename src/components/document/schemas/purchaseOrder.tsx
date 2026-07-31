@@ -341,6 +341,16 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         title="4. 成果物（明細）— 帰属で報酬・表示が決まります"
         variant="indigo"
         icon={<List className="w-4 h-4" />}
+        headerActions={
+          <button
+            type="button"
+            onClick={() => window.open("/text-snippets", "_blank", "noopener")}
+            className="text-[10px] font-mono px-2 py-0.5 uppercase border border-foreground/30 rounded-sm hover:bg-muted"
+            title="定型文言(ひな形)を別タブで開いてコピペ"
+          >
+            📋 文言集を開く
+          </button>
+        }
       >
         <DeliverableCards
           works={workOptions}
@@ -780,6 +790,16 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           ▶ 9. その他の設定 — 特約・備考／契約・署名 (任意)
         </summary>
         <div className="p-4 border-t border-input space-y-4">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => window.open("/text-snippets", "_blank", "noopener")}
+              className="text-[10px] font-mono px-2 py-0.5 uppercase border border-foreground/30 rounded-sm hover:bg-muted"
+              title="定型文言(ひな形)を別タブで開いてコピペ"
+            >
+              📋 文言集を開く（特約のひな形）
+            </button>
+          </div>
           {renderGroup("VI. 特約・備考 (任意)")}
           {/* Phase 26: 基本契約の紐づけは「2. 取引先・基本契約設定」の
               UnifiedContractPicker に一本化。ここでの重複検索・手入力欄は撤去/hidden 化。 */}
