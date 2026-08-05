@@ -1,4 +1,20 @@
-<!DOCTYPE html>
+-- 0153_inspection_certificate_yen_fix.sql
+-- 検収書(支払日グループ)テンプレの微修正を DB へ反映する。
+--   - 明細「支払対価(税抜)」の ¥ 二重表示を解消(formatYen が既に ¥ を前置するため
+--     テンプレ側の余分な ¥ を除去)。
+--   支払予定を最下段に並べる変更は worker コード(computeInspectionPaymentGroups の
+--   並び替え)側で対応するため、本マイグレーションはテンプレ本文のみ更新する。
+--   0044/0050 方式(新 version INSERT → current_version_id 差し替え)。field_schema は現行引き継ぎ。
+--   additive・冪等。
+
+WITH t AS (
+  SELECT id FROM document_templates WHERE template_key = 'inspection_certificate'
+), nv AS (
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  SELECT
+    t.id,
+    COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = t.id), 0) + 1,
+    $html_inspection_certificate$<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -634,3 +650,17 @@
 
 </body>
 </html>
+$html_inspection_certificate$,
+    (SELECT v.field_schema
+       FROM document_template_versions v
+       JOIN document_templates dt ON dt.current_version_id = v.id
+      WHERE dt.template_key = 'inspection_certificate'),
+    '検収書: 支払対価の¥二重表示を修正 (0153)',
+    'migration-0153'
+  FROM t
+  RETURNING id, template_id
+)
+UPDATE document_templates dt
+   SET current_version_id = nv.id, updated_at = now()
+  FROM nv
+ WHERE dt.id = nv.template_id;

@@ -317,7 +317,17 @@ async function startServer() {
         changeNote: chNote,
       });
     }
-    const paymentGroups = order.map((key) => {
+    // 表示順: 支払済(paid)を先に、支払予定(scheduled)を最下段に。
+    //   同一ステータス内は支払日の昇順。日付未設定は末尾。
+    const sortedKeys = [...order].sort((a, b) => {
+      const ga = byKey.get(a);
+      const gb = byKey.get(b);
+      if (ga.isPaid !== gb.isPaid) return ga.isPaid ? -1 : 1; // paid が先
+      const da = String(ga.date || "9999-99-99");
+      const db = String(gb.date || "9999-99-99");
+      return da.localeCompare(db);
+    });
+    const paymentGroups = sortedKeys.map((key) => {
       const g = byKey.get(key);
       const subtotal = g.lines.reduce(
         (s: number, x: any) => s + (Number(x.amount_ex_tax) || 0),
