@@ -57,6 +57,9 @@ export type DeliveryLine = {
   // 明細別の納品日。検収書 Excel / PDF はこの値を明細ごとに反映する。
   //   未入力なら親 PO 明細の delivery_date にフォールバック (excelService 側)。
   delivery_date?: string;
+  // 明細別の実支払日。過去に別々の日付で支払済みのものを1枚の検収書へ集約する用途。
+  //   未入力なら文書全体の支払期日 (paymentDueDate) にフォールバック (テンプレ側)。
+  paid_date?: string;
   // 検収書テンプレの業績連動/利用許諾の出し分け・IP帰属表示に使用。親明細から複写。
   deliverable_ownership?: string;
   calc_method?: string;
@@ -344,6 +347,25 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 )}
               />
             </label>
+            <label className="block mb-2">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                支払日 (この明細・実支払日)
+              </div>
+              <input
+                type="date"
+                value={r.v?.paid_date ?? ""}
+                onChange={(e) => update(r.line.id, { paid_date: e.target.value })}
+                disabled={readOnly}
+                className={cn(
+                  "w-full text-[11px] font-mono bg-transparent",
+                  "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                  "disabled:opacity-60 disabled:cursor-not-allowed"
+                )}
+              />
+              <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+                過去に支払済みの明細はその実支払日を入力（未入力なら支払期日を使用）
+              </div>
+            </label>
             <div className="flex items-center justify-between pt-2 border-t border-border/40">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 今回検収額 (税抜)
@@ -378,6 +400,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
               <th className="text-right p-2 w-20">今回数量</th>
               <th className="text-right p-2 w-16">歩留率</th>
               <th className="text-left p-2 w-32">納品日</th>
+              <th className="text-left p-2 w-32">支払日<div className="text-[10px] font-normal opacity-60 normal-case tracking-normal">(実支払日)</div></th>
               <th className="text-right p-2 w-28">今回検収額</th>
               <th className="text-left p-2 w-20">状態</th>
             </tr>
@@ -489,6 +512,22 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                         update(line.id, { delivery_date: e.target.value })
                       }
                       disabled={readOnly}
+                      className={cn(
+                        "w-full text-[11px] font-mono bg-transparent",
+                        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                        "disabled:opacity-60 disabled:cursor-not-allowed"
+                      )}
+                    />
+                  </td>
+                  <td className="p-2">
+                    <input
+                      type="date"
+                      value={v?.paid_date ?? ""}
+                      onChange={(e) =>
+                        update(line.id, { paid_date: e.target.value })
+                      }
+                      disabled={readOnly}
+                      title="実支払日（未入力なら文書全体の支払期日を使用）"
                       className={cn(
                         "w-full text-[11px] font-mono bg-transparent",
                         "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",

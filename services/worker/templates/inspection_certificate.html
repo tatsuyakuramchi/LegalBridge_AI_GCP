@@ -306,11 +306,12 @@
     <thead>
       <tr>
         <th style="width:5%">No.</th>
-        <th style="width:45%">成果物・業務内容</th>
-        <th style="width:11%">今回数量</th>
-        <th style="width:10%">歩留率</th>
-        <th style="width:14%">納品日</th>
-        <th style="width:15%">支払対価（税抜）</th>
+        <th style="width:38%">成果物・業務内容</th>
+        <th style="width:10%">今回数量</th>
+        <th style="width:9%">歩留率</th>
+        <th style="width:12%">納品日</th>
+        <th style="width:12%">支払日</th>
+        <th style="width:14%">支払対価（税抜）</th>
       </tr>
     </thead>
     <tbody>
@@ -333,6 +334,9 @@
             <td class="center">{{#if (gt inspected_quantity 0)}}{{inspected_quantity}}{{else}}—{{/if}}</td>
             <td class="center">{{#if (gt acceptance_ratio 0)}}{{formatPct (multiply acceptance_ratio 100)}}{{else}}—{{/if}}</td>
             <td class="center">{{formatDate (or delivery_date ../deliveredAt)}}</td>
+            {{!-- 明細別の実支払日。過去に別々の日付で支払済みの検収を1枚に集約する用途。
+                 未入力なら文書全体の支払期日にフォールバック。 --}}
+            <td class="center">{{#if paid_date}}{{formatDate paid_date}}{{else}}{{#if ../paymentDueDate}}{{formatDate ../paymentDueDate}}{{else}}—{{/if}}{{/if}}</td>
             {{!-- 固定報酬0の対価表示: 発注者×ROYALTY=業績連動報酬(別途算定)、それ以外(受注者)=
                  利用許諾料に含む。amount>0 は通常の金額表示。 --}}
             <td class="right">{{#if (gt (or inspected_amount_ex_tax amount_ex_tax) 0)}}{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#if (eq deliverable_ownership "発注者")}}<span style="font-size:8pt;color:#1f3a8a;">業績連動報酬（別途算定）</span>{{else}}<span style="font-size:8pt;color:#92400e;">利用許諾料に含む</span>{{/if}}{{else}}<span style="font-size:8pt;color:#92400e;">利用許諾料に含む</span>{{/if}}{{/if}}</td>
@@ -350,6 +354,7 @@
           <td class="center">—</td>
           <td class="center">—</td>
           <td class="center">{{formatDate deliveredAt}}</td>
+          <td class="center">{{#if paymentDueDate}}{{formatDate paymentDueDate}}{{else}}—{{/if}}</td>
           <td class="right">¥{{deliveredAmountStr}}</td>
         </tr>
       {{/if}}
@@ -358,18 +363,18 @@
            検収税抜＋手数料税抜を合算して 1 回だけ計算する (二重計上を避けるため、
            ここでは検収の税抜小計のみ表示)。 --}}
       <tr class="total-row">
-        <td colspan="5" class="right">検収 小計（税抜）</td>
+        <td colspan="6" class="right">検収 小計（税抜）</td>
         <td class="right">¥{{deliveredAmountStr}}</td>
       </tr>
       {{else}}
       <tr>
-        <td colspan="5" class="right">
+        <td colspan="6" class="right">
           消費税({{taxRate}}%{{#if isReducedTax}}・軽減税率対象{{/if}})
         </td>
         <td class="right">¥{{taxAmountStr}}</td>
       </tr>
       <tr class="total-row">
-        <td colspan="5" class="right">源泉徴収税計算前　検収金額(税込)</td>
+        <td colspan="6" class="right">源泉徴収税計算前　検収金額(税込)</td>
         <td class="right">¥{{totalAmountStr}}</td>
       </tr>
       {{/if}}
