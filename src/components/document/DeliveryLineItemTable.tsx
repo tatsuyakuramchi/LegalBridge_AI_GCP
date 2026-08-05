@@ -57,6 +57,19 @@ export type DeliveryLine = {
   // 明細別の納品日。検収書 Excel / PDF はこの値を明細ごとに反映する。
   //   未入力なら親 PO 明細の delivery_date にフォールバック (excelService 側)。
   delivery_date?: string;
+  // 明細別の実支払日。過去に別々の日付で支払済みのものを1枚の検収書へ集約する用途。
+  //   未入力なら文書全体の支払期日 (paymentDueDate) にフォールバック (テンプレ側)。
+  paid_date?: string;
+  // 支払状況。"paid"(支払済) / "scheduled"(支払予定)。検収書は支払日でグループ化し
+  //   このステータスでバッジ表示する。未設定は paid_date 有=paid / 無=scheduled とみなす。
+  payment_status?: string;
+  // 発注条件からの変更履歴。該当項目にチェックし、理由等を change_note に記入する。
+  //   検収書には「⚠ 発注条件からの変更：納品日・支払額 …（備考：…）」として明細下に表示。
+  change_delivery_date?: boolean; // 納品日の変更
+  change_amount?: boolean;        // 支払額の変更
+  change_quantity?: boolean;      // 納品個数の変更
+  change_other?: boolean;         // その他の変更
+  change_note?: string;           // 変更理由・備考
   // 検収書テンプレの業績連動/利用許諾の出し分け・IP帰属表示に使用。親明細から複写。
   deliverable_ownership?: string;
   calc_method?: string;
@@ -344,6 +357,77 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 )}
               />
             </label>
+            <label className="block mb-2">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                支払日 (この明細・実支払日)
+              </div>
+              <input
+                type="date"
+                value={r.v?.paid_date ?? ""}
+                onChange={(e) => update(r.line.id, { paid_date: e.target.value })}
+                disabled={readOnly}
+                className={cn(
+                  "w-full text-[11px] font-mono bg-transparent",
+                  "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                  "disabled:opacity-60 disabled:cursor-not-allowed"
+                )}
+              />
+              <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+                過去に支払済みの明細はその実支払日を入力（未入力なら支払期日を使用）
+              </div>
+            </label>
+            <label className="block mb-2">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                支払状況
+              </div>
+              <select
+                value={r.v?.payment_status ?? (r.v?.paid_date ? "paid" : "scheduled")}
+                onChange={(e) => update(r.line.id, { payment_status: e.target.value })}
+                disabled={readOnly}
+                className={cn(
+                  "w-full text-[11px] font-mono bg-background border-b border-input py-1 px-1",
+                  "focus:outline-none focus:border-foreground [&>option]:bg-background",
+                  "disabled:opacity-60 disabled:cursor-not-allowed"
+                )}
+              >
+                <option value="paid">支払済</option>
+                <option value="scheduled">支払予定</option>
+              </select>
+            </label>
+            <div className="block mb-1">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                発注条件からの変更履歴
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mb-1">
+                {([
+                  ["change_delivery_date", "納品日"],
+                  ["change_amount", "支払額"],
+                  ["change_quantity", "納品個数"],
+                  ["change_other", "その他"],
+                ] as const).map(([field, label]) => (
+                  <label key={field} className="inline-flex items-center gap-1 text-[11px]">
+                    <input
+                      type="checkbox"
+                      checked={!!(r.v as any)?.[field]}
+                      onChange={(e) => update(r.line.id, { [field]: e.target.checked } as Partial<DeliveryLine>)}
+                      disabled={readOnly}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <input
+                value={r.v?.change_note ?? ""}
+                onChange={(e) => update(r.line.id, { change_note: e.target.value })}
+                placeholder="備考（変更理由など）"
+                disabled={readOnly}
+                className={cn(
+                  "w-full text-[11px] font-mono bg-transparent",
+                  "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                  "placeholder:text-muted-foreground/40 disabled:opacity-60"
+                )}
+              />
+            </div>
             <div className="flex items-center justify-between pt-2 border-t border-border/40">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 今回検収額 (税抜)
@@ -378,6 +462,8 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
               <th className="text-right p-2 w-20">今回数量</th>
               <th className="text-right p-2 w-16">歩留率</th>
               <th className="text-left p-2 w-32">納品日</th>
+              <th className="text-left p-2 w-32">支払日<div className="text-[10px] font-normal opacity-60 normal-case tracking-normal">(実支払日)</div></th>
+              <th className="text-left p-2 w-24">支払状況</th>
               <th className="text-right p-2 w-28">今回検収額</th>
               <th className="text-left p-2 w-20">状態</th>
             </tr>
@@ -418,10 +504,10 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 Math.abs(totalAmt - insp.ordered_amount) <= AMT_EPS;
 
               return (
+                <React.Fragment key={line.id}>
                 <tr
-                  key={line.id}
                   className={cn(
-                    "border-b border-border/50 hover:bg-muted/20 transition-colors",
+                    "hover:bg-muted/20 transition-colors",
                     isOverflow && "bg-destructive/10"
                   )}
                 >
@@ -496,6 +582,39 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                       )}
                     />
                   </td>
+                  <td className="p-2">
+                    <input
+                      type="date"
+                      value={v?.paid_date ?? ""}
+                      onChange={(e) =>
+                        update(line.id, { paid_date: e.target.value })
+                      }
+                      disabled={readOnly}
+                      title="実支払日（未入力なら文書全体の支払期日を使用）"
+                      className={cn(
+                        "w-full text-[11px] font-mono bg-transparent",
+                        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                        "disabled:opacity-60 disabled:cursor-not-allowed"
+                      )}
+                    />
+                  </td>
+                  <td className="p-2">
+                    <select
+                      value={v?.payment_status ?? (v?.paid_date ? "paid" : "scheduled")}
+                      onChange={(e) =>
+                        update(line.id, { payment_status: e.target.value })
+                      }
+                      disabled={readOnly}
+                      className={cn(
+                        "w-full text-[11px] font-mono bg-background",
+                        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                        "[&>option]:bg-background disabled:opacity-60 disabled:cursor-not-allowed"
+                      )}
+                    >
+                      <option value="paid">支払済</option>
+                      <option value="scheduled">支払予定</option>
+                    </select>
+                  </td>
                   <td className="p-2 text-right font-bold">
                     {yen(inspectedThisTime)}
                   </td>
@@ -524,12 +643,49 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                     )}
                   </td>
                 </tr>
+                {/* 発注条件からの変更履歴 (明細ごとのサブ行)。検収書に「⚠ 変更あり」として反映。 */}
+                <tr className="border-b border-border/50 bg-muted/10">
+                  <td></td>
+                  <td colSpan={9} className="px-2 pb-2 pt-0">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                      <span className="text-muted-foreground">発注条件からの変更:</span>
+                      {([
+                        ["change_delivery_date", "納品日"],
+                        ["change_amount", "支払額"],
+                        ["change_quantity", "納品個数"],
+                        ["change_other", "その他"],
+                      ] as const).map(([field, label]) => (
+                        <label key={field} className="inline-flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={!!(v as any)?.[field]}
+                            onChange={(e) => update(line.id, { [field]: e.target.checked } as Partial<DeliveryLine>)}
+                            disabled={readOnly}
+                          />
+                          {label}
+                        </label>
+                      ))}
+                      <input
+                        value={v?.change_note ?? ""}
+                        onChange={(e) => update(line.id, { change_note: e.target.value })}
+                        placeholder="備考（変更理由など）"
+                        disabled={readOnly}
+                        className={cn(
+                          "flex-1 min-w-[160px] text-[11px] font-mono bg-transparent",
+                          "border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground",
+                          "placeholder:text-muted-foreground/40 disabled:opacity-60"
+                        )}
+                      />
+                    </div>
+                  </td>
+                </tr>
+                </React.Fragment>
               );
             })}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-foreground/20 bg-muted/30 font-bold">
-              <td colSpan={6} className="p-2 text-right text-[10px] uppercase tracking-wider">
+              <td colSpan={8} className="p-2 text-right text-[10px] uppercase tracking-wider">
                 今回検収合計 (税抜)
               </td>
               <td className="p-2 text-right text-[13px]">{yen(grandTotal)}</td>
