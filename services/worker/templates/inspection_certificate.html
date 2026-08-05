@@ -332,6 +332,15 @@
         <td class="center">{{formatDate delivery_date}}</td>
         <td class="right">¥{{formatYen amount_ex_tax}}</td>
       </tr>
+      {{#if hasChange}}
+      {{!-- 発注条件からの変更履歴(明細別)。変更項目＋備考(理由)を明細直下に注記。 --}}
+      <tr>
+        <td></td>
+        <td colspan="3" style="background:#fff7ed;border-top:none;font-size:8.5pt;color:#9a3412;">
+          ⚠ 発注条件からの変更{{#if changeLabel}}：{{changeLabel}}{{/if}}{{#if changeNote}}　／　備考：{{changeNote}}{{/if}}
+        </td>
+      </tr>
+      {{/if}}
       {{/each}}
       <tr class="subtotal-row"><td colspan="3" class="right">小計（税抜）</td><td class="right">¥{{this.subtotalStr}}</td></tr>
       <tr class="subtotal-row"><td colspan="3" class="right">消費税（{{this.taxRate}}%）</td><td class="right">¥{{this.taxAmountStr}}</td></tr>

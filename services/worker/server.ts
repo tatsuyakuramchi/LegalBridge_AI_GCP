@@ -300,11 +300,21 @@ async function startServer() {
         order.push(key);
         byKey.set(key, { status, date: dateKey, isPaid: status === "paid", lines: [] });
       }
+      // 発注条件からの変更履歴(明細別)。該当項目のラベルを連結し、備考を添える。
+      const chLabels: string[] = [];
+      if (l?.change_delivery_date === true) chLabels.push("納品日");
+      if (l?.change_amount === true) chLabels.push("支払額");
+      if (l?.change_quantity === true) chLabels.push("納品個数");
+      if (l?.change_other === true) chLabels.push("その他");
+      const chNote = String(l?.change_note || "").trim();
       byKey.get(key).lines.push({
         item_name: l?.item_name ?? l?.description ?? "",
         spec: l?.spec ?? "",
         delivery_date: l?.delivery_date ?? "",
         amount_ex_tax: num(l?.inspected_amount_ex_tax ?? l?.amount_ex_tax),
+        hasChange: chLabels.length > 0 || chNote !== "",
+        changeLabel: chLabels.join("・"),
+        changeNote: chNote,
       });
     }
     const paymentGroups = order.map((key) => {
