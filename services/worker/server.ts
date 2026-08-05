@@ -259,6 +259,73 @@ async function startServer() {
     return null; // 単一明細 → 従来表示
   };
 
+  // 検収書 新フォーマット: 明細を「支払日」でグループ化し、グループごとに
+  //   税抜小計 / 消費税 / 税込(源泉徴収税額計算前 支払額) を算定する。
+  //   - 過去に別々の日付で支払済みのものを1枚に集約する用途。
+  //   - 消費税は支払日(課税仕入れの時期)ごとに端数処理し、書類全体の消費税合計は出さない。
+  //   - payment_status: "paid"(支払済) / "scheduled"(支払予定)。未設定は paid_date 有=paid,
+  //     無=scheduled とみなす。
+  //   - 歩留率・数量は本フォーマットでは出さない(金額=検収額 税抜のみ)。
+  //   1件でも paid_date を持つ明細があれば { paymentGroups, useGroupedInspection:true } を返し、
+  //   無ければ null(従来フラットテンプレを使用)。
+  const computeInspectionPaymentGroups = (
+    formData: any
+  ): { paymentGroups: any[]; useGroupedInspection: boolean } | null => {
+    const dlines = Array.isArray(formData?.delivery_line_items)
+      ? formData.delivery_line_items
+      : [];
+    if (dlines.length === 0) return null;
+    const hasPaid = dlines.some(
+      (l: any) => l && String(l.paid_date || "").trim() !== ""
+    );
+    if (!hasPaid) return null; // 支払日入力が無い → 従来表示
+
+    const taxRatePct =
+      Number(formData?.taxRate) || (formData?.isReducedTax ? 8 : 10);
+    const num = (v: any): number => {
+      const n = Number(String(v ?? "").replace(/[^0-9.-]+/g, ""));
+      return Number.isFinite(n) ? n : 0;
+    };
+    // key = `${status}||${date}` を保持順で group 化。
+    const order: string[] = [];
+    const byKey = new Map<string, any>();
+    for (const l of dlines) {
+      const paidDate = String(l?.paid_date || "").trim();
+      const status =
+        String(l?.payment_status || "").trim() ||
+        (paidDate ? "paid" : "scheduled");
+      const dateKey = paidDate || String(formData?.paymentDueDate || "").trim();
+      const key = `${status}||${dateKey}`;
+      if (!byKey.has(key)) {
+        order.push(key);
+        byKey.set(key, { status, date: dateKey, isPaid: status === "paid", lines: [] });
+      }
+      byKey.get(key).lines.push({
+        item_name: l?.item_name ?? l?.description ?? "",
+        spec: l?.spec ?? "",
+        delivery_date: l?.delivery_date ?? "",
+        amount_ex_tax: num(l?.inspected_amount_ex_tax ?? l?.amount_ex_tax),
+      });
+    }
+    const paymentGroups = order.map((key) => {
+      const g = byKey.get(key);
+      const subtotal = g.lines.reduce(
+        (s: number, x: any) => s + (Number(x.amount_ex_tax) || 0),
+        0
+      );
+      const taxAmount = Math.ceil((subtotal * taxRatePct) / 100);
+      const totalIncTax = subtotal + taxAmount;
+      return {
+        ...g,
+        subtotalStr: subtotal.toLocaleString("ja-JP"),
+        taxAmountStr: taxAmount.toLocaleString("ja-JP"),
+        totalIncTaxStr: totalIncTax.toLocaleString("ja-JP"),
+        taxRate: taxRatePct,
+      };
+    });
+    return { paymentGroups, useGroupedInspection: true };
+  };
+
   // maintenance_spec (別紙 業務仕様書) の動的条番号を算出する。
   //   第1〜5条は常に固定。第6条(初月)以降は「存在するセクションだけ」を連番する:
   //     firstMonthSection → 第6条 / milestones / responsibilityRows / scopeOutItems。
@@ -15739,6 +15806,10 @@ ${details}
             ...(String(templateType || "").includes("inspection")
               ? computeInspectionItemNo(formData) || {}
               : {}),
+            // 検収書 新フォーマット: 支払日ごとのグループ集計(generate と共通)。
+            ...(String(templateType || "").includes("inspection")
+              ? computeInspectionPaymentGroups(formData) || {}
+              : {}),
             // 業務仕様書: 第7〜9条の動的条番号(generate と共通)。
             ...(String(templateType || "") === "maintenance_spec"
               ? computeMaintenanceArticleNos(formData)
@@ -16702,6 +16773,8 @@ ${details}
       // 検収書: 明細No を列挙表示(preview と共通の computeInspectionItemNo)。
       if (String(templateType || "").includes("inspection")) {
         Object.assign(renderDetails, computeInspectionItemNo(formData) || {});
+        // 新フォーマット: 支払日ごとのグループ集計(preview と共通)。
+        Object.assign(renderDetails, computeInspectionPaymentGroups(formData) || {});
       }
 
       // 業務仕様書: 第7〜9条の動的条番号(preview と共通の computeMaintenanceArticleNos)。

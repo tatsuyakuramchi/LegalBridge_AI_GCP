@@ -301,6 +301,46 @@
        Phase 23.0.4: delivery_line_items[] が複数あれば each ループで複数行を描画。
                       空のときは従来の単一行 ({{description}}) を fallback として表示。
   --}}
+  {{#if useGroupedInspection}}
+  {{!-- 新フォーマット: 支払日ごとにグループ化。歩留率/数量は出さず、金額(税抜)のみ。
+        消費税は支払日(課税仕入れの時期)ごとに端数処理し、書類全体の消費税合計は出さない。 --}}
+  <div class="section-title">■ 検収明細（支払日ごと）</div>
+  {{#each paymentGroups}}
+  <table style="margin-bottom:10px;">
+    <thead>
+      <tr>
+        <th colspan="4" style="text-align:left;background:#e8eef6;">
+          {{#if this.isPaid}}支払日{{else}}支払予定日{{/if}}： {{formatDate this.date}}
+          {{#if this.isPaid}}<span style="display:inline-block;margin-left:10px;padding:1px 8px;border:1px solid #9ccea9;background:#e7f5ea;color:#237a3a;font-size:8.5pt;font-weight:bold;border-radius:3px;vertical-align:middle;">支払済</span>{{else}}<span style="display:inline-block;margin-left:10px;padding:1px 8px;border:1px dashed #c98a2b;background:#fdf3e0;color:#92400e;font-size:8.5pt;font-weight:bold;border-radius:3px;vertical-align:middle;">支払予定</span>{{/if}}
+        </th>
+      </tr>
+      <tr>
+        <th style="width:6%">No.</th>
+        <th style="width:56%">成果物・業務内容</th>
+        <th style="width:16%">納品日</th>
+        <th style="width:22%">支払対価（税抜）</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each this.lines}}
+      <tr>
+        <td class="center">{{index1 @index}}</td>
+        <td>
+          <div class="item-name">{{item_name}}</div>
+          {{#if spec}}<div class="item-spec">{{spec}}</div>{{/if}}
+        </td>
+        <td class="center">{{formatDate delivery_date}}</td>
+        <td class="right">¥{{formatYen amount_ex_tax}}</td>
+      </tr>
+      {{/each}}
+      <tr class="subtotal-row"><td colspan="3" class="right">小計（税抜）</td><td class="right">¥{{this.subtotalStr}}</td></tr>
+      <tr class="subtotal-row"><td colspan="3" class="right">消費税（{{this.taxRate}}%）</td><td class="right">¥{{this.taxAmountStr}}</td></tr>
+      <tr class="total-row"><td colspan="3" class="right">源泉徴収税額計算前　{{#if this.isPaid}}支払額{{else}}支払予定額{{/if}}（税込）</td><td class="right">¥{{this.totalIncTaxStr}}</td></tr>
+    </tbody>
+  </table>
+  {{/each}}
+  <div style="font-size:8.5pt;color:#555;margin-top:2px;">※ 消費税は支払日（課税仕入れの時期）ごとに税率別で端数処理して各グループに表示しています。<span style="color:#237a3a;font-weight:bold;">支払済</span>＝既にお支払い済み／<span style="color:#92400e;font-weight:bold;">支払予定</span>＝記載の予定日にお支払い。</div>
+  {{else}}
   <div class="section-title">■ 今回の納品内容</div>
   <table style="margin-bottom:4px;">
     <thead>
@@ -383,6 +423,7 @@
   {{#if isReducedTax}}
   <div class="reduced-note">※ 軽減税率（8%）対象品目</div>
   {{/if}}
+  {{/if}}{{!-- /useGroupedInspection --}}
 
   {{!-- 業績連動型報酬版: 発注者帰属×ROYALTY の成果物がある場合に表示。
        IPは検収完了をもって発注者へ譲渡(譲渡型)、報酬は固定額でなく発注者の業績に
@@ -482,7 +523,9 @@
        記載要件に対応）。検収書は発注者が発行する書類のため「請求書」とは名乗らない。
        検収金額(税抜) と その他手数料(税抜) を税率ごとに区分して合算し、消費税を
        1 回だけ計算する。経費(税込)は課税対象外の立替として別掲。手数料がある
-       ときのみ表示 (手数料が無ければ上の「源泉徴収税計算前　検収金額(税込)」で完結する)。 --}}
+       ときのみ表示 (手数料が無ければ上の「源泉徴収税計算前　検収金額(税込)」で完結する)。
+       新フォーマット(支払日グループ)では書類全体の税サマリーは出さない。 --}}
+  {{#unless useGroupedInspection}}
   {{#if otherFeesTaxable}}
   <div class="section-title">■ 支払額サマリー</div>
   <table style="margin-bottom:4px;">
@@ -531,6 +574,7 @@
     </tbody>
   </table>
   {{/if}}
+  {{/unless}}{{!-- /useGroupedInspection: 書類全体の税サマリー・総支払額は新フォーマットでは非表示 --}}
 
   {{!-- 変更履歴（あれば） --}}
   {{#if hasChangeLogs}}
