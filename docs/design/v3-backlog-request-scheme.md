@@ -167,6 +167,17 @@ LB は Backlog を書き換えないので、Backlog 側の変化は「知らせ
 
 受付時に**確定させる項目**: 依頼種別・相手方（取引先マスタ）・法務担当・希望納期。確定値は LB 側に保存し、Backlog の値とずれても上書きしない（原票は原票として残す）。
 
+### 5.2.1 受付後の文書自動生成（決定 D8）
+
+現行 Slack 受付時に行っている PDF 自動生成は、**受付操作の直後**に実行する。
+
+- 対象は現行で自動生成している種別（発注書・NDA・業務委託基本契約・個別利用許諾条件・納品/検収 など、`request_types.default_template_type` を持つもの）。相談・事務手続・契約審査（他社書式）は生成しない。
+- 入力は Slack モーダルの内容（`legal_requests.intake_form`）に、受付で**確定した値**（種別・相手方の取引先マスタ・担当・希望納期）を上書きしたもの。生成した文書は `documents.matter_id` で受付先の案件に、`documents.request_id` で依頼に紐づける。
+- 生成は受付トランザクションのコミット後に非同期で行う（受付操作は待たせない）。生成の成否は `request_events`（kind=`document_generated` / `document_failed`）に残し、失敗時は案件の次アクションに「文書を作成（自動生成に失敗）」を置く。
+- 受付パネルに「受付後に文書を自動生成」のチェック（既定 ON）を置き、既存案件へ接続する追加依頼などで不要なら外せるようにする。
+- 現行の `skip_pdf` 条件（検収依頼の説明欄に「対象契約番号: 複数」）は引き継ぎ、この場合は生成せず検収待ちページの一括作成で扱う。
+- 受付通知（Slack）は生成完了を待って、文書番号とドキュメントリンクを添えて送る（現行 DM と同じ内容）。生成しない場合・失敗した場合は、文書なしで受付通知だけ送る。
+
 ### 5.3 受付後の工程の初期値（新規案件のみ）
 
 | 受付時に決めたもの | 案件の初期工程 |
@@ -229,7 +240,7 @@ LB は Backlog を書き換えないので、Backlog 側の変化は「知らせ
 ### 8.1 起票
 
 - **Slack `/法務依頼`（主経路）**: モーダル送信 → Slack アプリが Backlog に課題を起案（件名 `【{種別ラベル}】{相手方}_{内容}_{YYYYMMDD}`、属性「取引先名称」「依頼部署」「希望納期」、説明欄に `<@Uxxxx>`）→ 同時に受付箱へ登録。
-  - 文書の自動生成は起案時には行わず、**受付後に案件から作成**する（受付前に誤起票・重複を弾くため）。現行の自動生成を残すかは O6。
+  - 文書の自動生成は起案時には行わず、**受付の直後に実行**する（§5.2.1。受付前に誤起票・重複を弾き、確定値で生成するため）。
   - 既存課題を選ぶ紐付け起票（納品報告・利用報告など）は、選んだ課題の案件を接続先の第一候補にする。
 - **GAS フォーム・Backlog 直接起票**: pull で受付箱に入る。依頼者は説明欄の `<@Uxxxx>` か Backlog 起票者から推定し、分からなければ受付時に確定する（Slack 通知は依頼者が確定してから）。
 - **口頭・メール**: 受付箱の「手動で登録」（`source_channel='manual'`、Backlog 起案なし）。
@@ -241,8 +252,8 @@ LB は Backlog を書き換えないので、Backlog 側の変化は「知らせ
 | 出来事 | 依頼者 DM | 部署チャンネル | 案件スレッド | 文面の要点 |
 |---|:-:|:-:|:-:|---|
 | Slack 送信直後 | ● | | | 「依頼を送信しました（LEGAL-1890）。法務が確認して受け付けます」＝現行の ack |
-| 受付（新規案件） | ● | ● | ● スレッド作成 | 受け付けました／案件コード・担当・希望納期・次の工程 |
-| 受付（既存案件へ接続） | ● | | ● | ○○の案件で対応します／担当・次アクション |
+| 受付（新規案件） | ● | ● | ● スレッド作成 | 受け付けました／案件コード・担当・希望納期・次の工程・（生成した場合）文書番号とリンク |
+| 受付（既存案件へ接続） | ● | | ● | ○○の案件で対応します／担当・次アクション・（生成した場合）文書番号とリンク |
 | 保留 | ● | | | 確認したいこと（理由）・再確認日。返信は DM スレッドで受ける |
 | 重複 | ● | | | 重複先の依頼・案件と担当 |
 | 対象外 | ● | | | 理由。取り消しは法務へ |
@@ -296,6 +307,7 @@ ALTER TABLE legal_requests
   ADD COLUMN IF NOT EXISTS backlog_created_at      TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS backlog_updated_at      TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS backlog_snapshot        JSONB,                     -- 件名・本文・属性・担当・起票者
+  ADD COLUMN IF NOT EXISTS intake_form             JSONB,                     -- Slack モーダル入力（受付後の文書自動生成の入力）
   ADD COLUMN IF NOT EXISTS backlog_last_comment_id BIGINT,
   ADD COLUMN IF NOT EXISTS last_pulled_at          TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS has_unseen_update       BOOLEAN NOT NULL DEFAULT FALSE,
@@ -324,7 +336,7 @@ CREATE INDEX IF NOT EXISTS idx_lr_matter ON legal_requests(matter_id);
 CREATE TABLE IF NOT EXISTS request_events (
   id          BIGSERIAL PRIMARY KEY,
   request_id  INTEGER NOT NULL REFERENCES legal_requests(id) ON DELETE CASCADE,
-  kind        VARCHAR(30) NOT NULL,  -- pulled / backlog_changed / comment_added / accepted / linked / held / dismissed / duplicate / reopened
+  kind        VARCHAR(30) NOT NULL,  -- pulled / backlog_changed / comment_added / accepted / linked / held / dismissed / duplicate / reopened / document_generated / document_failed / notified
   origin      VARCHAR(20) NOT NULL,  -- backlog / lb
   detail      JSONB,
   actor       VARCHAR(120),
@@ -333,6 +345,7 @@ CREATE TABLE IF NOT EXISTS request_events (
 CREATE INDEX IF NOT EXISTS idx_req_events_request ON request_events(request_id, created_at);
 
 ALTER TABLE staff ADD COLUMN IF NOT EXISTS backlog_user_id BIGINT;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS request_id INTEGER REFERENCES legal_requests(id) ON DELETE SET NULL;
 
 -- (E) 通知ルール（工程ごとの ON/OFF と宛先）
 CREATE TABLE IF NOT EXISTS notify_rules (
@@ -361,7 +374,7 @@ CREATE TABLE IF NOT EXISTS notify_rules (
 | GET | `/api/inbox/pull-runs` | 取得ログ |
 | POST | `/api/inbox` | 手動で登録（口頭・メール） |
 | GET | `/api/requests/:id` | 依頼（原票スナップショット・推定値・候補・履歴） |
-| POST | `/api/requests/:id/accept` | `{ mode: "new_matter" \| "existing_matter", matter_id?, request_type, vendor_id, assignee_staff_id, due_date }` |
+| POST | `/api/requests/:id/accept` | `{ mode: "new_matter" \| "existing_matter", matter_id?, request_type, vendor_id, assignee_staff_id, due_date, generate_document }`。`generate_document=true` ならコミット後に文書を自動生成（§5.2.1） |
 | POST | `/api/requests/:id/duplicate` | `{ duplicate_of_request_id }` |
 | POST | `/api/requests/:id/hold` | `{ reason, hold_until }` |
 | POST | `/api/requests/:id/dismiss` | `{ reason }` |
@@ -369,7 +382,7 @@ CREATE TABLE IF NOT EXISTS notify_rules (
 | POST | `/api/requests/:id/seen` | 「更新あり」を既読にする |
 | GET | `/api/matters/:id/requests` | 案件の受付ノードに接続された依頼 |
 | POST | `/api/webhooks/backlog` | 合図のみ（シークレット照合 → 差分取得をキック） |
-| POST | `/api/intake/create-run`（既存） | Slack 受付：Backlog 起案＋受付箱へ登録＋送信確認 DM。文書自動生成は外す |
+| POST | `/api/intake/create-run`（既存） | Slack 受付：Backlog 起案＋受付箱へ登録（モーダル入力を `intake_form` に保存）＋送信確認 DM。文書自動生成は受付後へ移す |
 | GET/PUT | `/api/admin/notify-rules` | 通知ルール |
 
 受付系の操作は1トランザクション（`legal_requests`・`matters`・`matter_issues`・`matter_tasks`・`request_events`）。Slack 通知はコミット後に送り、失敗は `request_events` に記録して再送できるようにする。Backlog への書込みは無い。
@@ -415,6 +428,7 @@ CREATE TABLE IF NOT EXISTS notify_rules (
 - **D5.** 受付後の Backlog 側の変化は「更新あり」で知らせるだけで、案件を自動で動かさない。
 - **D6.** 依頼の内部識別子は `request_no`。Backlog を経由しない依頼も受付箱に手動登録できる。
 - **D7.** 依頼者への連絡は Slack アプリ。起点は受付操作と案件工程の節目で、Backlog ステータス連動の通知はやめる。
+- **D8.** PDF 自動生成は Slack 受付時ではなく受付の直後に実行する（§5.2.1）。受付で確定した値で生成し、受付通知に文書番号とリンクを添える。
 
 ### オープン事項
 
@@ -423,4 +437,4 @@ CREATE TABLE IF NOT EXISTS notify_rules (
 - **O3.** 取得間隔（5分）が Backlog API のレート制限・運用感に合うか。
 - **O4.** 納品報告・利用報告は「履行に入ったら Slack で案内 → 依頼者が紐付け起票 → 受付箱で既存案件に接続」でよいか（auto-chain の代替）。
 - **O5.** 相談（法務相談）を1依頼1案件にするか、部署×期間の相談案件に束ねるか。
-- **O6.** Slack 受付時の文書自動生成（現行、種別により PDF を即作成）を受付後に移してよいか。
+- **O6.** ~~Slack 受付時の文書自動生成を受付後に移してよいか~~ → 受付後で確定（D8）。

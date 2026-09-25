@@ -144,6 +144,9 @@ h2{font-size:12px;margin:0 0 10px;font-family:var(--font-mono);letter-spacing:.0
 .radio label:has(input:checked){border-color:hsl(var(--phosphor));background:hsl(var(--phosphor)/.07)}
 .radio small{display:block;color:hsl(var(--muted-foreground))}
 .radio input[type=radio]{width:auto;flex:none;margin:3px 0 0}
+.gen{display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border:1px dashed hsl(var(--border));border-radius:var(--radius);font-size:12.5px;cursor:pointer}
+.gen input{width:auto;margin-top:3px}
+.gen small{display:block;color:hsl(var(--muted-foreground))}
 .radio label{color:hsl(var(--foreground))}
 .radio .why{font-size:11px;color:hsl(var(--info))}
 .actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid hsl(var(--border));padding-top:12px}
@@ -260,6 +263,9 @@ const TYPES = {
   admin_procedure:["事務手続","手続","drafting","手続する"],
   deadline_change:["納期変更依頼","手続","performance","明細の納期を変更する"],
 };
+// 受付後に自動生成する文書（現行 Slack 受付時に自動生成している種別）
+const GEN = {purchase_order:["発注書","PO"], nda:["NDA","NDA"], outsourcing:["業務委託基本契約書","SVC"], lic_individual:["個別利用許諾条件書","ILT"], delivery_inspec:["検収書","INS"]};
+let docSeq = 221;
 const VENDORS = ["株式会社ノースライト","株式会社ミラージュゲームス","合同会社ソラノ","株式会社スタジオ灯","株式会社エイト企画","株式会社ブルーオーシャン出版"];
 const STAFF = ["佐藤","田中","鈴木"];
 
@@ -352,8 +358,8 @@ function msgText(ev, r, mc, extra = {}){
   const m = mc ? MATTERS[mc] : null;
   const k = r ? r.key : "";
   switch (ev){
-    case "accepted_new": return `✅ 受け付けました（${k}）\n案件：${mc} ${m.title}\n担当：${m.owner}　希望納期：${r.due ? r.due.slice(5).replace("-","/") : "—"}\n次の工程：${STAGE_LABEL[m.stage]}`;
-    case "accepted_existing": return `✅ 受け付けました（${k}）\n${mc} ${m.title} の案件で対応します。\n担当：${m.owner}　次アクション：${m.next}`;
+    case "accepted_new": return `✅ 受け付けました（${k}）\n案件：${mc} ${m.title}\n担当：${m.owner}　希望納期：${r.due ? r.due.slice(5).replace("-","/") : "—"}\n次の工程：${STAGE_LABEL[m.stage]}` + docLine(r);
+    case "accepted_existing": return `✅ 受け付けました（${k}）\n${mc} ${m.title} の案件で対応します。\n担当：${m.owner}　次アクション：${m.next}` + docLine(r);
     case "held": return `⏸ 確認させてください（${k}）\n${extra.reason}\nこのメッセージに返信してください。${extra.until ? extra.until.slice(5).replace("-","/") : ""} に再確認します。`;
     case "duplicate": return `🔁 ${k} は ${extra.ofKey} と同じ依頼として扱います。\n案件：${mc}　担当：${m.owner}`;
     case "dismissed": return `この依頼（${k}）は法務の対応対象外としました。理由：${extra.reason}\nご不明点は法務までご連絡ください。`;
@@ -363,6 +369,7 @@ function msgText(ev, r, mc, extra = {}){
       return `➡ ${mc} ${m.title}：「${STAGE_LABEL[ev.slice(6)]}」に進みました。担当：${m.owner}`;
   }
 }
+function docLine(r){ return r && r.doc ? `\n文書番号：${r.doc}（ドラフト PDF）\nドキュメント：https://drive.google.com/…/${r.doc}.pdf` : ""; }
 function notify(ev, r, mc, extra){
   const to = recipients(ev, r, mc);
   if (!to.length) return 0;
@@ -497,6 +504,7 @@ function panelHtml(r){
             <select id="aPick" style="margin-top:4px;width:100%;border:1px solid hsl(var(--border));background:hsl(var(--background));border-radius:4px;padding:4px 6px">${Object.entries(MATTERS).map(([k,m]) => `<option value="${k}">${k} ${esc(m.title)}</option>`).join("")}</select></span></label>
         </div>
       </div>
+      <label class="gen" id="genRow" style="margin-top:12px"><input type="checkbox" id="aGen" checked><span><b>受付後に文書を自動生成</b>：<span id="genName"></span>（ドラフト PDF）<small>Slack の入力内容に、ここで確定した種別・相手方・担当・希望納期を反映して生成し、案件に紐付けます。受付通知は生成を待って文書番号とリンクを添えて送ります。</small></span></label>
       <div id="slackPrev" style="margin-top:12px"></div>
       <div class="actions" style="margin-top:12px">
         <button type="button" class="btn ghost" data-side="dismiss">対象外…</button>
@@ -524,7 +532,11 @@ function bindPanel(r){
     $("#accOk").disabled = !t || !d;
     // 受付したときに送る Slack 通知のプレビュー（仮の案件で文面を組む）
     let dv = d ? d.value : "new"; if (dv === "pick") dv = $("#aPick").value;
-    const tmp = Object.assign({}, r, {due:$("#aDue").value || null});
+    const g = GEN[t];
+    $("#genRow").hidden = !g;
+    if (g) $("#genName").textContent = g[0];
+    const willGen = g && $("#aGen").checked;
+    const tmp = Object.assign({}, r, {due:$("#aDue").value || null, doc: willGen ? `ARC-${g[1]}-2026-0${docSeq}` : null});
     let prev;
     if (dv === "new"){
       MATTERS.__p = {title:`${cp.replace(/^株式会社|^合同会社/, "")} ${topic}`, cp, stage, owner:asg || "未定", next:""};
@@ -557,9 +569,13 @@ function accept(r){
   }
   r.state = "accepted"; r.matter = mc; freshNo = r.no; openIntake = true;
   if (dest === "new") MATTERS[mc].requester = r.by;
+  if (GEN[t] && $("#aGen").checked){
+    r.doc = `ARC-${GEN[t][1]}-2026-0${docSeq++}`;
+    MATTERS[mc].next = `${GEN[t][0]}ドラフトを確認（${r.doc}）`; MATTERS[mc].nextStage = TYPES[t][1] === "支払準備" ? TYPES[t][2] : "drafting";
+  }
   const n = notify(dest === "new" ? "accepted_new" : "accepted_existing", r, mc);
   sel = null;
-  toast(`${r.key} を受け付け、${mc} の「受付」に接続しました${n ? `。Slack で ${n} か所に通知しました` : ""}`, () => { matterSel = mc; go("matter"); });
+  toast(`${r.key} を受け付け、${mc} の「受付」に接続しました${r.doc ? `。${r.doc} を自動生成` : ""}${n ? `。Slack で ${n} か所に通知しました` : ""}`, () => { matterSel = mc; go("matter"); });
   renderInbox();
 }
 function markDup(r, of){
@@ -654,7 +670,7 @@ function renderMatter(){
         ${reqs.map(r => `<div class="req ${r.no === freshNo ? "fresh" : ""}">
           <span class="rel ${r.rel}">${relL[r.rel] || r.rel}</span>
           <div><div class="t">${esc(r.title)}</div>
-            <div class="row" style="gap:6px;margin-top:3px"><span class="k2">${r.no} ・ ${r.key} ・ 受付 ${r.acceptedAt}${r.dupOf ? ` ・ ${r.dupOf} の重複` : ""}</span><span class="chip">Backlog: ${esc(r.bstatus)}</span>${r.update && !r.update.seen ? `<span class="chip solid" style="--c:hsl(var(--phosphor))">更新あり</span>` : ""}${r.no === freshNo ? `<span class="chip solid" style="--c:hsl(var(--info))">いま接続</span>` : ""}</div>
+            <div class="row" style="gap:6px;margin-top:3px"><span class="k2">${r.no} ・ ${r.key} ・ 受付 ${r.acceptedAt}${r.dupOf ? ` ・ ${r.dupOf} の重複` : ""}</span><span class="chip">Backlog: ${esc(r.bstatus)}</span>${r.doc ? `<span class="chip" style="--c:hsl(var(--success))">文書 ${r.doc}</span>` : ""}${r.update && !r.update.seen ? `<span class="chip solid" style="--c:hsl(var(--phosphor))">更新あり</span>` : ""}${r.no === freshNo ? `<span class="chip solid" style="--c:hsl(var(--info))">いま接続</span>` : ""}</div>
             ${r.update && !r.update.seen ? `<div class="cmt new" style="margin-top:6px">${esc(r.update.text)}</div>` : ""}
           </div>
           <a href="#" onclick="return false" class="k2">原票 ↗</a></div>`).join("") || `<div class="sub">まだ依頼が接続されていません。受付箱から接続してください。</div>`}
