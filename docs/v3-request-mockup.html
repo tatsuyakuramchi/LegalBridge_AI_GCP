@@ -3,11 +3,13 @@
 <!--
   v3 依頼受付箱の UI モック（静的・自己完結・DB/IAP 不要）。
   設計: docs/design/v3-backlog-request-scheme.md
-    - Backlog は読みに行く（pull）だけ。LegalBridge から Backlog へは書き込まない。
+    - 入口は Slack /法務依頼。Slack アプリが Backlog に起案し、同時に受付箱へ登録する。
+    - Backlog への書込みは起案だけ。以後は読みに行く（pull）。GAS・Backlog 直接起票も pull で受付箱へ。
+    - 依頼者への連絡は Slack アプリ（受付・保留・重複・対象外・工程の節目）。
     - 取り込んだ依頼は受付箱で人が受け付ける。
     - 受け付けた依頼は案件の工程バー先頭「受付」（lifecycle_stage=intake）に接続する。
   トークンは src/index.css の :root（paper terminal）/ .dark（CRT）に準拠。
-  上部の画面切替で 受付箱 / 案件（工程バー）/ 取得ログ を確認できる。操作はページ内だけで反映される。
+  上部の画面切替で 受付箱 / 案件（工程バー）/ Slack 通知 / 取得ログ を確認できる。操作はページ内だけで反映される。
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -172,6 +174,19 @@ h2{font-size:12px;margin:0 0 10px;font-family:var(--font-mono);letter-spacing:.0
 .req .rel.primary{border-color:hsl(var(--phosphor));color:hsl(var(--phosphor))}
 .req .t{font-size:13px;overflow-wrap:anywhere}
 .req.fresh{background:hsl(var(--info)/.07)}
+.slackprev{border:1px solid hsl(var(--border));border-radius:var(--radius);background:hsl(var(--muted));padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.slackprev .to{display:flex;flex-wrap:wrap;gap:6px}
+.msg{display:grid;grid-template-columns:32px minmax(0,1fr);gap:10px;font-size:13px}
+.msg .av{width:32px;height:32px;border-radius:6px;background:hsl(var(--phosphor));color:hsl(var(--on-solid));display:flex;align-items:center;justify-content:center;font-family:var(--font-mono);font-weight:600;font-size:12px}
+.msg .who{font-weight:650;font-size:13px}
+.msg .who small{font-weight:400;color:hsl(var(--muted-foreground));font-family:var(--font-mono);font-size:11px;margin-left:6px}
+.msg .txt{white-space:pre-wrap;overflow-wrap:anywhere}
+.dm{display:flex;flex-direction:column;gap:14px;max-height:560px;overflow:auto;padding:4px 2px}
+.dm .ctx{font-size:11px;color:hsl(var(--muted-foreground));font-family:var(--font-mono)}
+.slackgrid{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:14px;align-items:start}
+@media (max-width:1000px){.slackgrid{grid-template-columns:1fr}}
+.rules td{white-space:normal}
+.rules input{width:auto}
 .next{border-left:3px solid hsl(var(--phosphor));padding:8px 12px;background:hsl(var(--phosphor)/.06);border-radius:0 var(--radius) var(--radius) 0;font-size:13px}
 
 /* テーブル */
@@ -194,6 +209,7 @@ td.num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabula
   <span class="tag">v3 受付箱 Mock</span>
   <button data-go="inbox" aria-pressed="true">受付箱</button>
   <button data-go="matter" aria-pressed="false">案件（工程バー）</button>
+  <button data-go="slack" aria-pressed="false">Slack 通知</button>
   <button data-go="runs" aria-pressed="false">取得ログ</button>
   <span class="note">設計: docs/design/v3-backlog-request-scheme.md ／ データは例示</span>
 </div>
@@ -207,12 +223,14 @@ td.num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabula
     <a>文書</a>
     <a>検収待ち</a>
     <div class="grp">Admin</div>
+    <a data-go="slack">Slack 通知</a>
     <a data-go="runs">取得ログ</a>
     <a>依頼種別マスタ</a>
   </nav>
   <main>
     <section class="view" id="v-inbox"></section>
     <section class="view" id="v-matter" hidden></section>
+    <section class="view" id="v-slack" hidden></section>
     <section class="view" id="v-runs" hidden></section>
   </main>
 </div>
@@ -267,19 +285,19 @@ const R = [
   {no:"REQ-2026-00409", key:"LEGAL-1869", state:"accepted", matter:"MTR-2026-00176", rel:"primary", type:"outsourcing", title:"【文書作成】株式会社スタジオ灯_業務委託基本契約_20260910", cp:"株式会社スタジオ灯", bstatus:"完了", by:"山本 さくら", at:"2026-09-10 09:02", acceptedAt:"09/10", body:"業務委託基本契約の締結をお願いします。",
     update:{kind:"status", text:"Backlog のステータスが「処理中」→「完了」に変更されました。案件は「署名・締結」で進行中です。", who:"高橋 健（企画開発部）", when:"09/24 17:02"}},
   // ── 受付箱（未処理）
-  {no:"REQ-2026-00428", key:"LEGAL-1890", state:"new", type:null, guess:"purchase_order", title:"【文書作成】株式会社ノースライト_追加アートワーク発注_20260925", cp:"株式会社ノースライト", cpMatch:"完全一致", bstatus:"未対応", by:"山本 さくら", at:"2026-09-25 09:31", due:"2026-10-09", dept:"企画開発部",
+  {no:"REQ-2026-00428", key:"LEGAL-1890", src:"slack", state:"new", type:null, guess:"purchase_order", title:"【文書作成】株式会社ノースライト_追加アートワーク発注_20260925", cp:"株式会社ノースライト", cpMatch:"完全一致", bstatus:"未対応", by:"山本 さくら", at:"2026-09-25 09:31", due:"2026-10-09", dept:"企画開発部",
     body:"<@U04YAMAMOTO>\n第2弾イラスト 8点の追加発注をお願いします。\n単価は前回発注書（ARC-PO-2026-0188）と同条件です。", cands:[["MTR-2026-00171","同じ相手方の進行中案件・前回発注書 ARC-PO-2026-0188 を参照"],["MTR-2026-00188","同じ相手方の進行中案件"]], rec:"new"},
-  {no:"REQ-2026-00429", key:"LEGAL-1891", state:"new", type:null, guess:"delivery_inspec", title:"[納品報告]【納品・検収】株式会社ノースライト_アートワーク第2回納品_20260925", cp:"株式会社ノースライト", cpMatch:"完全一致", bstatus:"未対応", by:"GAS 納品報告フォーム", at:"2026-09-25 08:55", due:"2026-10-02", dept:"企画開発部",
-    body:"対象契約番号: ARC-PO-2026-0188\n第2回納品 10点（No.11〜20）を受領しました。検収をお願いします。", cands:[["MTR-2026-00171","対象契約番号 ARC-PO-2026-0188 の案件"]], rec:"MTR-2026-00171"},
-  {no:"REQ-2026-00430", key:"LEGAL-1889", state:"new", type:null, guess:"nda", title:"【文書作成】合同会社ソラノ_共同企画NDA_20260924", cp:"合同会社ソラノ", cpMatch:"完全一致", bstatus:"未対応", by:"小川 翔", at:"2026-09-24 18:20", due:"2026-09-30", dept:"企画開発部",
+  {no:"REQ-2026-00429", key:"LEGAL-1891", src:"slack_link", state:"new", type:null, guess:"delivery_inspec", title:"[納品報告]【納品・検収】株式会社ノースライト_アートワーク第2回納品_20260925", cp:"株式会社ノースライト", cpMatch:"完全一致", bstatus:"未対応", by:"山本 さくら", link:"LEGAL-1855", at:"2026-09-25 08:55", due:"2026-10-02", dept:"企画開発部",
+    body:"対象契約番号: ARC-PO-2026-0188\n第2回納品 10点（No.11〜20）を受領しました。検収をお願いします。", cands:[["MTR-2026-00171","Slack の紐付け起票で LEGAL-1855（この案件の代表依頼）を選択"]], rec:"MTR-2026-00171"},
+  {no:"REQ-2026-00430", key:"LEGAL-1889", src:"slack", state:"new", type:null, guess:"nda", title:"【文書作成】合同会社ソラノ_共同企画NDA_20260924", cp:"合同会社ソラノ", cpMatch:"完全一致", bstatus:"未対応", by:"小川 翔", at:"2026-09-24 18:20", due:"2026-09-30", dept:"企画開発部",
     body:"<@U05OGAWA>\nソラノさんとの共同企画 NDA をお願いします。", cands:[["MTR-2026-00193","同じ相手方の進行中案件"]], rec:"MTR-2026-00193",
     dup:["REQ-2026-00418","同じ相手方・同じ種別を 09/22 に受付済み（LEGAL-1879）"]},
-  {no:"REQ-2026-00431", key:"LEGAL-1892", state:"new", type:null, guess:"legal_consult", title:"【法務相談】（社内）マーケティング部_SNSキャンペーン応募規約_20260925", cp:"", cpMatch:"社内", bstatus:"未対応", by:"伊藤 彩", at:"2026-09-25 10:05", due:"2026-10-01", dept:"マーケティング部",
+  {no:"REQ-2026-00431", key:"LEGAL-1892", src:"slack", state:"new", type:null, guess:"legal_consult", title:"【法務相談】（社内）マーケティング部_SNSキャンペーン応募規約_20260925", cp:"", cpMatch:"社内", bstatus:"未対応", by:"伊藤 彩", at:"2026-09-25 10:05", due:"2026-10-01", dept:"マーケティング部",
     body:"<@U06ITO>\n10月開始の SNS キャンペーンの応募規約を確認してください。景品は上限 5,000 円相当です。", cands:[], rec:"new"},
-  {no:"REQ-2026-00432", key:"LEGAL-1893", state:"new", type:null, guess:null, title:"テスト投稿", cp:"", cpMatch:"なし", bstatus:"未対応", by:"高橋 健", at:"2026-09-25 10:40", due:null, dept:"",
+  {no:"REQ-2026-00432", key:"LEGAL-1893", src:"backlog", state:"new", type:null, guess:null, title:"テスト投稿", cp:"", cpMatch:"なし", bstatus:"未対応", by:"高橋 健", at:"2026-09-25 10:40", due:null, dept:"",
     body:"フォームの動作確認です。", cands:[], rec:"new"},
   // ── 保留
-  {no:"REQ-2026-00427", key:"LEGAL-1887", state:"on_hold", type:null, guess:"contract_review", title:"【文書作成】株式会社エイト企画_契約書_20260924", cp:"株式会社エイト企画", cpMatch:"完全一致", bstatus:"未対応", by:"小林 誠", at:"2026-09-24 13:10", due:"2026-10-07", dept:"出版事業部",
+  {no:"REQ-2026-00427", key:"LEGAL-1887", src:"slack", state:"on_hold", type:null, guess:"contract_review", title:"【文書作成】株式会社エイト企画_契約書_20260924", cp:"株式会社エイト企画", cpMatch:"完全一致", bstatus:"未対応", by:"小林 誠", at:"2026-09-24 13:10", due:"2026-10-07", dept:"出版事業部",
     body:"<@U03KOBAYASHI>\nエイト企画さんの契約書を確認してください。", cands:[], rec:"new", hold:{reason:"契約の種類が不明。先方書式か当社書式かを依頼者に確認中", until:"2026-09-29"}},
 ];
 const RUNS = [
@@ -290,6 +308,73 @@ const RUNS = [
   {at:"2026-09-25 03:00", trig:"full_reconcile", since:"—", fetched:214, created:0, updated:5, err:""},
 ];
 const TRIG = {scheduled:"定期（5分）", webhook:"Webhook 合図", manual:"手動", full_reconcile:"日次全件照合"};
+
+const SRC = {slack:["Slack /法務依頼","--phosphor"], slack_link:["Slack 紐付け起票","--phosphor"], gas:["GAS フォーム","--cyan"], backlog:["Backlog 直接","--muted-foreground"], manual:["手動登録","--muted-foreground"]};
+const DEPT_CH = {"企画開発部":"#kikaku-legal","マーケティング部":"#mkt-legal","出版事業部":"#pub-legal","海外事業部":"#intl-legal","経営企画部":"#corp-legal"};
+
+/* Slack 通知（Slack アプリから送る） */
+const RULES = [
+  ["submitted","送信直後（受付箱に入った）",1,0,0,1],
+  ["accepted_new","受付：新規案件",1,1,1,1],
+  ["accepted_existing","受付：既存案件へ接続",1,0,1,1],
+  ["held","保留（確認したいこと）",1,0,0,1],
+  ["duplicate","重複",1,0,0,1],
+  ["dismissed","対象外",1,0,0,1],
+  ["stage:drafting","工程：起案",0,0,0,0],
+  ["stage:internal_review","工程：社内レビュー",0,0,0,0],
+  ["stage:counterparty_review","工程：相手方調整",1,0,1,1],
+  ["stage:signing","工程：署名・締結",1,0,1,1],
+  ["stage:performance","工程：履行（納品報告の案内）",1,0,1,1],
+  ["stage:inspection","工程：検収",0,0,1,1],
+  ["stage:invoicing_payment","工程：請求・支払",0,0,1,1],
+  ["stage:completion_check","工程：完了確認",1,0,1,1],
+].map(([ev,label,dm,dept,thread,on]) => ({ev,label,dm:!!dm,dept:!!dept,thread:!!thread,on:!!on}));
+const RULE = ev => RULES.find(x => x.ev === ev);
+const NOTIFS = [
+  {when:"09/18 10:12", ev:"submitted", who:"山本 さくら", to:["@山本 さくら"], text:"依頼を送信しました（LEGAL-1873）。法務が内容を確認して受け付けます。"},
+  {when:"09/18 11:02", ev:"accepted_new", who:"山本 さくら", to:["@山本 さくら","#kikaku-legal","🧵 MTR-2026-00188"], text:"✅ 受け付けました（LEGAL-1873）\n案件：MTR-2026-00188 ノースライト 企画アートワーク（秋）\n担当：佐藤　希望納期：09/30\n次の工程：起案"},
+  {when:"09/24 13:10", ev:"submitted", who:"小林 誠", to:["@小林 誠"], text:"依頼を送信しました（LEGAL-1887）。法務が内容を確認して受け付けます。"},
+  {when:"09/24 15:40", ev:"held", who:"小林 誠", to:["@小林 誠"], text:"⏸ 確認させてください（LEGAL-1887）\n契約の種類が不明。先方書式か当社書式かを教えてください。\nこのメッセージに返信してください。09/29 に再確認します。"},
+  {when:"09/24 18:20", ev:"submitted", who:"小川 翔", to:["@小川 翔"], text:"依頼を送信しました（LEGAL-1889）。法務が内容を確認して受け付けます。"},
+  {when:"09/25 08:55", ev:"submitted", who:"山本 さくら", to:["@山本 さくら"], text:"依頼を送信しました（LEGAL-1891・LEGAL-1855 への紐付け）。法務が内容を確認して受け付けます。"},
+  {when:"09/25 09:31", ev:"submitted", who:"山本 さくら", to:["@山本 さくら"], text:"依頼を送信しました（LEGAL-1890）。法務が内容を確認して受け付けます。"},
+  {when:"09/25 10:05", ev:"submitted", who:"伊藤 彩", to:["@伊藤 彩"], text:"依頼を送信しました（LEGAL-1892）。法務が内容を確認して受け付けます。"},
+];
+function recipients(ev, r, mc){
+  const rule = RULE(ev); if (!rule || !rule.on) return [];
+  const to = [];
+  if (rule.dm && r && r.by && !/手動/.test(r.by)) to.push("@" + r.by);
+  if (rule.dept && r && DEPT_CH[r.dept]) to.push(DEPT_CH[r.dept]);
+  if (rule.thread && mc) to.push("🧵 " + mc);
+  return to;
+}
+function msgText(ev, r, mc, extra = {}){
+  const m = mc ? MATTERS[mc] : null;
+  const k = r ? r.key : "";
+  switch (ev){
+    case "accepted_new": return `✅ 受け付けました（${k}）\n案件：${mc} ${m.title}\n担当：${m.owner}　希望納期：${r.due ? r.due.slice(5).replace("-","/") : "—"}\n次の工程：${STAGE_LABEL[m.stage]}`;
+    case "accepted_existing": return `✅ 受け付けました（${k}）\n${mc} ${m.title} の案件で対応します。\n担当：${m.owner}　次アクション：${m.next}`;
+    case "held": return `⏸ 確認させてください（${k}）\n${extra.reason}\nこのメッセージに返信してください。${extra.until ? extra.until.slice(5).replace("-","/") : ""} に再確認します。`;
+    case "duplicate": return `🔁 ${k} は ${extra.ofKey} と同じ依頼として扱います。\n案件：${mc}　担当：${m.owner}`;
+    case "dismissed": return `この依頼（${k}）は法務の対応対象外としました。理由：${extra.reason}\nご不明点は法務までご連絡ください。`;
+    default:
+      if (ev === "stage:performance") return `📦 ${mc} ${m.title} は「履行」に入りました。\n納品を受けたら /法務依頼 →「納品・検収」→ 対象課題に ${extra.primaryKey || "この案件の課題"} を選んで報告してください。`;
+      if (ev === "stage:completion_check") return `🏁 ${mc} ${m.title} は完了確認に入りました。追加の依頼がなければ完了します。`;
+      return `➡ ${mc} ${m.title}：「${STAGE_LABEL[ev.slice(6)]}」に進みました。担当：${m.owner}`;
+  }
+}
+function notify(ev, r, mc, extra){
+  const to = recipients(ev, r, mc);
+  if (!to.length) return 0;
+  NOTIFS.push({when:`${TODAY.slice(5).replace("-","/")} ${nowHM()}`, ev, who:r ? r.by : (MATTERS[mc].requester || ""), to, text:msgText(ev, r, mc, extra)});
+  return to.length;
+}
+function previewHtml(ev, r, mc, extra){
+  const to = recipients(ev, r, mc);
+  if (!to.length) return `<div class="slackprev"><div class="k2">この操作では Slack 通知を送りません（通知ルールで OFF）</div></div>`;
+  return `<div class="slackprev"><div class="row" style="justify-content:space-between"><span class="k2">Slack アプリから送る通知</span><span class="to">${to.map(t => `<span class="chip" style="--c:hsl(var(--phosphor))">${esc(t)}</span>`).join("")}</span></div>
+    <div class="msg"><span class="av">LB</span><div><div class="who">LegalBridge<small>APP</small></div><div class="txt">${esc(msgText(ev, r, mc, extra))}</div></div></div></div>`;
+}
 
 const byNo = no => R.find(r => r.no === no);
 const inboxOf = tab => tab === "new" ? R.filter(r => r.state === "new")
@@ -317,7 +402,7 @@ function renderInbox(){
   const T = [["new","未処理"],["on_hold","保留"],["updated","更新あり"]];
   $("#v-inbox").innerHTML = `
     <div class="head">
-      <div><h1>受付箱</h1><div class="sub">Backlog に起票された依頼を取り込んでいます。受け付けると案件の工程バー「受付」に接続されます。Backlog には書き込みません。</div></div>
+      <div><h1>受付箱</h1><div class="sub">Slack <span class="mono">/法務依頼</span> の依頼は Backlog 起案と同時にここへ入ります。GAS・Backlog 直接起票の依頼は取得（pull）で入ります。受け付けると案件の工程バー「受付」に接続し、依頼者に Slack で知らせます。</div></div>
       <button class="btn" id="manualAdd">＋ 手動で登録（口頭・メール）</button>
     </div>
     <div class="pullbar" role="status">
@@ -349,6 +434,8 @@ function itemHtml(r){
     else if (r.rec && r.rec !== "new") m.push(`<span class="chip" style="--c:hsl(var(--info))">接続候補 ${r.rec}</span>`);
     if (r.hold) m.push(`<span class="chip" style="--c:hsl(var(--warning))">再確認 ${r.hold.until.slice(5).replace("-","/")}</span>`);
   }
+  const sc = SRC[r.src || "slack"];
+  m.unshift(`<span class="chip" style="--c:hsl(var(${sc[1]}))">${sc[0]}</span>`);
   return `<button class="item" data-no="${r.no}" aria-current="${r.no === sel}">
     <span class="t">${esc(r.title)}</span>
     <span class="k2" style="text-align:right">${r.key}<br>${r.at.slice(5,10).replace("-","/")} ${r.at.slice(11)}</span>
@@ -366,7 +453,8 @@ function srcHtml(r){
     <div class="src-b">
       <div class="src-title">${esc(r.title)}</div>
       <dl class="kv">
-        <dt>起票</dt><dd>${esc(r.by)}（${r.at}）</dd>
+        <dt>経路</dt><dd>${SRC[r.src || "slack"][0]}${r.link ? `（対象課題 <span class="mono">${r.link}</span> を選択）` : ""}${(r.src || "slack").startsWith("slack") ? " → Slack アプリが Backlog に起案" : r.src === "manual" ? "（Backlog 起案なし）" : " → 取得（pull）で受付箱へ"}</dd>
+        <dt>依頼者</dt><dd>${esc(r.by)}（${r.at}）</dd>
         <dt>取引先名称</dt><dd>${esc(r.cp || "—")}</dd>
         <dt>依頼部署</dt><dd>${esc(r.dept || "—")}</dd>
         <dt>希望納期</dt><dd class="mono">${r.due || "—"}</dd>
@@ -409,6 +497,7 @@ function panelHtml(r){
             <select id="aPick" style="margin-top:4px;width:100%;border:1px solid hsl(var(--border));background:hsl(var(--background));border-radius:4px;padding:4px 6px">${Object.entries(MATTERS).map(([k,m]) => `<option value="${k}">${k} ${esc(m.title)}</option>`).join("")}</select></span></label>
         </div>
       </div>
+      <div id="slackPrev" style="margin-top:12px"></div>
       <div class="actions" style="margin-top:12px">
         <button type="button" class="btn ghost" data-side="dismiss">対象外…</button>
         <button type="button" class="btn ghost" data-side="hold">${r.hold ? "保留を更新…" : "保留…"}</button>
@@ -433,6 +522,16 @@ function bindPanel(r){
     $("#newHint").textContent = `MTR-2026-00${mseq} 「${cp.replace(/^株式会社|^合同会社/, "")}_${topic}」を作成 ・ 工程は「${STAGE_LABEL[stage]}」から開始`;
     const d = f.querySelector("input[name=dest]:checked");
     $("#accOk").disabled = !t || !d;
+    // 受付したときに送る Slack 通知のプレビュー（仮の案件で文面を組む）
+    let dv = d ? d.value : "new"; if (dv === "pick") dv = $("#aPick").value;
+    const tmp = Object.assign({}, r, {due:$("#aDue").value || null});
+    let prev;
+    if (dv === "new"){
+      MATTERS.__p = {title:`${cp.replace(/^株式会社|^合同会社/, "")} ${topic}`, cp, stage, owner:asg || "未定", next:""};
+      prev = previewHtml("accepted_new", tmp, "__p").replace(/__p/g, `MTR-2026-00${mseq}`);
+      delete MATTERS.__p;
+    } else prev = previewHtml("accepted_existing", tmp, dv);
+    $("#slackPrev").innerHTML = prev;
   };
   f.addEventListener("input", hint); f.addEventListener("change", hint); hint();
   f.addEventListener("submit", e => { e.preventDefault(); accept(r); });
@@ -457,14 +556,17 @@ function accept(r){
     if (TYPES[t][1] === "支払準備"){ MATTERS[mc].next = TYPES[t][3] + `（${r.key}）`; MATTERS[mc].nextStage = TYPES[t][2]; }
   }
   r.state = "accepted"; r.matter = mc; freshNo = r.no; openIntake = true;
+  if (dest === "new") MATTERS[mc].requester = r.by;
+  const n = notify(dest === "new" ? "accepted_new" : "accepted_existing", r, mc);
   sel = null;
-  toast(`${r.key} を受け付け、${mc} の「受付」に接続しました`, () => { matterSel = mc; go("matter"); });
+  toast(`${r.key} を受け付け、${mc} の「受付」に接続しました${n ? `。Slack で ${n} か所に通知しました` : ""}`, () => { matterSel = mc; go("matter"); });
   renderInbox();
 }
 function markDup(r, of){
   const o = byNo(of);
   r.state = "duplicate"; r.dupOf = of; r.matter = o.matter; r.rel = "duplicate"; r.acceptedAt = TODAY.slice(5).replace("-","/");
-  sel = null; toast(`${r.key} を ${of} の重複にしました（${o.matter} に参考接続）`); renderInbox();
+  notify("duplicate", r, o.matter, {ofKey:`${o.key}（${o.no}）`});
+  sel = null; toast(`${r.key} を ${of} の重複にしました（${o.matter} に参考接続）。依頼者に Slack で知らせました`); renderInbox();
 }
 function sideDialog(r, kind){
   const acceptedList = R.filter(x => x.state === "accepted" && x.no !== r.no);
@@ -472,21 +574,22 @@ function sideDialog(r, kind){
     dismiss:`<h1>対象外にする <span class="mono" style="font-size:13px;font-weight:400">${r.key}</span></h1>
       <div class="radio">${["誤起票","テスト投稿","法務の対象外","その他"].map((x,i) => `<label><input type="radio" name="dr" value="${x}"${(r.title.includes("テスト") ? i === 1 : i === 0) ? " checked" : ""}><span>${x}</span></label>`).join("")}</div>
       <div class="field"><label for="dNote">メモ（任意）</label><input id="dNote"></div>
-      <div class="sub">受付箱から消えます。取得ログと履歴には残り、あとから受付箱に戻せます。Backlog は変更しません。</div>`,
+      <div class="sub">受付箱から消えます。取得ログと履歴には残り、あとから受付箱に戻せます。Backlog は変更しません。</div>
+      ${previewHtml("dismissed", r, null, {reason:r.title.includes("テスト") ? "テスト投稿" : "誤起票"})}`,
     hold:`<h1>保留にする <span class="mono" style="font-size:13px;font-weight:400">${r.key}</span></h1>
       <div class="field"><label for="hWhy">理由</label><textarea id="hWhy" rows="2">${esc(r.hold?.reason || "")}</textarea></div>
       <div class="field"><label for="hUntil">再確認日</label><input id="hUntil" type="date" value="${r.hold?.until || "2026-09-30"}"></div>
-      <div class="sub">再確認日を過ぎると「未処理」の先頭に戻ります。</div>`,
+      <div class="sub">再確認日を過ぎると「未処理」の先頭に戻ります。依頼者には Slack DM で確認を送り、返信はその DM で受けます。</div>`,
     dup:`<h1>重複として処理 <span class="mono" style="font-size:13px;font-weight:400">${r.key}</span></h1>
       <div class="field"><label for="dupOf">重複元の依頼</label><select id="dupOf">${acceptedList.map(x => `<option value="${x.no}"${r.dup && r.dup[0] === x.no ? " selected" : ""}>${x.no}（${x.key}）${esc(x.title.slice(0,40))}</option>`).join("")}</select></div>
-      <div class="sub">重複元の案件の「受付」に参考として接続されます。</div>`,
+      <div class="sub">重複元の案件の「受付」に参考として接続され、依頼者に Slack で知らせます。</div>`,
   }[kind];
   dialog(`${body}<div class="row" style="justify-content:flex-end"><button class="btn" data-x>やめる</button><button class="btn pri" id="dOk">${{dismiss:"対象外にする",hold:"保留にする",dup:"重複にする"}[kind]}</button></div>`, h => {
     const ok = h.querySelector("#dOk");
     if (kind === "hold"){ const w = h.querySelector("#hWhy"); const u = () => ok.disabled = !w.value.trim(); w.addEventListener("input", u); u(); }
     ok.addEventListener("click", () => {
-      if (kind === "dismiss"){ r.state = "dismissed"; toast(`${r.key} を対象外にしました（${h.querySelector("input[name=dr]:checked").value}）`); }
-      if (kind === "hold"){ r.state = "on_hold"; r.hold = {reason:h.querySelector("#hWhy").value.trim(), until:h.querySelector("#hUntil").value}; toast(`${r.key} を保留にしました`); }
+      if (kind === "dismiss"){ const why = h.querySelector("input[name=dr]:checked").value; r.state = "dismissed"; notify("dismissed", r, null, {reason:why}); toast(`${r.key} を対象外にしました（${why}）。依頼者に Slack で知らせました`); }
+      if (kind === "hold"){ r.state = "on_hold"; r.hold = {reason:h.querySelector("#hWhy").value.trim(), until:h.querySelector("#hUntil").value}; notify("held", r, null, r.hold); toast(`${r.key} を保留にし、依頼者に Slack で確認を送りました`); }
       if (kind === "dup"){ closeDlg(); return markDup(r, h.querySelector("#dupOf").value); }
       closeDlg(); sel = null; renderInbox();
     });
@@ -499,7 +602,7 @@ function manualDialog(){
     <div class="row" style="justify-content:flex-end"><button class="btn" data-x>やめる</button><button class="btn pri" id="mOk">受付箱に入れる</button></div>`, h => {
       h.querySelector("#mOk").addEventListener("click", () => {
         const no = `REQ-2026-00${rseq++}`;
-        R.push({no, key:"（Backlog なし）", state:"new", guess:"legal_consult", title:h.querySelector("#mT").value, cp:"", cpMatch:"社内", bstatus:"—", by:`${ME}（手動登録）`, at:`${TODAY} ${nowHM()}`, due:null, dept:"経営企画部", body:h.querySelector("#mB").value, cands:[], rec:"new"});
+        R.push({no, key:"（Backlog なし）", src:"manual", state:"new", guess:"legal_consult", title:h.querySelector("#mT").value, cp:"", cpMatch:"社内", bstatus:"—", by:`${ME}（手動登録）`, at:`${TODAY} ${nowHM()}`, due:null, dept:"経営企画部", body:h.querySelector("#mB").value, cands:[], rec:"new"});
         closeDlg(); tab = "new"; sel = no; toast(`${no} を受付箱に入れました`); renderInbox();
       });
     });
@@ -511,7 +614,7 @@ function pullNow(){
     const key = "LEGAL-1894";
     let created = 0;
     if (!R.find(r => r.key === key)){
-      R.push({no:`REQ-2026-00${rseq++}`, key, state:"new", guess:"deadline_change", title:"【事務手続】株式会社ノースライト_納期変更 10/31→11/14_20260925", cp:"株式会社ノースライト", cpMatch:"完全一致", bstatus:"未対応", by:"山本 さくら", at:`${TODAY} ${nowHM()}`, due:"2026-09-30", dept:"企画開発部",
+      R.push({no:`REQ-2026-00${rseq++}`, key, src:"gas", state:"new", guess:"deadline_change", title:"【事務手続】株式会社ノースライト_納期変更 10/31→11/14_20260925", cp:"株式会社ノースライト", cpMatch:"完全一致", bstatus:"未対応", by:"山本 さくら", at:`${TODAY} ${nowHM()}`, due:"2026-09-30", dept:"企画開発部",
         body:"<@U04YAMAMOTO>\n対象契約番号: ARC-PO-2026-0188\n明細 No.21〜28 の納期を 11/14 に変更したいです（先方都合）。", cands:[["MTR-2026-00171","対象契約番号 ARC-PO-2026-0188 の案件"]], rec:"MTR-2026-00171"});
       created = 1;
     }
@@ -542,7 +645,8 @@ function renderMatter(){
       <div class="stagebar">${STAGES.map(([k,l],i) => k === "intake"
         ? `<button class="stg intake past ${alert ? "alert" : ""}" id="intakeNode" aria-expanded="${openIntake}" title="受付に接続された依頼"><span class="nd">${reqs.length}</span><span class="lbl">${l}</span></button>`
         : `<div class="stg ${i < ci ? "past" : i === ci ? "cur" : ""}"><span class="nd"></span>${l}</div>`).join("")}</div>
-      <div class="next" style="margin-top:6px"><b>次アクション</b>（${STAGE_LABEL[m.nextStage]}）　${esc(m.next)}</div>
+      <div class="row" style="margin-top:6px;align-items:stretch"><div class="next" style="flex:1"><b>次アクション</b>（${STAGE_LABEL[m.nextStage]}）　${esc(m.next)}</div>
+        ${ci < STAGES.length - 1 ? `<button class="btn" id="advance" title="工程を1つ進める（通知ルールが ON の工程は Slack で知らせる）">工程を進める → ${STAGE_LABEL[STAGES[ci + 1][0]]}${RULE("stage:" + STAGES[ci + 1][0])?.on ? " ・ Slack 通知" : ""}</button>` : ""}</div>
     </div>
     <div class="connect" style="margin-top:14px" ${openIntake ? "" : "hidden"}>
       <div class="panel">
@@ -557,12 +661,22 @@ function renderMatter(){
       </div>
       <div class="panel">
         <h2>この接続について</h2>
-        <div class="sub" style="margin:0">受付箱で受け付けた依頼は、案件の工程の先頭「受付」に接続されます。依頼の本文・ステータスは Backlog の原票を読み取って表示しているだけで、LegalBridge からは変更しません。進行はこの案件の工程で管理します。</div>
+        <div class="sub" style="margin:0">受付箱で受け付けた依頼は、案件の工程の先頭「受付」に接続されます。依頼の本文・ステータスは Backlog の原票を読み取って表示しているだけで、起案後は LegalBridge から変更しません。進行はこの案件の工程で管理し、節目は Slack で依頼者と案件スレッドに知らせます。</div>
         <dl class="kv" style="margin-top:10px"><dt>代表</dt><dd>案件を作った依頼</dd><dt>関連</dt><dd>追加の依頼</dd><dt>支払準備</dt><dd>納品報告・利用報告</dd><dt>重複</dt><dd>参考として保持</dd></dl>
       </div>
     </div>`;
   $("#mSel").addEventListener("change", e => { matterSel = e.target.value; freshNo = null; renderMatter(); });
   $("#intakeNode").addEventListener("click", () => { openIntake = !openIntake; renderMatter(); });
+  const adv = $("#advance");
+  if (adv) adv.addEventListener("click", () => {
+    const nx = STAGES[ci + 1][0];
+    m.stage = nx; m.nextStage = nx; m.next = ({drafting:"文書を作成",internal_review:"社内承認を得る",counterparty_review:"相手方と調整",signing:"署名・締結",performance:"納品報告を待つ",inspection:"検収書を作成",invoicing_payment:"支払処理",completion_check:"完了を確認"})[nx];
+    const prim = reqs.find(x => x.rel === "primary");
+    const req = prim ? Object.assign({}, prim) : null;
+    const n = notify("stage:" + nx, req, matterSel, {primaryKey: prim ? prim.key : ""});
+    toast(`工程を「${STAGE_LABEL[nx]}」に進めました${n ? `。Slack で ${n} か所に通知しました` : "（通知なし）"}`);
+    renderMatter();
+  });
   $("#linkFromInbox").addEventListener("click", linkDialog);
 }
 function linkDialog(){
@@ -578,6 +692,34 @@ function linkDialog(){
     });
 }
 
+/* ── Slack 通知 ── */
+let dmWho = "山本 さくら";
+function renderSlack(){
+  const people = [...new Set(NOTIFS.flatMap(n => n.to.filter(t => t.startsWith("@")).map(t => t.slice(1))))];
+  if (!people.includes(dmWho)) dmWho = people[0];
+  const dms = NOTIFS.filter(n => n.to.includes("@" + dmWho));
+  $("#v-slack").innerHTML = `
+    <div class="head"><div><h1>Slack 通知</h1><div class="sub">依頼者への連絡は Slack アプリから送ります。起点は受付箱の操作と案件工程の節目だけで、Backlog のステータス変化では通知しません。</div></div></div>
+    <div class="slackgrid">
+      <div class="panel">
+        <h2>通知ルール（notify_rules）</h2>
+        <div class="tbl-wrap" style="border:0"><table class="rules" style="min-width:0">
+          <thead><tr><th>出来事</th><th>DM</th><th>部署ch</th><th>案件スレッド</th><th>ON</th></tr></thead>
+          <tbody>${RULES.map((x,i) => `<tr><td>${x.label}</td>${["dm","dept","thread","on"].map(f => `<td><input type="checkbox" data-r="${i}" data-f="${f}" aria-label="${x.label} ${f}"${x[f] ? " checked" : ""}></td>`).join("")}</tr>`).join("")}</tbody>
+        </table></div>
+        <div class="sub">細かい工程（起案・社内レビュー）は既定で通知しません。全停止スイッチ SLACK_NOTIFY_DISABLED は緊急用に残します。</div>
+      </div>
+      <div class="panel">
+        <div class="row" style="justify-content:space-between;margin-bottom:10px"><h2 style="margin:0">依頼者の DM（Slack アプリ）</h2>
+          <select id="dmSel" class="btn" aria-label="依頼者">${people.map(p => `<option${p === dmWho ? " selected" : ""}>${esc(p)}</option>`).join("")}</select></div>
+        <div class="dm">${dms.map(n => `<div class="msg"><span class="av">LB</span><div><div class="who">LegalBridge<small>APP ・ ${n.when}</small></div><div class="txt">${esc(n.text)}</div>
+          ${n.to.length > 1 ? `<div class="ctx">同時に：${n.to.filter(t => t !== "@" + dmWho).map(esc).join("、")}</div>` : ""}</div></div>`).join("") || `<div class="sub">まだ通知はありません。</div>`}</div>
+      </div>
+    </div>`;
+  $("#dmSel").addEventListener("change", e => { dmWho = e.target.value; renderSlack(); });
+  $("#v-slack").querySelectorAll("input[data-r]").forEach(c => c.addEventListener("change", () => { RULES[+c.dataset.r][c.dataset.f] = c.checked; toast(`通知ルールを更新しました（${RULES[+c.dataset.r].label}）`); }));
+}
+
 /* ── 取得ログ ── */
 function renderRuns(){
   $("#v-runs").innerHTML = `
@@ -591,7 +733,9 @@ function renderRuns(){
 }
 
 /* ── 共通 ── */
-function nowHM(){ const d = new Date(); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+// 例示データに合わせた仮の時計（09/25 10:45 から操作ごとに1分進む）
+let clock = 10*60 + 45;
+function nowHM(){ const t = clock++; return `${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`; }
 function dialog(html, onMount){
   $("#dlgHost").innerHTML = `<div class="scrim" role="dialog" aria-modal="true"><div class="dlg">${html}</div></div>`;
   const host = $("#dlgHost .scrim");
@@ -612,9 +756,10 @@ function render(){
   if (view === "inbox") renderInbox();
   if (view === "matter") renderMatter();
   if (view === "runs") renderRuns();
+  if (view === "slack") renderSlack();
   updateNav();
 }
 const start = (location.hash || "").slice(1);
-go(["inbox","matter","runs"].includes(start) ? start : "inbox");
+go(["inbox","matter","slack","runs"].includes(start) ? start : "inbox");
 })();
 </script>

@@ -1,6 +1,6 @@
 # v3 Backlog 依頼管理スキーム — 受付箱
 
-ステータス: **ドラフト（設計合意フェーズ）** / 2026-09-25 起票・同日改訂（受付箱＋pull 方式へ変更）
+ステータス: **ドラフト（設計合意フェーズ）** / 2026-09-25 起票・同日改訂（受付箱＋pull 方式へ変更 → Slack 起案・Slack 通知の現行ロジックを前提に再改訂）
 画面モック: [`../v3-request-mockup.html`](../v3-request-mockup.html)
 関連:
 - [`../plans/legalbridge-remediation-plan-20260714.md`](../plans/legalbridge-remediation-plan-20260714.md)（Matter 中心化。§3「外部ID化」「Backlog は外部依頼情報」、§5.5.1「Backlog 課題は Matter 内の依頼原票として参照表示」）
@@ -12,23 +12,25 @@
 
 ## 0. 要旨
 
-v3 では依頼の扱いを次の3点に絞る。
+現行の仕組み（**Slack `/法務依頼` で受け付けると Backlog に起案し、依頼者への連絡は Slack アプリで出す**）はそのまま活かし、その間に「受付箱」を挟む。
 
-1. **受付箱を作る。** Backlog に起票された依頼は、LegalBridge の「受付箱」に一件ずつ入る。法務はここで受け付けるか、既存案件へ紐付けるか、重複・対象外として処理する。
-2. **Backlog は読みに行く。** LegalBridge は Backlog を**定期的に取得（pull）するだけ**で、Backlog へ書き込まない（課題作成・ステータス変更・子課題化・コメントをしない）。Backlog は依頼者が書く「依頼原票」で、状況の正本は LegalBridge の案件側にある。
-3. **受け付けた依頼は案件の工程バーの「受付」に繋ぐ。** 受付 = 案件工程 `intake`。以後の進行（振分け → 起案 → … → 完了）は**案件の工程**で管理し、依頼ごとのステータス機械は持たない。
+1. **入口は Slack のまま。** `/法務依頼` モーダル → Backlog に課題を起案（現行の slackGateway → worker `/api/intake/create-run`）。起案と同時に依頼を受付箱へ登録する。GAS フォームや Backlog 直接起票の依頼は pull で拾う。
+2. **Backlog は起案だけ。** LegalBridge が Backlog に書き込むのは Slack 受付時の課題作成だけ。受付後の管理（ステータス変更・子課題化・終結・コメント）は Backlog では行わず、Backlog は依頼原票として**読みに行く**（定期 pull）。
+3. **受付箱で人が受け付け、案件の工程バーの「受付」に繋ぐ。** 受付 = 案件工程 `intake`。以後の進行は**案件の工程**で管理し、依頼ごとのステータス機械は持たない。
+4. **依頼者への連絡は Slack アプリ。** 送信確認・受付・保留・対象外・重複、および案件工程の節目を、依頼者 DM・部署チャンネル・案件スレッドへ通知する（Backlog のステータスを依頼者への連絡手段にしない）。
 
 ```
-依頼者 ──(Slack /法務依頼・GAS・Backlog 直接)──▶ Backlog 課題（依頼原票）
-                                                   │  読みに行く（定期 pull ＋「今すぐ取得」）
-                                                   ▼
-                                     ┌──────── 受付箱 ────────┐
-                                     │ 未処理 / 保留 / 更新あり │
-                                     └──┬───────┬───────┬──────┘
-                          新規案件で受付 │  既存案件へ │  重複・対象外
-                                        ▼            ▼
-             案件 工程バー: [受付]─振分け─起案─社内レビュー─相手方調整─署名・締結─履行─検収─請求・支払─完了確認─完了
-                             ▲ 依頼（原票）はここに接続される
+依頼者 ── Slack /法務依頼 ──▶ Slack アプリ ──起案──▶ Backlog 課題（依頼原票）
+   ▲                           │ 同時に登録              │ 読みに行く（定期 pull）
+   │                           ▼                         ▼   ※ GAS・Backlog 直接起票もここで拾う
+   │                 ┌──────────────── 受付箱 ────────────────┐
+   │                 │   未処理 / 保留 / 更新あり              │
+   │                 └──┬──────────┬──────────┬───────────────┘
+   │     新規案件で受付 │ 既存案件へ │ 重複・対象外・保留
+   │                    ▼            ▼
+   │   案件 工程バー: [受付]─振分け─起案─社内レビュー─相手方調整─署名・締結─履行─検収─請求・支払─完了確認
+   │                    │                                   │
+   └──── Slack 通知 ◀───┴── 受付・保留・対象外・重複 ／ 工程の節目（DM・部署チャンネル・案件スレッド）
 ```
 
 ---
@@ -40,7 +42,9 @@ v3 では依頼の扱いを次の3点に絞る。
 | 項目 | 現状 | 根拠 |
 |---|---|---|
 | 依頼テーブル | `legal_requests`：`backlog_issue_key`(UNIQUE NOT NULL) / `slack_user_id` / `contract_type`(実態は request_type) / `counterparty` / `summary` / `deadline` / `notes` / `merged_into_issue_key` / `parent_issue_key` | `migrations/0001_baseline.sql:122,717,740` |
-| 取込み | webhook（type=1）受信で即パイプライン（`processLegalRequestSubmission`：legal_requests INSERT・文書自動生成） | `services/worker/server.ts` `/api/webhooks/backlog` |
+| Slack 受付 | `/法務依頼`（search-api `slackGateway.ts`）→ worker `/api/intake/create-run` → `processLegalRequestSubmission`：Backlog 課題を起案・`legal_requests` INSERT・種別により文書自動生成。既存課題を選ぶ紐付け起票は `/api/intake/link-trigger-run` | `services/api/src/routes/slackGateway.ts` / `server.ts` |
+| Slack 通知 | Slack アプリ（`slackWebClient`）から依頼者 DM・部署チャンネル（`department_workflow_rules.slack_channel_id`）へ。起票 ack、Backlog ステータス変化（`notifyIssueEvent`）、auto-chain（`notifyAutoChainCreated`）。過剰通知のため `SLACK_NOTIFY_DISABLED=true` で停止中。案件ごとの法務相談スレッドは `matter_slack_threads` | `server.ts` / `0145` / `0150` |
+| 取込み（Slack 以外） | webhook（type=1）受信で同じパイプラインを実行 | `services/worker/server.ts` `/api/webhooks/backlog` |
 | Backlog への書込み | 課題作成（Slack・quick-create・auto-chain・納期変更）、ステータス変更、終結・子課題化・コメント | `server.ts` 各所、`backlogService.ts` |
 | ステータス | Backlog 11 種を `issue_workflows.current_status_name` にミラー。経路は `statusFlow.ts`（FE/worker 2ファイルを手動同期） | `src/lib/statusFlow.ts` ほか |
 | 一覧 | Requests 画面は Backlog API 直読み、`count=100` 固定・ページングなし | `backlogService.ts` `getIssues` |
@@ -51,6 +55,7 @@ v3 では依頼の扱いを次の3点に絞る。
 
 - **P1. 受け付けたかどうかが分からない。** Backlog に起票された瞬間に自動処理が走り、法務が「受け付けた」という判断・記録の場が無い。誤起票・重複もそのまま案件化される（0103 トリガ）。
 - **P2. 二重管理。** 進行を Backlog ステータスと案件工程の両方で持ち、どちらが正か曖昧。Backlog への書込み失敗で半端状態が生まれる。
+- **P2b. 通知が Backlog ステータス連動。** Backlog のステータスが動くたびに通知が飛び、過剰になって停止している（0150）。依頼者が本当に知りたい「受け付けたか・誰が担当か・今どこか」が届かない。
 - **P3. 書込みの副作用が大きい。** auto-chain の子課題作成、統合時の子課題化・終結など、Backlog 側の構造を LB が書き換えている。
 - **P4. 一覧が 100 件上限の直読み。** 過去依頼が見えず、案件・成果物で絞れない。
 - **P5. 起票経路ごとに挙動が違う**（7経路）。webhook 取りこぼし時の回復手段が無い。
@@ -59,7 +64,8 @@ v3 では依頼の扱いを次の3点に絞る。
 
 ## 2. 設計原則
 
-1. **Backlog は依頼原票（読み取り専用）。** LB は取得して保存・表示するだけ。Backlog 側の件名・本文・ステータス・コメントは依頼者と Backlog 利用者のもの。
+1. **Backlog は依頼原票。** LB が Backlog に書くのは Slack 受付時の起案（課題作成）だけ。以後は取得して保存・表示するだけで、件名・本文・ステータス・コメントは書き換えない。
+1. **依頼者への連絡は Slack アプリ。** 通知は LB の出来事（受付操作・案件工程）を起点にし、Backlog のステータス変化を起点にしない。
 2. **受付は人が行う。** 取り込んだ依頼は必ず受付箱を通る。自動で案件化しない（候補の提示まで）。
 3. **進行は案件の工程で持つ。** 依頼は「受け付けた時点」で役目の大半を終え、以後は案件の工程バーが状況の正本。
 4. **1依頼 → 1案件。** 受け付けた依頼は必ず1つの案件の「受付」に接続される。1案件に複数の依頼が接続されてよい（重複・追加依頼・納品報告など）。
@@ -94,6 +100,8 @@ erDiagram
 
 ### 4.1 取得方式
 
+**Slack 受付分は即時登録。** `/法務依頼` の送信時点で依頼者（Slack ID）・種別・相手方・希望納期・対象課題（紐付け起票の場合）が分かっているので、Backlog 起案と同じ処理の中で `legal_requests` に `inbox_state='new'`・`source_channel='slack'` で登録し、受付箱にすぐ出す。後続の pull は同じ Backlog 課題 ID を upsert するだけ（二重登録しない）。
+
 | トリガ | 頻度 | 内容 |
 |---|---|---|
 | 定期 | 5 分ごと（Cloud Scheduler → worker） | `updatedSince = 前回成功時刻 − 5分` で差分取得 |
@@ -112,6 +120,7 @@ erDiagram
 
 | 項目 | 推定元 |
 |---|---|
+| （Slack 受付分） | モーダルの入力値をそのまま推定値にする（種別・相手方・依頼者・希望納期）。紐付け起票で選んだ対象課題は、その課題が接続された案件を第一候補にする |
 | 依頼種別 `request_type` | 属性「依頼種別」→ 課題種別名（`request_types.backlog_issue_type_name` / 旧名）→ 件名の【】ラベル |
 | 相手方 `vendor_id` | 属性「取引先名称」を `vendors` と名寄せ（完全一致 → 別名 → 部分一致の順、候補最大3件） |
 | 依頼者 `requester_staff_id` | 説明欄の `<@Uxxxx>` → `staff.slack_user_id`、Backlog 起票者 → `staff.backlog_user_id` |
@@ -215,17 +224,35 @@ LB は Backlog を書き換えないので、Backlog 側の変化は「知らせ
 
 ---
 
-## 8. 起票側（依頼者）の規約
+## 8. 起票（Slack）と通知（Slack アプリ）
 
-LB は Backlog に書かないため、推定精度は依頼者側の書き方で決まる。起票フォーム（Slack `/法務依頼`・GAS）が次を満たすようにする。
+### 8.1 起票
 
-- 件名: `【{種別ラベル}】{相手方}_{内容}_{YYYYMMDD}`（現行 quick-create と同じ形式）。
-- 属性: 「依頼種別」（新設・単一選択）、「取引先名称」、「依頼部署」、「希望納期」を必須にする。
-- 説明欄: 依頼者の Slack メンション `<@Uxxxx>`、支払準備の依頼は「対象契約番号: ARC-…」を必ず書く（接続先案件の推定に使う）。
-- **Slack `/法務依頼` は Backlog 課題を作るところまで**（依頼者側の起票フォーム）。文書の自動生成は行わず、受付後に案件から作成する。
-- 口頭・メールの依頼は Backlog を経由せず、受付箱の「手動で登録」から入れてよい（`source_channel='manual'`、`backlog_issue_key` なし）。
+- **Slack `/法務依頼`（主経路）**: モーダル送信 → Slack アプリが Backlog に課題を起案（件名 `【{種別ラベル}】{相手方}_{内容}_{YYYYMMDD}`、属性「取引先名称」「依頼部署」「希望納期」、説明欄に `<@Uxxxx>`）→ 同時に受付箱へ登録。
+  - 文書の自動生成は起案時には行わず、**受付後に案件から作成**する（受付前に誤起票・重複を弾くため）。現行の自動生成を残すかは O6。
+  - 既存課題を選ぶ紐付け起票（納品報告・利用報告など）は、選んだ課題の案件を接続先の第一候補にする。
+- **GAS フォーム・Backlog 直接起票**: pull で受付箱に入る。依頼者は説明欄の `<@Uxxxx>` か Backlog 起票者から推定し、分からなければ受付時に確定する（Slack 通知は依頼者が確定してから）。
+- **口頭・メール**: 受付箱の「手動で登録」（`source_channel='manual'`、Backlog 起案なし）。
 
----
+### 8.2 通知
+
+通知はすべて Slack アプリから。**LB の出来事だけを起点**にし、Backlog のステータス変化では通知しない（現行 `notifyIssueEvent` の Backlog 連動通知は廃止）。
+
+| 出来事 | 依頼者 DM | 部署チャンネル | 案件スレッド | 文面の要点 |
+|---|:-:|:-:|:-:|---|
+| Slack 送信直後 | ● | | | 「依頼を送信しました（LEGAL-1890）。法務が確認して受け付けます」＝現行の ack |
+| 受付（新規案件） | ● | ● | ● スレッド作成 | 受け付けました／案件コード・担当・希望納期・次の工程 |
+| 受付（既存案件へ接続） | ● | | ● | ○○の案件で対応します／担当・次アクション |
+| 保留 | ● | | | 確認したいこと（理由）・再確認日。返信は DM スレッドで受ける |
+| 重複 | ● | | | 重複先の依頼・案件と担当 |
+| 対象外 | ● | | | 理由。取り消しは法務へ |
+| 工程の節目 | ● | | ● | 相手方調整に入った／署名・締結に進んだ／履行中（納品を受けたら `/法務依頼` で報告）／完了 |
+
+- **工程の節目**は `notify_rules` で工程ごとに ON/OFF する（既定 ON: 受付・相手方調整・署名・締結・履行・完了）。起案・社内レビュー等の細かい工程は通知しない。
+- **案件スレッド**は既存の `matter_slack_threads`（1案件1スレッド）を使う。新規案件で受け付けた時点で作成し、以後の工程通知と依頼者とのやりとりをここに集める。
+- **履行に入ったときの案内**が現行 auto-chain（子課題の自動起案＋DM）の代わりになる。納品・利用報告は依頼者が `/法務依頼` の紐付け起票で送り、受付箱で既存案件に接続される。
+- 送った通知は `request_events`（kind=`notified`）に宛先・ts とともに記録し、同じ出来事で二重に送らない。
+- `SLACK_NOTIFY_DISABLED` は全停止スイッチとして残す（運用上の緊急停止用）。
 
 ## 9. データモデル変更案（DDL ドラフト・未適用）
 
@@ -306,6 +333,17 @@ CREATE TABLE IF NOT EXISTS request_events (
 CREATE INDEX IF NOT EXISTS idx_req_events_request ON request_events(request_id, created_at);
 
 ALTER TABLE staff ADD COLUMN IF NOT EXISTS backlog_user_id BIGINT;
+
+-- (E) 通知ルール（工程ごとの ON/OFF と宛先）
+CREATE TABLE IF NOT EXISTS notify_rules (
+  event          VARCHAR(40) PRIMARY KEY,   -- submitted / accepted_new / accepted_existing / held / duplicate / dismissed / stage:<lifecycle_stage>
+  to_requester   BOOLEAN NOT NULL DEFAULT TRUE,
+  to_dept        BOOLEAN NOT NULL DEFAULT FALSE,
+  to_matter_thread BOOLEAN NOT NULL DEFAULT FALSE,
+  enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+  template       TEXT                       -- 文面テンプレ（{matter_code} {assignee} 等）
+);
+-- 依頼者の Slack ID は既存の legal_requests.slack_user_id を使う（requester_staff_id と併存）。
 ```
 
 **バックフィル:** 既存 `legal_requests` は全件 `inbox_state='accepted'`（現行運用で処理済みとみなす）、`matter_id` は `matter_issues`（primary 優先）から、`request_type` は `contract_type` から、`request_no` は作成日順に採番。`merged_into_issue_key` ありは `duplicate`。合成キー `IMPORT-*` は `source_channel='manual'` にして `backlog_issue_key` を NULL 化（旧キーは `notes` に退避）。
@@ -331,16 +369,21 @@ ALTER TABLE staff ADD COLUMN IF NOT EXISTS backlog_user_id BIGINT;
 | POST | `/api/requests/:id/seen` | 「更新あり」を既読にする |
 | GET | `/api/matters/:id/requests` | 案件の受付ノードに接続された依頼 |
 | POST | `/api/webhooks/backlog` | 合図のみ（シークレット照合 → 差分取得をキック） |
+| POST | `/api/intake/create-run`（既存） | Slack 受付：Backlog 起案＋受付箱へ登録＋送信確認 DM。文書自動生成は外す |
+| GET/PUT | `/api/admin/notify-rules` | 通知ルール |
 
-受付系の操作は1トランザクション（`legal_requests`・`matters`・`matter_issues`・`matter_tasks`・`request_events`）。外部呼び出しは無い。
+受付系の操作は1トランザクション（`legal_requests`・`matters`・`matter_issues`・`matter_tasks`・`request_events`）。Slack 通知はコミット後に送り、失敗は `request_events` に記録して再送できるようにする。Backlog への書込みは無い。
 
-**廃止する書込み系**（段階的に）: `POST /api/backlog/issues/quick-create`、`PATCH /api/backlog/issues/:key/status`、`PATCH /terminate`、`POST /:key/merge`・`/merge-bulk` の Backlog 操作部分、auto-chain の子課題作成、webhook type=1 の文書自動生成パイプライン。
+**残す書込み**: Slack 受付時の Backlog 起案（`/api/intake/create-run`・`link-trigger-run` の課題作成）。
+
+**廃止する書込み系**（段階的に）: `POST /api/backlog/issues/quick-create`（手動登録に置換）、`PATCH /api/backlog/issues/:key/status`、`PATCH /terminate`、`POST /:key/merge`・`/merge-bulk` の Backlog 操作部分、auto-chain の子課題作成（履行時の Slack 案内に置換）、webhook type=1 の文書自動生成パイプライン、Backlog ステータス連動の `notifyIssueEvent`。
 
 ---
 
 ## 11. 画面
 
-- **受付箱**（サイドバー最上段・未処理件数バッジ）: 未処理 / 保留 / 更新あり のタブ。各行に取得元（Backlog キー・起票者・起票日時）、推定種別、推定相手方、接続候補の案件。右側の受付パネルで原票を読みながら受付操作する。上部に最終取得時刻と「今すぐ取得」。
+- **受付箱**（サイドバー最上段・未処理件数バッジ）: 未処理 / 保留 / 更新あり のタブ。各行に経路（Slack / GAS / Backlog 直接 / 手動）、Backlog キー、依頼者、推定種別、接続候補の案件。右側の受付パネルで原票を読みながら受付操作し、**依頼者に送る Slack 通知の文面をその場で確認**できる。上部に最終取得時刻と「今すぐ取得」。
+- **通知ルール**（管理）: 出来事・工程ごとの宛先 ON/OFF と文面テンプレ、送信履歴。
 - **案件詳細の工程バー**: 先頭「受付」ノードに接続された依頼の件数と「更新あり」を表示。クリックで原票一覧、「＋ 受付箱から接続」。
 - **取得ログ**（管理）: `backlog_pull_runs` の一覧とエラー。
 - 現行の Requests 画面（Backlog 直読み）は受付箱に置き換える。
@@ -351,11 +394,12 @@ ALTER TABLE staff ADD COLUMN IF NOT EXISTS backlog_user_id BIGINT;
 
 | Phase | 内容 | 完了条件 |
 |---|---|---|
-| **R0 合意** | 本書の決定事項を確定。Backlog に属性「依頼種別」を追加し、Slack/GAS の起票フォームを §8 に合わせる | 起票フォームが属性を必須化 |
+| **R0 合意** | 本書の決定事項を確定。Backlog に属性「依頼種別」を追加し、Slack モーダル・GAS の起票内容を §8.1 に合わせる | 起票フォームが属性を必須化 |
 | **R1 取得** | §9 の DDL・バックフィル。pull ジョブ（定期・手動）と取得ログ。まだ受付箱は出さず、取得結果を既存データと突き合わせて検証 | 1週間、webhook 経由の既存処理と取得結果の差分 0 |
-| **R2 受付箱** | 受付箱画面と受付 API。0103 トリガ停止。webhook type=1 の自動パイプラインを停止し、受付箱経由に切替 | 新規依頼の 100% が受付操作で案件に接続 |
+| **R2 受付箱** | 受付箱画面と受付 API。`create-run` を「起案＋受付箱登録」に変更（文書自動生成は受付後へ）。0103 トリガ停止。webhook type=1 の自動パイプラインを停止 | 新規依頼の 100% が受付操作で案件に接続 |
+| **R2b Slack 通知** | `notify_rules` と受付・保留・重複・対象外・工程節目の通知。Backlog 連動の `notifyIssueEvent` を停止し、`SLACK_NOTIFY_DISABLED` を解除 | 依頼者 DM が受付操作ごとに1通、重複送信 0 |
 | **R3 工程バー** | 案件詳細に工程バーと受付ノード。`matter_tasks` の既定次アクション | 案件詳細から接続依頼が参照できる |
-| **R4 書込み撤去** | Backlog への書込み API・auto-chain・Slack 起票時の文書自動生成を撤去。webhook を合図専用＋シークレット照合に | worker から Backlog 書込み呼び出し 0（CI で検査） |
+| **R4 書込み撤去** | Slack 起案以外の Backlog 書込み API・auto-chain を撤去。webhook を合図専用＋シークレット照合に | Backlog 書込み呼び出しが `create-run`/`link-trigger-run` の起案のみ（CI で検査） |
 | **R5 整理** | `issue_workflows` / `statusFlow.ts` / 旧 Requests 画面の退役、`matter_issues` を `legal_requests.matter_id` 由来の VIEW へ | 旧参照 0 |
 
 ---
@@ -364,17 +408,19 @@ ALTER TABLE staff ADD COLUMN IF NOT EXISTS backlog_user_id BIGINT;
 
 ### 提案する決定
 
-- **D1.** Backlog は依頼原票として読み取り専用。LB からの書込みは行わない。
+- **D1.** 入口は Slack `/法務依頼`、Backlog への書込みは Slack 受付時の起案のみ。以後 Backlog は依頼原票として読みに行くだけ。
 - **D2.** 取り込んだ依頼は必ず受付箱を通し、人が受け付ける。自動案件化はしない。
 - **D3.** 受け付けた依頼は案件の工程バー「受付」（`intake`）に接続する。進行は案件の工程で管理し、依頼ごとのステータスは持たない。
 - **D4.** 取得は定期 pull（5分）＋手動＋webhook 合図＋日次全件照合。Backlog 課題 ID で冪等 upsert。
 - **D5.** 受付後の Backlog 側の変化は「更新あり」で知らせるだけで、案件を自動で動かさない。
 - **D6.** 依頼の内部識別子は `request_no`。Backlog を経由しない依頼も受付箱に手動登録できる。
+- **D7.** 依頼者への連絡は Slack アプリ。起点は受付操作と案件工程の節目で、Backlog ステータス連動の通知はやめる。
 
 ### オープン事項
 
-- **O1.** 受付したことを依頼者に伝える手段。Backlog に書かない前提なら Slack DM（`SLACK_NOTIFY_DISABLED` 解除が必要）か、Backlog 側の担当者が手で変える運用か。
-- **O2.** Backlog 側のステータスを誰が動かすか（放置してよいか、法務担当が手で「完了」にするか）。
+- **O1.** ~~受付したことを依頼者に伝える手段~~ → Slack アプリで通知（D7）。
+- **O2.** Backlog 側のステータスを誰が動かすか。依頼者への連絡は Slack で足りるので、Backlog は起案時の「未対応」のまま置く案と、法務担当が手で「完了」にする案がある。
 - **O3.** 取得間隔（5分）が Backlog API のレート制限・運用感に合うか。
-- **O4.** 納品報告・利用報告を「既存案件へ接続」ではなく、発注書案件から LB 内で予定タスクとして先に作っておくか（auto-chain の代替）。
+- **O4.** 納品報告・利用報告は「履行に入ったら Slack で案内 → 依頼者が紐付け起票 → 受付箱で既存案件に接続」でよいか（auto-chain の代替）。
 - **O5.** 相談（法務相談）を1依頼1案件にするか、部署×期間の相談案件に束ねるか。
+- **O6.** Slack 受付時の文書自動生成（現行、種別により PDF を即作成）を受付後に移してよいか。
