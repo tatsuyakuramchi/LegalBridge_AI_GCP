@@ -93,6 +93,7 @@ import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
 import { registerUnifiedIssues } from "./src/routes/unifiedIssues.ts";
 import { registerMatters } from "./src/routes/matters.ts";
+import { registerRequestInbox } from "./src/routes/requestInbox.ts";
 import { registerDocumentFile } from "./src/lib/documentFiles.ts";
 import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
 import { CLI_VIEW_SQL, CFC_VIEW_SQL } from "./src/lib/compatViewSql.ts";
@@ -11157,6 +11158,14 @@ ${details}
 
   // 新課題(統一課題)導出API。docs/design/unified-issue-ui-plan.md
   registerUnifiedIssues(app, { query });
+  // v3 依頼受付箱 R1: Backlog を読みに行く取得ジョブと取得ログ。
+  //   docs/design/v3-backlog-request-scheme.md §4 / migrations/0154_request_inbox_r1.sql
+  registerRequestInbox(app, {
+    query,
+    fetchIssues: (params) => backlogService.listIssues(params),
+    projectKey: process.env.BACKLOG_PROJECT_KEY || "",
+    requirePortalSecret,
+  });
   registerMatters(app, {
     query,
     // LB-08 (§7): 案件作成時の Drive 案件フォルダ自動生成。

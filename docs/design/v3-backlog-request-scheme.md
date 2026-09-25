@@ -417,7 +417,7 @@ CREATE TABLE IF NOT EXISTS notify_rules (
 | Phase | 内容 | 完了条件 |
 |---|---|---|
 | **R0 合意** | 本書の決定事項を確定。Backlog に属性「依頼種別」を追加し、Slack モーダル・GAS の起票内容を §8.1 に合わせる | 起票フォームが属性を必須化 |
-| **R1 取得** | §9 の DDL・バックフィル。pull ジョブ（定期・手動）と取得ログ。まだ受付箱は出さず、取得結果を既存データと突き合わせて検証 | 1週間、webhook 経由の既存処理と取得結果の差分 0 |
+| **R1 取得** ✅実装 | §9 の DDL・バックフィル（`migrations/0154_request_inbox_r1.sql`）。pull ジョブ（定期・手動・全件照合）と取得ログ（worker `backlogPull.ts` / `requestInbox.ts`）。まだ受付箱は出さず、取得結果を既存データと突き合わせて検証。R1 の取得は既存行のスナップショット更新のみで、LB に無い課題は取得ログに「未登録」として残す（行を作ると現行 webhook パイプラインが飛ばされるため。受付箱への登録は R2）。運用: [`../ops/request-inbox-r1-runbook.md`](../ops/request-inbox-r1-runbook.md) | 1週間、未登録・Backlog に無い課題の差分がすべて説明できる |
 | **R2 受付箱** | 受付箱画面と受付 API。`create-run` を「起案＋受付箱登録」に変更（文書自動生成は受付後へ）。0103 トリガ停止。webhook type=1 の自動パイプラインを停止 | 新規依頼の 100% が受付操作で案件に接続 |
 | **R2b Slack 通知** | `notify_rules` と受付・保留・重複・対象外・工程節目の通知。Backlog 連動の `notifyIssueEvent` を停止し、`SLACK_NOTIFY_DISABLED` を解除 | 依頼者 DM が受付操作ごとに1通、重複送信 0 |
 | **R3 工程バー** | 案件詳細に工程バーと受付ノード。`matter_tasks` の既定次アクション | 案件詳細から接続依頼が参照できる |

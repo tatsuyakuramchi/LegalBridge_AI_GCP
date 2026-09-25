@@ -294,6 +294,30 @@ export class BacklogService {
     }
   }
 
+  /**
+   * v3 受付箱の取得（pull）用。searchIssues と違い、失敗時は空配列でなく throw する
+   * （失敗を「課題 0 件」と取り違えて watermark を進めないため）。
+   */
+  async listIssues(params: Record<string, any> = {}): Promise<any[]> {
+    if (!this.apiKey || !this.baseUrl || !this.projectKey) {
+      throw new Error("Backlog の接続設定（BACKLOG_HOST / BACKLOG_API_KEY / BACKLOG_PROJECT_KEY）がありません");
+    }
+    const projectId = await this.getProjectId();
+    try {
+      const response = await axios.get(this.getUrl("/issues"), {
+        params: { "projectId[]": projectId, ...params },
+      });
+      return response.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      const reasons = Array.isArray(data?.errors)
+        ? data.errors.map((e: any) => e?.message).filter(Boolean).join("; ")
+        : "";
+      throw new Error(`Backlog API ${status ?? "error"}${reasons ? `: ${reasons}` : `: ${error?.message || error}`}`);
+    }
+  }
+
   async getIssueTypes(): Promise<any[]> {
     if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
     try {
