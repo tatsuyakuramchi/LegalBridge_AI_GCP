@@ -456,13 +456,14 @@ function btype(r){
 function srcHtml(r){
   const upd = r.update && !r.update.seen;
   return `<div class="src">
-    <div class="src-h"><span class="mono" style="font-size:12.5px">${r.key}</span><span class="chip">${esc(r.bstatus)}</span><span class="k2">Backlog 課題種別 ${esc(btype(r))}</span><span class="ro">原票（読み取り専用） ・ <a href="#" onclick="return false">Backlog で開く ↗</a></span></div>
+    <div class="src-h"><span class="mono" style="font-size:12.5px">${r.key}</span><span class="chip" title="Backlog のステータスは起案時の「未対応」のまま置き、更新しません">${esc(r.bstatus)}</span><span class="k2">Backlog 課題種別 ${esc(btype(r))}</span><span class="ro">原票（読み取り専用） ・ <a href="#" onclick="return false">Backlog で開く ↗</a></span></div>
     <div class="src-b">
       <div class="src-title">${esc(r.title)}</div>
       <dl class="kv">
         <dt>経路</dt><dd>${SRC[r.src || "slack"][0]}${r.link ? `（対象課題 <span class="mono">${r.link}</span> を選択）` : ""}${(r.src || "slack").startsWith("slack") ? " → Slack アプリが Backlog に起案" : r.src === "manual" ? "（Backlog 起案なし）" : " → 取得（pull）で受付箱へ"}</dd>
         <dt>依頼者</dt><dd>${esc(r.by)}（${r.at}）</dd>
         <dt>取引先名称</dt><dd>${esc(r.cp || "—")}</dd>
+        <dt>ステータス</dt><dd>${esc(r.bstatus)} <span class="k2" style="font-family:var(--font-sans)">— 起案時のまま置き、更新しません。進捗は案件の工程と Slack 通知で伝えます</span></dd>
         <dt>依頼部署</dt><dd>${esc(r.dept || "—")}</dd>
         <dt>希望納期</dt><dd class="mono">${r.due || "—"}</dd>
       </dl>
