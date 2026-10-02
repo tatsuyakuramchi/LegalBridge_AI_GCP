@@ -35,6 +35,8 @@ table.pex td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
 .pex-note{background:#fff7e6;border:1px solid #ffe9bf;color:#a9700a;border-radius:12px;padding:8px 12px;font-size:12px;margin:10px 0}
 #pex-export[disabled]{opacity:.5;cursor:not-allowed}
 .pex-pdf-x{color:#c43c63;font-size:11px;font-weight:800}
+.pex-src{display:inline-block;font-size:9.5px;font-weight:800;padding:0 6px;border-radius:10px;background:#e6f4ff;color:#1769aa;margin-left:4px}
+.pex-sub{font-size:11px;color:var(--muted);margin-top:2px}
 </style>`;
 
 export function paymentExportPage(
@@ -73,6 +75,7 @@ export function paymentExportPage(
     <span>選択 <b id="pex-checked">0</b> 件</span>
     <span class="muted">ZIP には 検収書PDF ×選択件数 と、1行=1文書の Excel(種別 × 個人/法人ごとに1ファイル) が入ります。発行のたびに「前回発行日」が更新されます。</span>
   </div>
+  <div class="pex-note" id="pex-v3note" style="display:none"></div>
 
   <div id="pex-wrap"><div class="pex-empty">期間を指定して読み込んでください。</div></div>
 
@@ -106,10 +109,17 @@ export function paymentExportPage(
     var cat=document.getElementById("pex-cat").value;
     return ROWS.filter(function(r){return !cat||r.category===cat;});
   }
+  // V1 の文書は文書番号、V3 の支払は "v3:<支払id>" で選ぶ。
+  function rowKey(r){return r.source==="v3"?("v3:"+r.v3_payment_id):r.document_number;}
   function checkedNumbers(){
     var out=[];
     document.querySelectorAll(".pex-check:checked").forEach(function(c){out.push(c.getAttribute("data-doc"));});
     return out;
+  }
+  function splitChecked(){
+    var v1=[],v3=[];
+    checkedNumbers().forEach(function(k){if(k.indexOf("v3:")===0)v3.push(Number(k.slice(3)));else v1.push(k);});
+    return {v1:v1,v3:v3};
   }
   function refreshCounts(){
     var n=checkedNumbers().length;
@@ -136,7 +146,13 @@ export function paymentExportPage(
     rows.forEach(function(r){
       var staffCell="";
       if(showStaff){
-        if(r.inspector_email){
+        if(r.source==="v3"){
+          // V3 の書類は「社内担当」（経理提出用。PDF には出ない）を付け替えられる。
+          var cur=r.inspector_email?esc(r.inspector_name||r.inspector_email):'<span class="pex-unset">未設定</span>';
+          staffCell='<td>'+cur+(r.v3_document_id?
+            '<div class="pex-assign"><select id="as-'+esc(rowKey(r))+'">'+staffOptionsHtml()+'</select>'+
+            '<button class="pop-btn sm" onclick="assignV3(\\''+esc(rowKey(r))+'\\','+Number(r.v3_document_id)+')">'+(r.inspector_email?"変更":"設定")+'</button></div>':'')+'</td>';
+        }else if(r.inspector_email){
           staffCell='<td>'+esc(r.inspector_name||r.inspector_email)+'</td>';
         }else{
           staffCell='<td><span class="pex-unset">未設定</span>'+
@@ -145,16 +161,20 @@ export function paymentExportPage(
         }
       }
       html+='<tr>'+
-        '<td><input type="checkbox" class="pex-check" data-doc="'+esc(r.document_number)+'"></td>'+
-        '<td><span class="pex-cat'+(r.category==="royalty_statement"?" royalty":"")+'">'+esc(r.category_label)+'</span></td>'+
-        '<td class="num">'+esc(r.document_number)+'</td>'+
+        '<td><input type="checkbox" class="pex-check" data-doc="'+esc(rowKey(r))+'"></td>'+
+        '<td><span class="pex-cat'+(r.category==="royalty_statement"?" royalty":"")+'">'+esc(r.category_label)+'</span>'+
+          (r.source==="v3"?'<span class="pex-src" title="V3 で出した書類の支払">V3</span>':'')+'</td>'+
+        '<td class="num">'+esc(r.document_number)+(r.source==="v3"&&r.payment_no?'<div class="pex-sub">'+esc(r.payment_no)+'</div>':'')+'</td>'+
         '<td class="num">'+esc(r.po_number||"—")+'</td>'+
         '<td>'+esc(r.vendor_name||"—")+'</td>'+
-        '<td>'+esc(r.title||"—")+'</td>'+
+        '<td>'+esc(r.title||"—")+
+          (r.source==="v3"&&r.contents&&r.contents.length?'<div class="pex-sub">'+r.contents.map(esc).join("／")+'</div>':'')+'</td>'+
         '<td class="num">'+esc(r.payment_date||"—")+'</td>'+
         staffCell+
-        '<td>'+fmtIssued(r.excel_issued_at)+'</td>'+
-        '<td>'+(r.has_pdf?'<a href="'+esc(r.drive_link)+'" target="_blank" rel="noopener">開く ↗</a>':'<span class="pex-pdf-x">なし</span>')+'</td>'+
+        '<td>'+(r.source==="v3"?'<span class="pex-issued">—</span>':fmtIssued(r.excel_issued_at))+'</td>'+
+        '<td>'+(r.source==="v3"
+          ?(r.has_pdf?'<span class="pex-issued">ZIP に同梱</span>':'<span class="pex-pdf-x">なし</span>')
+          :(r.has_pdf?'<a href="'+esc(r.drive_link)+'" target="_blank" rel="noopener">開く ↗</a>':'<span class="pex-pdf-x">なし</span>'))+'</td>'+
         '</tr>';
     });
     html+='</tbody></table>';
@@ -182,6 +202,9 @@ export function paymentExportPage(
       }
       var d=await jget(u);
       ROWS=d.rows||[];
+      var note=document.getElementById("pex-v3note");
+      if(d.v3&&d.v3.error){note.style.display="";note.textContent="V3 の支払を読み込めませんでした（V1 の文書だけ表示しています）: "+d.v3.error;}
+      else{note.style.display="none";note.textContent="";}
       render();
     }catch(e){
       wrap.innerHTML='<div class="pex-empty" style="color:#b91c1c;">読み込み失敗: '+esc(e&&e.message?e.message:e)+'</div>';
@@ -200,6 +223,17 @@ export function paymentExportPage(
       sel.value=keep||"all";
     }catch(e){}
   }
+
+  window.assignV3=async function(key,documentId){
+    var sel=document.getElementById("as-"+key);
+    var email=sel?sel.value:"";
+    if(!email){alert("担当者を選択してください");return;}
+    if(!confirm("この書類の社内担当者（経理提出用）を設定しますか?\\nPDF の担当者欄は変わりません。"))return;
+    try{
+      await jpost("/api/payment-exports/assign",{v3DocumentId:documentId,staff_email:email});
+      load();
+    }catch(e){alert("担当者設定に失敗: "+(e&&e.message?e.message:e));}
+  };
 
   window.assignStaff=async function(docNumber){
     var sel=document.getElementById("as-"+docNumber);
@@ -223,13 +257,20 @@ export function paymentExportPage(
   async function doExport(){
     var nums=checkedNumbers();
     if(!nums.length)return;
+    var picked=splitChecked();
+    if(picked.v1.length&&picked.v3.length){
+      alert("V1 の文書と V3 の支払は別々に発行してください（ZIP の作りが違うため）。");
+      return;
+    }
     var btn=document.getElementById("pex-export");
     btn.disabled=true;var orig=btn.textContent;btn.textContent="生成中…";
     try{
       var res=await fetch("/api/payment-exports/export",{
         method:"POST",credentials:"same-origin",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({documentNumbers:nums})
+        body:JSON.stringify(picked.v3.length
+          ?{v3PaymentIds:picked.v3,from:document.getElementById("pex-from").value,to:document.getElementById("pex-to").value}
+          :{documentNumbers:picked.v1})
       });
       if(!res.ok){
         var d=await res.json().catch(function(){return{};});

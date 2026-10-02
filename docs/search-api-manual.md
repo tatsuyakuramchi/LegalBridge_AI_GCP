@@ -347,6 +347,41 @@ CSV 取込では、`address` と口座系の列は代表値として扱われま
   （`GOOGLE_SERVICE_ACCOUNT_KEY_PATH` → ADC の順で解決。worker と同じ SA キーを共有すれば追加設定不要）。
   取得できなかった PDF は ZIP 内の `PDF未取得一覧.txt` に列挙され、Excel は通常どおり出力されます。
 
+#### V3 で出した検収書・利用許諾料計算書（2026-10〜）
+
+V3（legalbridge-v3）で出した書類と支払は v3 スキーマにあり、上の一覧（V1 の `documents`）には載りません。
+この画面は V3 の分も同じ表に並べます（種別の横に **V3** の札）。中身は V3 の「運用 › 出力」と同じものを
+V3 から受け取ります（件名・支払内容・源泉の計算を searchAPI 側で二重に持たない）。
+実装は `services/api/src/services/v3PaymentExport.ts`。
+
+- **単位**: V3 の行は **支払 1 件 = 1 行**（検収書番号の列は書類番号、下に支払番号）。件名の下に支払内容（入金企業・言語など）。
+- **発行**: V3 の行だけを選んで「Excel 発行」。ZIP は V3 が組む（種別 × 個人／法人 × 支払日ごとの V1 形式 xlsx ＋ 書類の PDF）。
+  V1 の文書と V3 の支払を混ぜて選ぶと止めます（ZIP の作りが違うため。別々に発行）。
+  「前回Excel発行日」は V3 の行には出ません（V3 の出力済みは V3 の画面で付けます）。
+- **担当者**: V3 の書類の「社内担当」（経理提出用。PDF の担当者欄は変わらない）。viewer は自分の担当分のみ、
+  admin は全件・担当者未設定を見られ、行内の「設定／変更」で付け替えられます（V3 の担当者にメールで突き合わせ）。
+- **V3 に届かないとき**: V1 の一覧はそのまま出し、上に「V3 の支払を読み込めませんでした」と理由を出します。
+
+**設定（一度だけ）**
+
+1. V3 の URL と共有シークレットを searchAPI に渡す（Secret `legalbridge-v3-webhook-token` は V3 の定期実行と同じもの）:
+   ```
+   V3_URL=$(gcloud run services describe legalbridge-v3 --region asia-northeast1 --format='value(status.url)')
+   gcloud run services update legalbridge-search-api --region asia-northeast1 \
+     --update-env-vars V3_INTERNAL_URL=$V3_URL \
+     --update-secrets V3_WEBHOOK_TOKEN=legalbridge-v3-webhook-token:latest
+   ```
+2. searchAPI のサービスアカウントが V3 を呼べるようにする（V3 は `--no-allow-unauthenticated`）。
+   searchAPI はこの SA で Google の ID トークン（audience＝V3 の URL）を付けて呼ぶ:
+   ```
+   SA=$(gcloud run services describe legalbridge-search-api --region asia-northeast1 --format='value(spec.template.spec.serviceAccountName)')
+   gcloud run services add-iam-policy-binding legalbridge-v3 --region asia-northeast1 \
+     --member="serviceAccount:$SA" --role=roles/run.invoker
+   gcloud secrets add-iam-policy-binding legalbridge-v3-webhook-token \
+     --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
+   ```
+   `V3_INTERNAL_URL` か `V3_WEBHOOK_TOKEN` が無いあいだは、V3 の分は出しません（これまでどおり）。
+
 ---
 
 ## 4. 認証アーキテクチャ

@@ -415,6 +415,13 @@ import {
   listStaffOptions as listPaymentStaffOptions,
 } from "./src/services/paymentExportService.ts";
 import {
+  listV3Payments,
+  fetchV3Bundle,
+  assignV3Owner,
+  v3Enabled,
+  type V3PaymentRow,
+} from "./src/services/v3PaymentExport.ts";
+import {
   listConditions,
   autoLinkConditions,
   autoStatusConditions,
@@ -4008,6 +4015,49 @@ async function startServer() {
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
+  /**
+   * 誰の分を出すか（listPaymentDocuments と同じ決め方）。
+   *   一般担当者 … 自分のメールに固定 / 管理者 … "all" | "unset" | 指定メール（未指定は自分）
+   */
+  function paymentStaffFilter(isAdmin: boolean, requesterEmail: string, staff: string): string {
+    const requester = String(requesterEmail || "").trim().toLowerCase();
+    if (!isAdmin) {
+      if (!requester) throw new Error("ログインユーザーのメールアドレスを特定できません");
+      return requester;
+    }
+    const s = String(staff || "").trim().toLowerCase();
+    return s === "all" || s === "unset" ? s : s || requester;
+  }
+
+  /** V3 の支払 1 件を、一覧の行（V1 の文書と同じ形）にする。 */
+  function v3ToListRow(r: V3PaymentRow) {
+    const category = r.category === "利用許諾料計算書" ? "royalty_statement" : "inspection_certificate";
+    return {
+      source: "v3" as const,
+      v3_payment_id: r.paymentId,
+      v3_document_id: r.documentId,
+      document_number: r.documentNo || r.paymentNo || `支払${r.paymentId}`,
+      payment_no: r.paymentNo,
+      template_type: category,
+      category,
+      category_label: r.category,
+      entity: r.entity,
+      po_number: "",
+      vendor_name: r.vendorName,
+      title: r.title,
+      payment_date: r.paymentDate,
+      inspector_email: r.ownerEmail || "",
+      inspector_name: r.owner || "(担当者未設定)",
+      excel_issued_at: null,
+      drive_link: "",
+      // PDF は V3 が ZIP に入れる（書類のある支払）。
+      has_pdf: Boolean(r.documentId),
+      net_transfer: r.netTransfer,
+      contents: r.contents,
+      flags: r.flags,
+    };
+  }
+
   // -------------------------------------------------------------------
   // 支払Excel発行 — 検収書/利用許諾料計算書を支払期日の期間で絞り、
   //   選択文書を ZIP(検収書PDF×N + 種別ごと Excel 1ファイル) でローカル DL。
@@ -4039,14 +4089,34 @@ async function startServer() {
     async (req, res) => {
       try {
         const role = await resolveAppRole(req);
+        const from = String(req.query.from || "");
+        const to = String(req.query.to || "");
+        const requesterEmail = String((req as any).user?.email || "");
         const rows = await listPaymentDocuments({
-          from: String(req.query.from || ""),
-          to: String(req.query.to || ""),
-          requesterEmail: String((req as any).user?.email || ""),
+          from,
+          to,
+          requesterEmail,
           isAdmin: role === "admin",
           staff: String(req.query.staff || ""),
         });
-        res.json({ ok: true, rows });
+        // V3 で出した検収書・計算書の支払。V3 が落ちていても V1 の一覧は出す。
+        let v3Rows: ReturnType<typeof v3ToListRow>[] = [];
+        let v3Error: string | null = null;
+        if (v3Enabled()) {
+          try {
+            const staffFilter = paymentStaffFilter(role === "admin", requesterEmail, String(req.query.staff || ""));
+            v3Rows = (await listV3Payments(from, to, staffFilter)).map(v3ToListRow);
+          } catch (error: any) {
+            console.error("GET /api/payment-exports/list (v3) failed:", error);
+            v3Error = String(error?.message || error);
+          }
+        }
+        const all = [...rows.map((r) => ({ ...r, source: "v1" })), ...v3Rows].sort(
+          (a, b) =>
+            String(a.payment_date).localeCompare(String(b.payment_date)) ||
+            String(a.document_number).localeCompare(String(b.document_number))
+        );
+        res.json({ ok: true, rows: all, v3: { enabled: v3Enabled(), error: v3Error } });
       } catch (error: any) {
         console.error("GET /api/payment-exports/list failed:", error);
         const msg = String(error?.message || error);
@@ -4086,6 +4156,21 @@ async function startServer() {
     express.json({ limit: "64kb" }),
     async (req, res) => {
       try {
+        const v3DocumentId = Number(req.body?.v3DocumentId || 0);
+        if (v3DocumentId > 0) {
+          // V3 の書類の社内担当者（経理提出用。PDF には出ない）。
+          await assignV3Owner(v3DocumentId, String(req.body?.staff_email || ""), String((req as any).user?.email || ""));
+          console.log(
+            JSON.stringify({
+              evt: "payment_export_assign_v3",
+              document_id: v3DocumentId,
+              staff_email: String(req.body?.staff_email || ""),
+              user: (req as any).user?.email || null,
+              ts: new Date().toISOString(),
+            })
+          );
+          return res.json({ ok: true, updated: [String(v3DocumentId)], skipped: [] });
+        }
         const documentNumbers: string[] = Array.isArray(req.body?.documentNumbers)
           ? req.body.documentNumbers
           : [];
@@ -4124,6 +4209,42 @@ async function startServer() {
         const documentNumbers: string[] = Array.isArray(req.body?.documentNumbers)
           ? req.body.documentNumbers
           : [];
+        const v3PaymentIds: number[] = Array.isArray(req.body?.v3PaymentIds)
+          ? req.body.v3PaymentIds.map(Number).filter((n: number) => n > 0)
+          : [];
+        if (v3PaymentIds.length) {
+          // V3 の支払は V3 が組んだ ZIP をそのまま返す（V3 の経理提出と同じ中身）。
+          // V1 の文書と混ぜると Excel の作りが2通りになるので、分けて出してもらう。
+          if (documentNumbers.length) {
+            return res.status(400).json({
+              ok: false,
+              error: "V1 の文書と V3 の支払は別々に発行してください（ZIP の作りが違うため）",
+            });
+          }
+          const requesterEmail = String((req as any).user?.email || "");
+          const bundle = await fetchV3Bundle(v3PaymentIds, {
+            from: String(req.body?.from || ""),
+            to: String(req.body?.to || ""),
+            // 一般担当者は自分の担当分だけ（V3 側でも同じ絞り込みを通す）。
+            staffFilter: paymentStaffFilter(role === "admin", requesterEmail, role === "admin" ? "all" : ""),
+          });
+          console.log(
+            JSON.stringify({
+              evt: "payment_export_zip_v3",
+              count: bundle.count,
+              pdf_failed: bundle.pdfFailures,
+              user: requesterEmail || null,
+              ts: new Date().toISOString(),
+            })
+          );
+          res.setHeader("Content-Type", "application/zip");
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="payment_export.zip"; filename*=UTF-8''${encodeURIComponent(bundle.fileName)}`
+          );
+          res.setHeader("X-Pdf-Failures", String(bundle.pdfFailures));
+          return res.send(bundle.buffer);
+        }
         const bundle = await buildExportBundle(documentNumbers, {
           requesterEmail: String((req as any).user?.email || ""),
           isAdmin: role === "admin",
