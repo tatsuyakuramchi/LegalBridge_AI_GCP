@@ -364,22 +364,23 @@ V3 から受け取ります（件名・支払内容・源泉の計算を searchA
 
 **設定（一度だけ）**
 
-1. V3 の URL と共有シークレットを searchAPI に渡す（Secret `legalbridge-v3-webhook-token` は V3 の定期実行と同じもの）:
+V3 本体（`legalbridge-v3`）には IAP が付いていて、searchAPI のサービスアカウントの ID トークンは受け付けません（401）。
+V3 の定期実行と同じく、**V3 の口（`legalbridge-v3-gateway`）を通して**呼びます（口が IAP 用の JWT を署名して中継）。
+
+1. 口の URL と共有シークレットを searchAPI に渡す（Secret `legalbridge-v3-webhook-token` は V3 の定期実行と同じもの）:
    ```
-   V3_URL=$(gcloud run services describe legalbridge-v3 --region asia-northeast1 --format='value(status.url)')
+   GW_URL=$(gcloud run services describe legalbridge-v3-gateway --region asia-northeast1 --format='value(status.url)')
    gcloud run services update legalbridge-search-api --region asia-northeast1 \
-     --update-env-vars V3_INTERNAL_URL=$V3_URL \
+     --update-env-vars V3_INTERNAL_URL=$GW_URL \
      --update-secrets V3_WEBHOOK_TOKEN=legalbridge-v3-webhook-token:latest
    ```
-2. searchAPI のサービスアカウントが V3 を呼べるようにする（V3 は `--no-allow-unauthenticated`）。
-   searchAPI はこの SA で Google の ID トークン（audience＝V3 の URL）を付けて呼ぶ:
+2. searchAPI のサービスアカウントに Secret の読み取り権限:
    ```
    SA=$(gcloud run services describe legalbridge-search-api --region asia-northeast1 --format='value(spec.template.spec.serviceAccountName)')
-   gcloud run services add-iam-policy-binding legalbridge-v3 --region asia-northeast1 \
-     --member="serviceAccount:$SA" --role=roles/run.invoker
    gcloud secrets add-iam-policy-binding legalbridge-v3-webhook-token \
      --member="serviceAccount:$SA" --role=roles/secretmanager.secretAccessor
    ```
+   口が通すパスは V3 側 `infra/v3/gateway/server.mjs` の `ROUTES`（`/internal/exports/accounting*`・`/internal/documents/{番号}/account-owner`）。
    `V3_INTERNAL_URL` か `V3_WEBHOOK_TOKEN` が無いあいだは、V3 の分は出しません（これまでどおり）。
 
 ---
